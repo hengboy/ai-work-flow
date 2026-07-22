@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '..');
-const script = resolve(root, 'scripts/agent-workflow.mjs');
+const setupSkill = resolve(root, 'skills/setup-ai-work-flow');
+const script = resolve(setupSkill, 'scripts/agent-workflow.mjs');
 
 function fixture() {
   return mkdtempSync(resolve(tmpdir(), 'agent-workflow-'));
@@ -23,6 +24,49 @@ function init(target) {
   const result = run(target, 'init');
   assert.equal(result.status, 0, result.stderr);
 }
+
+test('a standalone setup skill initializes the current project directly', () => {
+  const installation = fixture();
+  const installedSkill = resolve(installation, 'setup-ai-work-flow');
+  const target = fixture();
+  cpSync(setupSkill, installedSkill, { recursive: true });
+  const coordinatorBody = resolve(installedSkill, 'assets/agents/bodies/coordinator.md');
+  writeFileSync(coordinatorBody, `${readFileSync(coordinatorBody, 'utf8')}Template body probe.\n`);
+
+  const result = spawnSync(process.execPath, [resolve(installedSkill, 'scripts/agent-workflow.mjs'), 'setup'], {
+    cwd: target,
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Initialized .*\.ai-work-flow\/agents/);
+  assert.equal(readdirSync(resolve(target, '.codex/agents')).length, 9);
+  assert.equal(readdirSync(resolve(target, '.claude/agents')).length, 9);
+  assert.equal(readdirSync(resolve(target, '.opencode/agents')).length, 9);
+  assert.match(readFileSync(resolve(target, '.codex/agents/coordinator.toml'), 'utf8'), /Template body probe\./);
+  assert.match(readFileSync(resolve(target, '.claude/agents/coordinator.md'), 'utf8'), /Template body probe\./);
+  assert.match(readFileSync(resolve(target, '.opencode/agents/coordinator.md'), 'utf8'), /Template body probe\./);
+
+  const repeated = spawnSync(process.execPath, [resolve(installedSkill, 'scripts/agent-workflow.mjs'), 'setup'], {
+    cwd: target,
+    encoding: 'utf8'
+  });
+  assert.equal(repeated.status, 0, repeated.stderr);
+  assert.match(repeated.stdout, /Generated 0 file\(s\)\./);
+});
+
+test('every role has one shared body template without platform formatting', () => {
+  const catalog = JSON.parse(readFileSync(resolve(setupSkill, 'assets/agents/roles.json'), 'utf8'));
+  const expected = catalog.roles.map((role) => `${role.id}.md`).sort();
+  const bodiesPath = resolve(setupSkill, 'assets/agents/bodies');
+  assert.deepEqual(readdirSync(bodiesPath).sort(), expected);
+
+  for (const name of expected) {
+    const body = readFileSync(resolve(bodiesPath, name), 'utf8');
+    assert.doesNotMatch(body, /^---$/m, name);
+    assert.doesNotMatch(body, /^(name|model|sandbox_mode|permissionMode)\s*[:=]/m, name);
+  }
+});
 
 test('init creates versioned defaults and an ignored local override example', () => {
   const target = fixture();
@@ -66,7 +110,7 @@ test('generate preserves user files and produces restricted role definitions', (
   assert.equal(openCode.agent.custom.mode, 'subagent');
   assert.match(readFileSync(resolve(target, '.opencode/agents/coordinator.md'), 'utf8'), /"read":"deny","edit":"deny","bash":"deny"/);
   assert.doesNotMatch(readFileSync(resolve(target, '.opencode/agents/coordinator.md'), 'utf8'), /model: inherit/);
-  assert.match(readFileSync(resolve(target, '.claude/agents/code-reviewer.md'), 'utf8'), /delegate only Review Standards and Review Spec/);
+  assert.match(readFileSync(resolve(target, '.claude/agents/code-reviewer.md'), 'utf8'), /并行委派标准审查和规范审查/);
   assert.match(readFileSync(resolve(target, '.claude/agents/code-reviewer.md'), 'utf8'), /tools: Read, Glob, Grep, Bash, Task/);
   assert.doesNotMatch(readFileSync(resolve(target, '.claude/agents/full-stack-coder.md'), 'utf8'), /Task/);
   assert.match(readFileSync(resolve(target, '.codex/agents/full-stack-coder.toml'), 'utf8'), /model_reasoning_effort = "high"/);
