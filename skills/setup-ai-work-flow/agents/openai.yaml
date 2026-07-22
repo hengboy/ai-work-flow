@@ -1,0 +1,7 @@
+interface:
+  display_name: "设置 AI 工作流"
+  short_description: "配置跟踪器和领域文档"
+policy:
+  allow_implicit_invocation: false
+
+

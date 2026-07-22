@@ -1,0 +1,7 @@
+interface:
+  display_name: "交接"
+  short_description: "为新会话保留上下文"
+policy:
+  allow_implicit_invocation: false
+
+

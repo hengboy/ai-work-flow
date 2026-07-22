@@ -1,0 +1,7 @@
+interface:
+  display_name: "代码审查"
+  short_description: "根据标准和意图审查变更"
+policy:
+  allow_implicit_invocation: true
+
+

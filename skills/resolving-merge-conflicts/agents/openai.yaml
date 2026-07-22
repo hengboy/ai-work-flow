@@ -1,0 +1,7 @@
+interface:
+  display_name: "解决合并冲突"
+  short_description: "在保留行为的同时解决冲突"
+policy:
+  allow_implicit_invocation: false
+
+

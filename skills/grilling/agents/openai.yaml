@@ -1,0 +1,5 @@
+interface:
+  display_name: "严格拷问"
+  short_description: "针对缺失的决策和约束条件的访谈"
+policy:
+  allow_implicit_invocation: true

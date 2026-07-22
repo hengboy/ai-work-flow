@@ -1,0 +1,5 @@
+interface:
+  display_name: "讨论需求"
+  short_description: "澄清产品或工程请求"
+policy:
+  allow_implicit_invocation: false
