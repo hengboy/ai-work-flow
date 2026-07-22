@@ -33,11 +33,7 @@ node scripts/install.mjs
 
 ## 模型配置
 
-唯一可编辑配置为 `~/.config/ai-work-flow/config.json`（或 `$XDG_CONFIG_HOME/ai-work-flow/config.json`）。首次安装时由内置默认值创建，不再生成或读取 `config.local.json`。更新模型、推理强度或 OpenCode 原生选项后，从已安装的 `setup-ai-work-flow` Skill 目录运行：
-
-```sh
-node scripts/agent-workflow.mjs generate
-```
+唯一可编辑配置为 `~/.config/ai-work-flow/config.json`（或 `$XDG_CONFIG_HOME/ai-work-flow/config.json`）。首次安装时由内置默认值创建，不再生成或读取 `config.local.json`。更新模型、推理强度或 OpenCode 原生选项后，调用 `$regenerate-ai-work-flow`；它会先验证配置，再重新生成全局 agents。
 
 新会话会读取重新生成后的 agents。
 
