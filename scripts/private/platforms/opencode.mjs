@@ -140,6 +140,7 @@ export async function AiWorkFlowSubagentModelGuard({ client }) {
       const task = knownTask ?? takePendingTask(parentID, input.agent);
       if (!task) return;
       childTasks.set(input.sessionID, task);
+      if (!input.model) return;
       checkedChildren.add(input.sessionID);
       const expected = EXPECTED[task.agent];
       if (matches(expected, input.model, input.variant)) return;

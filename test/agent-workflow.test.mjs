@@ -320,6 +320,52 @@ test('the generated OpenCode guard retries one mismatched child and then reports
   assert.match(calls.prompt[1].body.parts[0].text, /retry exhausted/);
 });
 
+test('the generated OpenCode guard waits for a child model to resolve before checking it', async () => {
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  const pluginPath = resolve(paths.config, 'opencode/plugins/ai-work-flow-subagent-model-guard.js');
+  const { AiWorkFlowSubagentModelGuard } = await import(`${pathToFileURL(pluginPath).href}?test=${Date.now()}`);
+  const calls = { abort: [], create: [], prompt: [] };
+  const client = {
+    session: {
+      abort: async (input) => {
+        calls.abort.push(input);
+        return { data: true };
+      },
+      create: async (input) => {
+        calls.create.push(input);
+        return { data: { id: 'retry-child' } };
+      },
+      prompt: async (input) => {
+        calls.prompt.push(input);
+        return { data: {} };
+      },
+      get: async () => ({ data: { parentID: 'parent' } })
+    }
+  };
+  const hooks = await AiWorkFlowSubagentModelGuard({ client });
+  const args = {
+    description: 'Guard task',
+    prompt: 'Inspect the implementation.',
+    subagent_type: 'planning-writer'
+  };
+
+  await hooks['tool.execute.before']({ tool: 'task', sessionID: 'parent' }, { args });
+  await hooks.event({ event: { type: 'session.created', properties: { info: { id: 'child', parentID: 'parent' } } } });
+  await hooks['chat.message']({ sessionID: 'child', agent: 'planning-writer', model: undefined, variant: undefined });
+  assert.deepEqual(calls, { abort: [], create: [], prompt: [] });
+
+  await hooks['chat.message']({
+    sessionID: 'child',
+    agent: 'planning-writer',
+    model: { providerID: 'baibai', modelID: 'gpt-5.6-sol' },
+    variant: 'high'
+  });
+  assert.deepEqual(calls, { abort: [], create: [], prompt: [] });
+});
+
 test('generate applies edited global configuration only to requested platforms', () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
