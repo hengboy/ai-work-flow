@@ -111,6 +111,25 @@ test('root installer installs every skill globally and generates every platform 
   assert.match(readFileSync(agentPath(paths, 'codex', 'coordinator', 'toml'), 'utf8'), /~\/\.config\/ai-work-flow\/routing/);
 });
 
+test('coordinator routes project discovery through File Explorer before implementation', () => {
+  const source = readFileSync(resolve(agentAssets, 'bodies/coordinator.md'), 'utf8');
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  assert.match(source, /先委派 \*\*File Explorer\*\* 完成检查并等待其交接/);
+  assert.match(source, /只有收到交接后，才能将实现范围和交接路径委派给 \*\*Full Stack Coder\*\*/);
+  assert.match(source, /不得将发现阶段先委派给 \*\*Full Stack Coder\*\*/);
+  assert.equal(
+    readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/coordinator.md'), 'utf8'),
+    source
+  );
+  assert.match(
+    readFileSync(agentPath(paths, 'codex', 'coordinator', 'toml'), 'utf8'),
+    /不得将发现阶段先委派给 \*\*Full Stack Coder\*\*/
+  );
+});
+
 test('generated agent descriptions prominently use their title-cased display names', () => {
   const paths = environment();
   const result = install(paths);
