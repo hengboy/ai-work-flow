@@ -343,3 +343,9 @@ test('all shipped skills route through the global routing file', () => {
     assert.doesNotMatch(source, /\.ai-work-flow\/agents\/routing\.md/, entry.name);
   }
 });
+
+test('grill-with-docs assigns discussion-time CONTEXT.md updates to Document Maintainer', () => {
+  const source = readFileSync(resolve(root, 'skills/grill-with-docs/SKILL.md'), 'utf8');
+  assert.match(source, /只委派 \*\*Document Maintainer\*\* 即时更新项目的 `CONTEXT\.md`/);
+  assert.match(source, /不得将此写入委派给 \*\*Planning Writer\*\*/);
+});
