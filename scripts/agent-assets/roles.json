@@ -7,7 +7,14 @@
       "description": "负责路由工作、等待受委派结果并汇总结论。",
       "kind": "primary",
       "workspace": "none",
-      "delegates": ["file-explorer", "researcher", "document-maintainer", "planning-writer", "full-stack-coder", "code-reviewer"],
+      "delegates": [
+        "file-explorer",
+        "researcher",
+        "document-maintainer",
+        "planning-writer",
+        "full-stack-coder",
+        "code-reviewer"
+      ],
       "tools": []
     },
     {

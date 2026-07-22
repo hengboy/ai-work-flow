@@ -1,14 +1,50 @@
 {
   "version": 1,
   "roles": {
-    "coordinator": { "codex": { "model": "gpt-5.6", "reasoning": "medium" }, "claude": { "model": "sonnet", "effort": "medium" }, "opencode": { "model": null, "variant": null, "options": {} } },
-    "file-explorer": { "codex": { "model": "gpt-5.6-terra", "reasoning": "low" }, "claude": { "model": "haiku", "effort": "low" }, "opencode": { "model": null, "variant": null, "options": {} } },
-    "researcher": { "codex": { "model": "gpt-5.6", "reasoning": "medium" }, "claude": { "model": "sonnet", "effort": "medium" }, "opencode": { "model": null, "variant": null, "options": {} } },
-    "document-maintainer": { "codex": { "model": "gpt-5.6-terra", "reasoning": "medium" }, "claude": { "model": "haiku", "effort": "low" }, "opencode": { "model": null, "variant": null, "options": {} } },
-    "planning-writer": { "codex": { "model": "gpt-5.6", "reasoning": "high" }, "claude": { "model": "opus", "effort": "high" }, "opencode": { "model": null, "variant": null, "options": {} } },
-    "full-stack-coder": { "codex": { "model": "gpt-5.6", "reasoning": "high" }, "claude": { "model": "sonnet", "effort": "high" }, "opencode": { "model": null, "variant": null, "options": {} } },
-    "code-reviewer": { "codex": { "model": "gpt-5.6", "reasoning": "high" }, "claude": { "model": "sonnet", "effort": "high" }, "opencode": { "model": null, "variant": null, "options": {} } },
-    "review-standards": { "codex": { "model": "gpt-5.6", "reasoning": "high" }, "claude": { "model": "sonnet", "effort": "high" }, "opencode": { "model": null, "variant": null, "options": {} } },
-    "review-spec": { "codex": { "model": "gpt-5.6", "reasoning": "high" }, "claude": { "model": "sonnet", "effort": "high" }, "opencode": { "model": null, "variant": null, "options": {} } }
+    "coordinator": {
+      "codex": { "model": "gpt-5.6", "reasoning": "medium" },
+      "claude": { "model": "sonnet", "effort": "medium" },
+      "opencode": { "model": null, "variant": null, "options": {} }
+    },
+    "file-explorer": {
+      "codex": { "model": "gpt-5.6-terra", "reasoning": "low" },
+      "claude": { "model": "haiku", "effort": "low" },
+      "opencode": { "model": null, "variant": null, "options": {} }
+    },
+    "researcher": {
+      "codex": { "model": "gpt-5.6", "reasoning": "medium" },
+      "claude": { "model": "sonnet", "effort": "medium" },
+      "opencode": { "model": null, "variant": null, "options": {} }
+    },
+    "document-maintainer": {
+      "codex": { "model": "gpt-5.6-terra", "reasoning": "medium" },
+      "claude": { "model": "haiku", "effort": "low" },
+      "opencode": { "model": null, "variant": null, "options": {} }
+    },
+    "planning-writer": {
+      "codex": { "model": "gpt-5.6", "reasoning": "high" },
+      "claude": { "model": "opus", "effort": "high" },
+      "opencode": { "model": null, "variant": null, "options": {} }
+    },
+    "full-stack-coder": {
+      "codex": { "model": "gpt-5.6", "reasoning": "high" },
+      "claude": { "model": "sonnet", "effort": "high" },
+      "opencode": { "model": null, "variant": null, "options": {} }
+    },
+    "code-reviewer": {
+      "codex": { "model": "gpt-5.6", "reasoning": "high" },
+      "claude": { "model": "sonnet", "effort": "high" },
+      "opencode": { "model": null, "variant": null, "options": {} }
+    },
+    "review-standards": {
+      "codex": { "model": "gpt-5.6", "reasoning": "high" },
+      "claude": { "model": "sonnet", "effort": "high" },
+      "opencode": { "model": null, "variant": null, "options": {} }
+    },
+    "review-spec": {
+      "codex": { "model": "gpt-5.6", "reasoning": "high" },
+      "claude": { "model": "sonnet", "effort": "high" },
+      "opencode": { "model": null, "variant": null, "options": {} }
+    }
   }
 }
