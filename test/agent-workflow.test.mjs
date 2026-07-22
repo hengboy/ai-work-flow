@@ -288,10 +288,10 @@ test('the generated OpenCode guard retries one mismatched child and then reports
   const args = {
     description: 'Guard task',
     prompt: 'Inspect the implementation.',
-    subagent_type: 'planning-writer'
+    subagent_type: 'file-explorer'
   };
   const mismatch = {
-    agent: 'planning-writer',
+    agent: 'file-explorer',
     model: { providerID: 'baibai', modelID: 'gpt-5.6-terra' },
     variant: 'medium'
   };
@@ -301,12 +301,13 @@ test('the generated OpenCode guard retries one mismatched child and then reports
   await hooks['chat.message']({ sessionID: 'child', ...mismatch });
 
   assert.deepEqual(calls.abort, [{ path: { id: 'child' } }]);
-  assert.deepEqual(calls.create, [{ body: { parentID: 'parent', title: 'Guard task (@planning-writer subagent)' } }]);
+  assert.deepEqual(calls.create, [{ body: { parentID: 'parent', title: 'Guard task (@file-explorer subagent)' } }]);
   assert.deepEqual(calls.prompt, [{
     path: { id: 'retry-child' },
     body: {
-      agent: 'planning-writer',
-      model: { providerID: 'baibai', modelID: 'gpt-5.6-sol' },
+      agent: 'file-explorer',
+      model: { providerID: 'baibai', modelID: 'gpt-5.6-luna' },
+      variant: 'low',
       parts: [{ type: 'text', text: 'Inspect the implementation.' }]
     }
   }]);

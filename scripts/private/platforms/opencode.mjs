@@ -100,6 +100,7 @@ export async function AiWorkFlowSubagentModelGuard({ client }) {
       body: {
         agent: task.agent,
         model: modelParts(expected.model),
+        variant: expected.variant,
         parts: [{ type: 'text', text: task.prompt }]
       }
     });
