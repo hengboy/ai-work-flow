@@ -111,6 +111,24 @@ test('root installer installs every skill globally and generates every platform 
   assert.match(readFileSync(agentPath(paths, 'codex', 'coordinator', 'toml'), 'utf8'), /~\/\.config\/ai-work-flow\/routing/);
 });
 
+test('generated agent descriptions prominently use their title-cased display names', () => {
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+
+  for (const role of catalog.roles) {
+    const displayName = role.id.split('-').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
+    assert.equal(role.name, displayName);
+    const description = `**${displayName}**: ${role.description}`;
+    assert.ok(readFileSync(agentPath(paths, 'codex', role.id, 'toml'), 'utf8').includes(`description = ${JSON.stringify(description)}`));
+    assert.ok(readFileSync(agentPath(paths, 'claude', role.id, 'md'), 'utf8').includes(`description: ${JSON.stringify(description)}`));
+    assert.ok(readFileSync(agentPath(paths, 'opencode', role.id, 'md'), 'utf8').includes(`description: ${JSON.stringify(description)}`));
+    assert.ok(readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8').startsWith(`你是 **${displayName}**。`));
+    assert.ok(routing.includes(`**${displayName}**`));
+  }
+});
+
 test('generation preserves unrelated global configuration and agents', () => {
   const paths = environment();
   mkdirSync(resolve(paths.home, '.codex/agents'), { recursive: true });
