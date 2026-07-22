@@ -111,23 +111,73 @@ test('root installer installs every skill globally and generates every platform 
   assert.match(readFileSync(agentPath(paths, 'codex', 'coordinator', 'toml'), 'utf8'), /~\/\.config\/ai-work-flow\/routing/);
 });
 
-test('coordinator routes project discovery through File Explorer before implementation', () => {
+test('coordinator routes every required discovery phase through File Explorer', () => {
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const source = readFileSync(resolve(agentAssets, 'bodies/coordinator.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
 
-  assert.match(source, /先委派 \*\*File Explorer\*\* 完成检查并等待其交接/);
-  assert.match(source, /只有收到交接后，才能将实现范围和交接路径委派给 \*\*Full Stack Coder\*\*/);
-  assert.match(source, /不得将发现阶段先委派给 \*\*Full Stack Coder\*\*/);
+  for (const content of [routing, source]) {
+    assert.match(content, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/);
+    assert.match(content, /先委派 \*\*File Explorer\*\* 并等待其交接/);
+    assert.match(content, /当前会话已有交接时可复用/);
+    assert.match(content, /用户给出精确路径/);
+    assert.match(content, /不得将发现阶段.*后续执行角色/);
+  }
   assert.equal(
     readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/coordinator.md'), 'utf8'),
     source
   );
-  assert.match(
-    readFileSync(agentPath(paths, 'codex', 'coordinator', 'toml'), 'utf8'),
-    /不得将发现阶段先委派给 \*\*Full Stack Coder\*\*/
-  );
+  assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const generated = readFileSync(agentPath(paths, platform, 'coordinator', extension), 'utf8');
+    assert.match(generated, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/);
+    assert.match(generated, /先委派 \*\*File Explorer\*\* 并等待其交接/);
+    assert.match(generated, /不得将发现阶段.*后续执行角色/);
+  }
+});
+
+test('platform generation enforces the declared workspace access where supported', () => {
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  for (const role of catalog.roles) {
+    const codex = readFileSync(agentPath(paths, 'codex', role.id, 'toml'), 'utf8');
+    const claude = readFileSync(agentPath(paths, 'claude', role.id, 'md'), 'utf8');
+    const openCode = readFileSync(agentPath(paths, 'opencode', role.id, 'md'), 'utf8');
+    if (role.workspace === 'none' || role.workspace === 'read') {
+      assert.match(codex, /sandbox_mode = "read-only"/, role.id);
+      assert.match(claude, /permissionMode: plan/, role.id);
+    } else {
+      assert.match(codex, /sandbox_mode = "workspace-write"/, role.id);
+      assert.match(claude, /permissionMode: acceptEdits/, role.id);
+      assert.match(openCode, /permission: \{"edit":"allow"\}/, role.id);
+    }
+    if (role.workspace === 'none') {
+      assert.match(openCode, /permission: \{"read":"deny","edit":"deny","bash":"deny"\}/, role.id);
+    }
+    if (role.workspace === 'read') {
+      assert.match(openCode, /permission: \{"read":"allow","edit":"deny","bash":"deny"\}/, role.id);
+    }
+  }
+});
+
+test('only writer bodies require git diff reporting', () => {
+  const writers = new Set(['document-maintainer', 'planning-writer', 'full-stack-coder']);
+  for (const role of catalog.roles) {
+    const body = readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8');
+    assert.equal(body.includes('git diff --name-only'), writers.has(role.id), role.id);
+  }
+});
+
+test('skills use the catalog display name for Full Stack Coder', () => {
+  for (const entry of readdirSync(resolve(root, 'skills'), { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const source = readFileSync(resolve(root, 'skills', entry.name, 'SKILL.md'), 'utf8');
+    assert.doesNotMatch(source, /Full-Stack Coder/, entry.name);
+  }
 });
 
 test('generated agent descriptions prominently use their title-cased display names', () => {

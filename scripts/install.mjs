@@ -210,7 +210,7 @@ function renderClaude(role, settings, body) {
 
 function openCodePermission(role) {
   if (role.workspace === 'none') return { read: 'deny', edit: 'deny', bash: 'deny' };
-  if (role.workspace === 'read') return { edit: 'deny' };
+  if (role.workspace === 'read') return { read: 'allow', edit: 'deny', bash: 'deny' };
   return { edit: 'allow' };
 }
 
