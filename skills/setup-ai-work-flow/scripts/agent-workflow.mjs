@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
 
@@ -14,10 +15,10 @@ const PLATFORMS = new Set(['codex', 'claude', 'opencode']);
 
 function usage() {
   return `Usage:
-  node scripts/agent-workflow.mjs setup [--target <dir>] [--platform codex,claude,opencode]
-  node scripts/agent-workflow.mjs init --target <dir>
-  node scripts/agent-workflow.mjs generate --target <dir> [--platform codex,claude,opencode] [--dry-run]
-  node scripts/agent-workflow.mjs validate --target <dir>`;
+  node scripts/agent-workflow.mjs setup [--platform codex,claude,opencode] [--dry-run]
+  node scripts/agent-workflow.mjs init [--dry-run]
+  node scripts/agent-workflow.mjs generate [--platform codex,claude,opencode] [--dry-run]
+  node scripts/agent-workflow.mjs validate`;
 }
 
 function fail(message) {
@@ -39,17 +40,14 @@ function parseArgs(argv) {
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === '--dry-run') options.dryRun = true;
-    else if (arg === '--target' || arg === '--platform') {
+    else if (arg === '--platform') {
       const value = rest[index + 1];
       if (!value || value.startsWith('--')) fail(`${arg} requires a value.`);
       index += 1;
-      if (arg === '--target') options.target = resolve(value);
-      else options.platforms = value.split(',').map((item) => item.trim()).filter(Boolean);
+      options.platforms = value.split(',').map((item) => item.trim()).filter(Boolean);
     } else fail(`Unknown argument: ${arg}`);
   }
   if (!['setup', 'init', 'generate', 'validate'].includes(command)) fail(`Unknown command: ${command}`);
-  if (!options.target && command === 'setup') options.target = process.cwd();
-  if (!options.target) fail('--target is required.');
   for (const platform of options.platforms) {
     if (!PLATFORMS.has(platform)) fail(`Unknown platform: ${platform}`);
   }
@@ -60,35 +58,27 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function merge(base, override) {
-  if (!isPlainObject(base) || !isPlainObject(override)) return override === undefined ? base : override;
-  const result = { ...base };
-  for (const [key, value] of Object.entries(override)) {
-    result[key] = key in result ? merge(result[key], value) : value;
-  }
-  return result;
-}
-
-function configPaths(target) {
-  const dir = resolve(target, '.ai-work-flow/agents');
+function globalPaths() {
+  const home = homedir();
+  const configHome = process.env.XDG_CONFIG_HOME ? resolve(process.env.XDG_CONFIG_HOME) : resolve(home, '.config');
+  const dir = resolve(configHome, 'ai-work-flow');
   return {
     dir,
     config: resolve(dir, 'config.json'),
-    local: resolve(dir, 'config.local.json'),
-    localExample: resolve(dir, 'config.local.example.json'),
-    ignore: resolve(dir, '.gitignore'),
-    routing: resolve(dir, 'routing.md')
+    routing: resolve(dir, 'routing.md'),
+    codexDir: resolve(home, '.codex'),
+    claudeDir: resolve(home, '.claude'),
+    openCodeDir: resolve(configHome, 'opencode')
   };
 }
 
-function loadConfig(target) {
-  const paths = configPaths(target);
+function loadConfig(allowDefaults = false) {
+  const paths = globalPaths();
   if (!existsSync(paths.config)) {
+    if (allowDefaults) return { config: DEFAULT_CONFIG, paths };
     fail(`Missing ${paths.config}. Run init first.`);
   }
-  const project = readJson(paths.config);
-  const local = existsSync(paths.local) ? readJson(paths.local) : {};
-  return { config: merge(merge(DEFAULT_CONFIG, project), local), paths };
+  return { config: readJson(paths.config), paths };
 }
 
 function validateConfig(config) {
@@ -225,19 +215,8 @@ function assertSafeToml(source, path) {
       }
       line += char;
     }
-    const text = line.trim();
-    if (!text || quote || square < 0 || curly < 0) {
-      if (quote || square < 0 || curly < 0) break;
-      continue;
-    }
-    if (square === 0 && curly === 0 && !/^\[\[?[A-Za-z0-9_.-]+\]?\]$/.test(text) && !/^[A-Za-z0-9_.-]+\s*=\s*\S/.test(text)) break;
   }
   if (quote || square !== 0 || curly !== 0) fail(`Cannot safely parse existing TOML at ${path}. Add agents.max_depth = 2 manually.`);
-  for (const rawLine of source.split('\n')) {
-    const text = rawLine.replace(/#.*/, '').trim();
-    if (!text || /^\[\[?[A-Za-z0-9_.-]+\]?\]$/.test(text) || /^[A-Za-z0-9_.-]+\s*=\s*\S/.test(text)) continue;
-    fail(`Cannot safely parse existing TOML at ${path}. Add agents.max_depth = 2 manually.`);
-  }
   if ((source.match(/^\[agents\]\s*$/gm) || []).length > 1) {
     fail(`Cannot safely update duplicate [agents] tables in ${path}. Add max_depth = 2 manually.`);
   }
@@ -264,8 +243,8 @@ function updateCodexConfig(source, path) {
 
 function markerBlock(kind) {
   const content = kind === 'claude'
-    ? '@.ai-work-flow/agents/routing.md\n\n使用协调者作为唯一面向用户的角色，并按照上述角色规则委派所有工作。'
-    : '使用 `.ai-work-flow/agents/routing.md`。协调者只负责调度：不得检查、编辑或实施。所有工作区操作都必须委派给专职角色。';
+    ? '@~/.config/ai-work-flow/routing.md\n\n使用协调者作为唯一面向用户的角色，并按照上述角色规则委派所有工作。'
+    : '使用 `~/.config/ai-work-flow/routing.md`。协调者只负责调度：不得检查、编辑或实施。所有工作区操作都必须委派给专职角色。';
   return `${MARKER_START}\n## AI Work Flow 代理\n\n${content}\n${MARKER_END}\n`;
 }
 
@@ -295,36 +274,24 @@ function write(path, contents, dryRun, changed) {
   }
 }
 
-function init(target) {
-  const paths = configPaths(target);
+function init(dryRun) {
+  const paths = globalPaths();
   const changed = [];
-  if (!existsSync(paths.config)) write(paths.config, `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`, false, changed);
-  const example = {
-    roles: {
-      'full-stack-coder': {
-        opencode: { model: 'provider/model', variant: 'native-reasoning-variant', options: {} }
-      }
-    }
-  };
-  if (!existsSync(paths.localExample)) write(paths.localExample, `${JSON.stringify(example, null, 2)}\n`, false, changed);
-  const ignore = existsSync(paths.ignore) ? readFileSync(paths.ignore, 'utf8') : '';
-  if (!ignore.split('\n').includes('config.local.json')) {
-    write(paths.ignore, `${ignore}${ignore && !ignore.endsWith('\n') ? '\n' : ''}config.local.json\n`, false, changed);
-  }
-  write(paths.routing, readFileSync(resolve(AGENT_ASSETS, 'routing.md'), 'utf8'), false, changed);
+  if (!existsSync(paths.config)) write(paths.config, `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`, dryRun, changed);
+  write(paths.routing, readFileSync(resolve(AGENT_ASSETS, 'routing.md'), 'utf8'), dryRun, changed);
   return changed;
 }
 
-function generate(target, platforms, dryRun) {
-  const { config, paths } = loadConfig(target);
+function generate(platforms, dryRun, config = loadConfig(dryRun).config) {
+  const paths = globalPaths();
   const validation = validateConfig(config);
   if (validation.errors.length) fail(validation.errors.join('\n'));
   const roleBodies = new Map(ROLE_CATALOG.roles.map((role) => [role.id, loadAgentBodyTemplate(role)]));
   const changed = [];
-  const codexConfigPath = resolve(target, '.codex/config.toml');
-  const openCodeConfigPath = resolve(target, 'opencode.json');
-  const agentsPath = resolve(target, 'AGENTS.md');
-  const claudePath = resolve(target, 'CLAUDE.md');
+  const codexConfigPath = resolve(paths.codexDir, 'config.toml');
+  const openCodeConfigPath = resolve(paths.openCodeDir, 'opencode.json');
+  const agentsPath = resolve(paths.codexDir, 'AGENTS.md');
+  const claudePath = resolve(paths.claudeDir, 'CLAUDE.md');
   let codexConfig;
   let openCodeConfig;
   let agentsMarker;
@@ -343,30 +310,31 @@ function generate(target, platforms, dryRun) {
     const current = existsSync(openCodeConfigPath) ? readJson(openCodeConfigPath) : {};
     if (!isPlainObject(current)) fail(`Cannot safely merge ${openCodeConfigPath}: root must be an object.`);
     if (current.agent !== undefined && !isPlainObject(current.agent)) {
-      fail(`Cannot safely merge ${openCodeConfigPath}: agent must be an object. Disable explore manually.`);
+      fail(`Cannot safely merge ${openCodeConfigPath}: agent must be an object.`);
     }
-    openCodeConfig = `${JSON.stringify({ ...current, agent: { ...(current.agent ?? {}), explore: false } }, null, 2)}\n`;
-    agentsMarker ??= updateMarker(existsSync(agentsPath) ? readFileSync(agentsPath, 'utf8') : '', 'codex', agentsPath);
+    const agent = { ...(current.agent ?? {}) };
+    // OpenCode expects agent.explore to be an object when present; older output used false.
+    if (agent.explore === false) delete agent.explore;
+    openCodeConfig = `${JSON.stringify({ ...current, agent, default_agent: 'coordinator' }, null, 2)}\n`;
   }
   if (platforms.includes('codex')) {
     for (const role of ROLE_CATALOG.roles) {
-      write(resolve(target, `.codex/agents/${role.id}.toml`), renderCodex(role, config.roles[role.id].codex, roleBodies.get(role.id)), dryRun, changed);
+      write(resolve(paths.codexDir, `agents/${role.id}.toml`), renderCodex(role, config.roles[role.id].codex, roleBodies.get(role.id)), dryRun, changed);
     }
     write(codexConfigPath, codexConfig, dryRun, changed);
     write(agentsPath, agentsMarker, dryRun, changed);
   }
   if (platforms.includes('claude')) {
     for (const role of ROLE_CATALOG.roles) {
-      write(resolve(target, `.claude/agents/${role.id}.md`), renderClaude(role, config.roles[role.id].claude, roleBodies.get(role.id)), dryRun, changed);
+      write(resolve(paths.claudeDir, `agents/${role.id}.md`), renderClaude(role, config.roles[role.id].claude, roleBodies.get(role.id)), dryRun, changed);
     }
     write(claudePath, claudeMarker, dryRun, changed);
   }
   if (platforms.includes('opencode')) {
     for (const role of ROLE_CATALOG.roles) {
-      write(resolve(target, `.opencode/agents/${role.id}.md`), renderOpenCode(role, config.roles[role.id].opencode, roleBodies.get(role.id)), dryRun, changed);
+      write(resolve(paths.openCodeDir, `agents/${role.id}.md`), renderOpenCode(role, config.roles[role.id].opencode, roleBodies.get(role.id)), dryRun, changed);
     }
     write(openCodeConfigPath, openCodeConfig, dryRun, changed);
-    write(agentsPath, agentsMarker, dryRun, changed);
   }
   return { changed, warnings: validation.warnings, paths };
 }
@@ -375,12 +343,12 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) return console.log(usage());
   if (options.command === 'init' || options.command === 'setup') {
-    const changed = init(options.target);
-    console.log(`Initialized ${configPaths(options.target).dir}`);
+    const changed = init(options.dryRun);
+    console.log(`Initialized ${globalPaths().dir}`);
     for (const path of changed) console.log(`WRITE ${path}`);
     if (options.command === 'init') return;
   }
-  const { config } = loadConfig(options.target);
+  const { config } = loadConfig(options.command === 'setup' && options.dryRun);
   const validation = validateConfig(config);
   if (options.command === 'validate') {
     for (const message of validation.errors) console.error(`ERROR ${message}`);
@@ -390,7 +358,7 @@ function main() {
     return;
   }
   if (validation.errors.length) fail(validation.errors.join('\n'));
-  const result = generate(options.target, options.platforms, options.dryRun);
+  const result = generate(options.platforms, options.dryRun, config);
   for (const message of result.warnings) console.warn(`WARNING ${message}`);
   console.log(`${options.dryRun ? 'Would write' : 'Generated'} ${result.changed.length} file(s).`);
   for (const path of result.changed) console.log(`${options.dryRun ? 'WRITE' : 'WROTE'} ${path}`);
