@@ -4,7 +4,6 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
 
 const root = resolve(import.meta.dirname, '..');
 const skillRoot = resolve(root, 'skills/setup-matt-pocock-skills');
@@ -231,22 +230,14 @@ test('generation preserves unrelated global configuration and agents', () => {
   assert.equal(opencode.default_agent, 'coordinator');
 });
 
-test('OpenCode generates a one-retry guard for configured subagent models', () => {
+test('OpenCode uses subagent frontmatter for configured model constraints', () => {
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
 
   const config = JSON.parse(readFileSync(configPath(paths), 'utf8'));
-  const guard = readFileSync(resolve(paths.config, 'opencode/plugins/ai-work-flow-subagent-model-guard.js'), 'utf8');
-  assert.match(guard, /"planning-writer":\{"model":"baibai\/gpt-5\.6-sol","variant":"high"\}/);
-  assert.match(guard, /"review-spec":\{"model":"baibai\/gpt-5\.6-sol","variant":"high"\}/);
-  assert.match(guard, /['"]tool\.execute\.before['"]/);
-  assert.match(guard, /['"]session\.created['"]/);
-  assert.match(guard, /['"]chat\.message['"]/);
-  assert.match(guard, /client\.session\.abort/);
-  assert.match(guard, /client\.session\.create/);
-  assert.match(guard, /client\.session\.prompt/);
-  assert.match(guard, /retry exhausted/);
+  const guard = resolve(paths.config, 'opencode/plugins/ai-work-flow-subagent-model-guard.js');
+  assert.ok(!existsSync(guard));
 
   for (const role of catalog.roles) {
     const settings = config.roles[role.id].opencode;
@@ -259,112 +250,16 @@ test('OpenCode generates a one-retry guard for configured subagent models', () =
   assert.equal(opencode.plugin, undefined);
 });
 
-test('the generated OpenCode guard retries one mismatched child and then reports exhaustion', async () => {
+test('OpenCode generation removes the obsolete subagent model guard', () => {
   const paths = environment();
-  const result = install(paths);
-  assert.equal(result.status, 0, result.stderr);
-
+  assert.equal(run(paths, 'init').status, 0);
   const pluginPath = resolve(paths.config, 'opencode/plugins/ai-work-flow-subagent-model-guard.js');
-  const { AiWorkFlowSubagentModelGuard } = await import(`${pathToFileURL(pluginPath).href}?test=${Date.now()}`);
-  const calls = { abort: [], create: [], prompt: [] };
-  const client = {
-    session: {
-      abort: async (input) => {
-        calls.abort.push(input);
-        return { data: true };
-      },
-      create: async (input) => {
-        calls.create.push(input);
-        return { data: { id: 'retry-child' } };
-      },
-      prompt: async (input) => {
-        calls.prompt.push(input);
-        return { data: {} };
-      },
-      get: async () => ({ data: { parentID: 'parent' } })
-    }
-  };
-  const hooks = await AiWorkFlowSubagentModelGuard({ client });
-  const args = {
-    description: 'Guard task',
-    prompt: 'Inspect the implementation.',
-    subagent_type: 'file-explorer'
-  };
-  const mismatch = {
-    agent: 'file-explorer',
-    model: { providerID: 'baibai', modelID: 'gpt-5.6-terra' },
-    variant: 'medium'
-  };
+  mkdirSync(resolve(paths.config, 'opencode/plugins'), { recursive: true });
+  writeFileSync(pluginPath, 'obsolete plugin\n');
 
-  await hooks['tool.execute.before']({ tool: 'task', sessionID: 'parent' }, { args });
-  await hooks.event({ event: { type: 'session.created', properties: { info: { id: 'child', parentID: 'parent' } } } });
-  await hooks['chat.message']({ sessionID: 'child', ...mismatch });
-
-  assert.deepEqual(calls.abort, [{ path: { id: 'child' } }]);
-  assert.deepEqual(calls.create, [{ body: { parentID: 'parent', title: 'Guard task (@file-explorer subagent)' } }]);
-  assert.deepEqual(calls.prompt, [{
-    path: { id: 'retry-child' },
-    body: {
-      agent: 'file-explorer',
-      model: { providerID: 'baibai', modelID: 'gpt-5.6-luna' },
-      variant: 'low',
-      parts: [{ type: 'text', text: 'Inspect the implementation.' }]
-    }
-  }]);
-
-  await hooks['chat.message']({ sessionID: 'retry-child', ...mismatch });
-  assert.deepEqual(calls.abort, [{ path: { id: 'child' } }, { path: { id: 'retry-child' } }]);
-  assert.equal(calls.create.length, 1);
-  assert.equal(calls.prompt.length, 2);
-  assert.equal(calls.prompt[1].path.id, 'parent');
-  assert.equal(calls.prompt[1].body.noReply, true);
-  assert.match(calls.prompt[1].body.parts[0].text, /retry exhausted/);
-});
-
-test('the generated OpenCode guard waits for a child model to resolve before checking it', async () => {
-  const paths = environment();
-  const result = install(paths);
+  const result = run(paths, 'generate', '--platform', 'opencode');
   assert.equal(result.status, 0, result.stderr);
-
-  const pluginPath = resolve(paths.config, 'opencode/plugins/ai-work-flow-subagent-model-guard.js');
-  const { AiWorkFlowSubagentModelGuard } = await import(`${pathToFileURL(pluginPath).href}?test=${Date.now()}`);
-  const calls = { abort: [], create: [], prompt: [] };
-  const client = {
-    session: {
-      abort: async (input) => {
-        calls.abort.push(input);
-        return { data: true };
-      },
-      create: async (input) => {
-        calls.create.push(input);
-        return { data: { id: 'retry-child' } };
-      },
-      prompt: async (input) => {
-        calls.prompt.push(input);
-        return { data: {} };
-      },
-      get: async () => ({ data: { parentID: 'parent' } })
-    }
-  };
-  const hooks = await AiWorkFlowSubagentModelGuard({ client });
-  const args = {
-    description: 'Guard task',
-    prompt: 'Inspect the implementation.',
-    subagent_type: 'planning-writer'
-  };
-
-  await hooks['tool.execute.before']({ tool: 'task', sessionID: 'parent' }, { args });
-  await hooks.event({ event: { type: 'session.created', properties: { info: { id: 'child', parentID: 'parent' } } } });
-  await hooks['chat.message']({ sessionID: 'child', agent: 'planning-writer', model: undefined, variant: undefined });
-  assert.deepEqual(calls, { abort: [], create: [], prompt: [] });
-
-  await hooks['chat.message']({
-    sessionID: 'child',
-    agent: 'planning-writer',
-    model: { providerID: 'baibai', modelID: 'gpt-5.6-sol' },
-    variant: 'high'
-  });
-  assert.deepEqual(calls, { abort: [], create: [], prompt: [] });
+  assert.ok(!existsSync(pluginPath));
 });
 
 test('generate applies edited global configuration only to requested platforms', () => {
