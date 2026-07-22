@@ -2,49 +2,139 @@
   "version": 1,
   "roles": {
     "coordinator": {
-      "codex": { "model": "gpt-5.6", "reasoning": "medium" },
-      "claude": { "model": "sonnet", "effort": "medium" },
-      "opencode": { "model": null, "variant": null, "options": {} }
+      "codex": {
+        "model": "gpt-5.6-terra",
+        "reasoning": "medium"
+      },
+      "claude": {
+        "model": "sonnet",
+        "effort": "medium"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-terra",
+        "variant": "medium",
+        "options": {}
+      }
     },
     "file-explorer": {
-      "codex": { "model": "gpt-5.6-terra", "reasoning": "low" },
-      "claude": { "model": "haiku", "effort": "low" },
-      "opencode": { "model": null, "variant": null, "options": {} }
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "reasoning": "low"
+      },
+      "claude": {
+        "model": "haiku",
+        "effort": "low"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-luna",
+        "variant": "low",
+        "options": {}
+      }
     },
     "researcher": {
-      "codex": { "model": "gpt-5.6", "reasoning": "medium" },
-      "claude": { "model": "sonnet", "effort": "medium" },
-      "opencode": { "model": null, "variant": null, "options": {} }
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "reasoning": "medium"
+      },
+      "claude": {
+        "model": "sonnet",
+        "effort": "medium"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-luna",
+        "variant": "medium",
+        "options": {}
+      }
     },
     "document-maintainer": {
-      "codex": { "model": "gpt-5.6-terra", "reasoning": "medium" },
-      "claude": { "model": "haiku", "effort": "low" },
-      "opencode": { "model": null, "variant": null, "options": {} }
+      "codex": {
+        "model": "gpt-5.6-terra",
+        "reasoning": "medium"
+      },
+      "claude": {
+        "model": "haiku",
+        "effort": "low"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-terra",
+        "variant": "medium",
+        "options": {}
+      }
     },
     "planning-writer": {
-      "codex": { "model": "gpt-5.6", "reasoning": "high" },
-      "claude": { "model": "opus", "effort": "high" },
-      "opencode": { "model": null, "variant": null, "options": {} }
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "high"
+      },
+      "claude": {
+        "model": "opus",
+        "effort": "high"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-sol",
+        "variant": "high",
+        "options": {}
+      }
     },
     "full-stack-coder": {
-      "codex": { "model": "gpt-5.6", "reasoning": "high" },
-      "claude": { "model": "sonnet", "effort": "high" },
-      "opencode": { "model": null, "variant": null, "options": {} }
+      "codex": {
+        "model": "gpt-5.6-terra",
+        "reasoning": "high"
+      },
+      "claude": {
+        "model": "sonnet",
+        "effort": "high"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-terra",
+        "variant": "high",
+        "options": {}
+      }
     },
     "code-reviewer": {
-      "codex": { "model": "gpt-5.6", "reasoning": "high" },
-      "claude": { "model": "sonnet", "effort": "high" },
-      "opencode": { "model": null, "variant": null, "options": {} }
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "high"
+      },
+      "claude": {
+        "model": "sonnet",
+        "effort": "high"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-sol",
+        "variant": "high",
+        "options": {}
+      }
     },
     "review-standards": {
-      "codex": { "model": "gpt-5.6", "reasoning": "high" },
-      "claude": { "model": "sonnet", "effort": "high" },
-      "opencode": { "model": null, "variant": null, "options": {} }
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "high"
+      },
+      "claude": {
+        "model": "sonnet",
+        "effort": "high"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-sol",
+        "variant": "high",
+        "options": {}
+      }
     },
     "review-spec": {
-      "codex": { "model": "gpt-5.6", "reasoning": "high" },
-      "claude": { "model": "sonnet", "effort": "high" },
-      "opencode": { "model": null, "variant": null, "options": {} }
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "high"
+      },
+      "claude": {
+        "model": "sonnet",
+        "effort": "high"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-sol",
+        "variant": "high",
+        "options": {}
+      }
     }
   }
 }
