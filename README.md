@@ -1,44 +1,39 @@
 # AI Work Flow
 
-为 Codex、Claude Code 和 OpenCode 生成同一套专职代理工作流的技能库。Coordinator 是唯一面向用户的入口，只负责路由、等待和汇总；它不读写工作区、不运行 Shell，也不实施变更。
+为 Codex、Claude Code 和 OpenCode 生成同一套专职代理工作流的技能库。协调者是唯一面向用户的入口，只负责路由、等待和汇总；它不读写工作区、不运行 Shell，也不实施变更。
 
 ## 角色
 
 | 角色 | 职责 | 默认档位 |
 | --- | --- | --- |
-| Coordinator | 调度、等待和汇总 | 平衡 |
-| File Explorer | 全库枚举、搜索和代码地图 | 快速 |
-| Researcher | 外部官方资料与依赖研究 | 平衡 |
-| Document Maintainer | README、`docs` 等常规文档 | 快速 |
-| Planning Writer | 计划、任务、ADR、交接和 tracker 文案 | 高级 |
-| Full-Stack Coder | 源码、测试、必要配置、调试和提交 | 高级 |
-| Code Reviewer | 在稳定差异上汇总双轴评审 | 高级 |
-| Review Standards / Spec | Reviewer 并行启动的内部评审器 | 高级 |
+| 协调者 | 调度、等待和汇总 | 平衡 |
+| 文件探索员 | 全库枚举、搜索和代码地图 | 快速 |
+| 研究员 | 外部官方资料与依赖研究 | 平衡 |
+| 文档维护者 | README、`docs` 等常规文档 | 快速 |
+| 计划撰写者 | 计划、任务、ADR、交接和 tracker 文案 | 高级 |
+| 全栈开发者 | 源码、测试、必要配置、调试和提交 | 高级 |
+| 代码审查者 | 在稳定差异上汇总双轴评审 | 高级 |
+| 标准审查者 / 规范审查者 | 代码审查者并行启动的内部审查器 | 高级 |
 
-File Explorer 独占全库发现，Researcher 不访问本地工作区。写入者串行执行，完成时报告 `git diff --name-only`。Code Reviewer 仅能并行启动 Standards 和 Spec 两条评审线；修复后由 Coordinator 重新派发评审。
+文件探索员独占全库发现，研究员不访问本地工作区。写入者串行执行，完成时报告 `git diff --name-only`。代码审查者仅能并行启动标准审查和规范审查两条评审线；修复后由协调者重新派发评审。
 
-## 安装与生成
+## 通过 Skill 初始化
 
-在本仓库根目录运行：
+安装 `skills/setup-ai-work-flow` 后，在需要初始化的项目中调用：
 
-```sh
-node scripts/agent-workflow.mjs init --target /path/to/project
-node scripts/agent-workflow.mjs validate --target /path/to/project
-node scripts/agent-workflow.mjs generate --target /path/to/project
+```text
+$setup-ai-work-flow 初始化当前项目的 Agent/Subagent
 ```
 
-`init` 创建目标项目的 `.ai-work-flow/agents/`：可提交的 `config.json`、忽略的 `config.local.json` 示例、以及统一的 `routing.md`。将 `config.local.example.json` 复制为 `config.local.json` 后，可为个人环境覆盖每个角色的模型或 OpenCode 原生选项。
+Skill 自带生成脚本、平台 formatter 和统一的角色主体模板，会以当前 Git 仓库根目录为目标，直接创建 `.ai-work-flow/agents/` 并生成各平台代理文件，不依赖本仓库路径。每个角色的主体只维护在 `assets/agents/bodies/` 中，生成时分别追加 Codex、Claude Code 和 OpenCode formatter。默认生成三套配置；也可在调用时明确只生成指定平台。
 
-```sh
-node scripts/agent-workflow.mjs generate --target /path/to/project --platform codex,claude
-node scripts/agent-workflow.mjs generate --target /path/to/project --dry-run
-```
+`.ai-work-flow/agents/` 包含可提交的 `config.json`、忽略的 `config.local.json` 示例和统一的 `routing.md`。将 `config.local.example.json` 复制为 `config.local.json` 后，可为个人环境覆盖每个角色的模型或 OpenCode 原生选项。
 
-生成器只维护自己的代理文件和 `AGENTS.md` / `CLAUDE.md` 标记块。它保留这些文件的无关内容，合并 `.codex/config.toml` 的 `agents.max_depth`（至少为 `2`），并在 `opencode.json` 中禁用原生 `explore`。已有 JSON 无法解析，或无法安全更新的 TOML/标记块，会明确失败并提示手工合并位置。
+Skill 只维护自己的代理文件和 `AGENTS.md` / `CLAUDE.md` 标记块。它保留这些文件的无关内容，合并 `.codex/config.toml` 的 `agents.max_depth`（至少为 `2`），并在 `opencode.json` 中禁用原生 `explore`。已有 JSON 无法解析，或无法安全更新的 TOML/标记块，会明确失败并提示手工合并位置。
 
 ## 模型配置
 
-配置按 `agents/default-config.json` -> 目标项目 `.ai-work-flow/agents/config.json` -> 未提交的 `config.local.json` 深度合并，后者优先。
+配置按 Skill 内置默认值 -> 目标项目 `.ai-work-flow/agents/config.json` -> 未提交的 `config.local.json` 深度合并，后者优先。
 
 - Codex：File Explorer 和 Document Maintainer 默认 `gpt-5.6-terra`；研究、计划、实现和评审默认 `gpt-5.6`。
 - Claude Code：轻量角色默认 `haiku`，研究、实现和评审默认 `sonnet`，Planning Writer 默认 `opus`。
