@@ -275,6 +275,40 @@ test('invalid configuration and dry runs never write global files', () => {
   assert.ok(!existsSync(resolve(paths.home, '.codex')));
 });
 
+test('the installed asset catalog rejects inconsistent templates before generation writes', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const generated = agentPath(paths, 'codex', 'coordinator', 'toml');
+  writeFileSync(generated, 'preserved agent\n');
+  writeFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/coordinator.md'), '');
+
+  const validation = runInstalledWorkflow(paths, 'validate');
+  assert.equal(validation.status, 1);
+  assert.match(validation.stderr, /Agent asset catalog is invalid:[\s\S]*Body template is empty: coordinator\.md/);
+
+  const generation = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
+  assert.equal(generation.status, 1);
+  assert.match(generation.stderr, /Body template is empty: coordinator\.md/);
+  assert.equal(readFileSync(generated, 'utf8'), 'preserved agent\n');
+});
+
+test('each platform adapter validates its own preservation work before writing its files', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  mkdirSync(resolve(paths.home, '.claude'), { recursive: true });
+  writeFileSync(
+    resolve(paths.home, '.claude/CLAUDE.md'),
+    '<!-- ai-work-flow:agents:begin -->\n<!-- ai-work-flow:agents:begin -->\n'
+  );
+
+  const result = run(paths, 'generate');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Cannot safely update workflow marker/);
+  assert.ok(existsSync(agentPath(paths, 'codex', 'coordinator', 'toml')));
+  assert.ok(!existsSync(agentPath(paths, 'claude', 'coordinator', 'md')));
+  assert.ok(!existsSync(agentPath(paths, 'opencode', 'coordinator', 'md')));
+});
+
 test('repeated installation is idempotent and the global workflow is independent from setup', () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
