@@ -1,6 +1,0 @@
-interface:
-  display_name: "初始化 AI Work Flow"
-  short_description: "在当前项目生成多平台专职代理，并配置跟踪器与领域文档"
-  default_prompt: "使用 $setup-ai-work-flow 初始化当前项目的 Agent/Subagent 与工程工作流配置。"
-policy:
-  allow_implicit_invocation: false

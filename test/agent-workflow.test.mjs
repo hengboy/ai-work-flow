@@ -6,10 +6,10 @@ import { resolve } from 'node:path';
 import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '..');
-const skillRoot = resolve(root, 'skills/setup-ai-work-flow');
-const workflow = resolve(skillRoot, 'scripts/agent-workflow.mjs');
+const skillRoot = resolve(root, 'skills/setup-matt-pocock-skills');
 const installer = resolve(root, 'scripts/install.mjs');
-const catalog = JSON.parse(readFileSync(resolve(skillRoot, 'assets/agents/roles.json'), 'utf8'));
+const agentAssets = resolve(root, 'scripts/agent-assets');
+const catalog = JSON.parse(readFileSync(resolve(agentAssets, 'roles.json'), 'utf8'));
 
 function fixture() {
   return mkdtempSync(resolve(tmpdir(), 'agent-workflow-'));
@@ -31,7 +31,7 @@ function env(paths) {
 
 function run(paths, ...args) {
   mkdirSync(paths.project, { recursive: true });
-  return spawnSync(process.execPath, [workflow, ...args], {
+  return spawnSync(process.execPath, [installer, ...args], {
     cwd: paths.project,
     encoding: 'utf8',
     env: env(paths)
@@ -41,6 +41,15 @@ function run(paths, ...args) {
 function install(paths) {
   return spawnSync(process.execPath, [installer], {
     cwd: root,
+    encoding: 'utf8',
+    env: env(paths)
+  });
+}
+
+function runInstalledWorkflow(paths, ...args) {
+  mkdirSync(paths.project, { recursive: true });
+  return spawnSync(process.execPath, [resolve(paths.config, 'ai-work-flow/agent-workflow.mjs'), ...args], {
+    cwd: paths.project,
     encoding: 'utf8',
     env: env(paths)
   });
@@ -61,7 +70,7 @@ function agentPath(paths, platform, name, extension) {
 
 test('every role has one shared body template without platform formatting', () => {
   const expected = catalog.roles.map((role) => `${role.id}.md`).sort();
-  const bodies = resolve(skillRoot, 'assets/agents/bodies');
+  const bodies = resolve(agentAssets, 'bodies');
   assert.deepEqual(readdirSync(bodies).sort(), expected);
   for (const name of expected) {
     const body = readFileSync(resolve(bodies, name), 'utf8');
@@ -95,6 +104,7 @@ test('root installer installs every skill globally and generates every platform 
   }
   assert.ok(existsSync(configPath(paths)));
   assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/routing.md')));
+  assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/agent-workflow.mjs')));
   assert.equal(readdirSync(resolve(paths.home, '.codex/agents')).filter((name) => name.endsWith('.toml')).length, 9);
   assert.equal(readdirSync(resolve(paths.home, '.claude/agents')).filter((name) => name.endsWith('.md')).length, 9);
   assert.equal(readdirSync(resolve(paths.config, 'opencode/agents')).filter((name) => name.endsWith('.md')).length, 9);
@@ -115,7 +125,8 @@ test('generation preserves unrelated global configuration and agents', () => {
   mkdirSync(resolve(paths.config, 'opencode'), { recursive: true });
   writeFileSync(resolve(paths.config, 'opencode/opencode.json'), '{"theme":"user","agent":{"explore":false,"custom":{}}}\n');
 
-  const result = run(paths, 'setup');
+  assert.equal(run(paths, 'init').status, 0);
+  const result = run(paths, 'generate');
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(resolve(paths.home, '.codex/agents/custom.toml'), 'utf8'), 'name = "custom"\n');
   assert.equal(readFileSync(resolve(paths.home, '.claude/agents/custom.md'), 'utf8'), 'custom\n');
@@ -140,7 +151,7 @@ test('generate applies edited global configuration only to requested platforms',
   config.roles['full-stack-coder'].codex = { model: 'local-codex', reasoning: 'low' };
   writeFileSync(configPath(paths), `${JSON.stringify(config, null, 2)}\n`);
 
-  const result = run(paths, 'generate', '--platform', 'codex');
+  const result = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
   assert.equal(result.status, 0, result.stderr);
   assert.match(readFileSync(agentPath(paths, 'codex', 'full-stack-coder', 'toml'), 'utf8'), /model = "local-codex"/);
   assert.match(readFileSync(agentPath(paths, 'codex', 'full-stack-coder', 'toml'), 'utf8'), /model_reasoning_effort = "low"/);
@@ -152,8 +163,8 @@ test('invalid configuration and dry runs never write global files', () => {
   const dryInit = run(paths, 'init', '--dry-run');
   assert.equal(dryInit.status, 0, dryInit.stderr);
   assert.ok(!existsSync(configPath(paths)));
-  const drySetup = run(paths, 'setup', '--dry-run');
-  assert.equal(drySetup.status, 0, drySetup.stderr);
+  const dryInstall = run(paths, 'install', '--dry-run');
+  assert.equal(dryInstall.status, 0, dryInstall.stderr);
   assert.ok(!existsSync(resolve(paths.home, '.codex')));
   assert.ok(!existsSync(resolve(paths.config, 'opencode')));
 
@@ -177,7 +188,7 @@ test('invalid configuration and dry runs never write global files', () => {
   assert.ok(!existsSync(resolve(paths.home, '.codex')));
 });
 
-test('repeated installation is idempotent and installed setup does not write the project', () => {
+test('repeated installation is idempotent and the global workflow is independent from setup', () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
   const repeated = install(paths);
@@ -185,14 +196,21 @@ test('repeated installation is idempotent and installed setup does not write the
   assert.match(repeated.stdout, /Generated 0 file\(s\)\./);
 
   mkdirSync(paths.project, { recursive: true });
-  const installedWorkflow = resolve(paths.home, '.codex/skills/setup-ai-work-flow/scripts/agent-workflow.mjs');
-  const result = spawnSync(process.execPath, [installedWorkflow, 'setup'], {
-    cwd: paths.project,
-    encoding: 'utf8',
-    env: env(paths)
-  });
+  assert.ok(!existsSync(resolve(paths.home, '.codex/skills/setup-matt-pocock-skills/scripts')));
+  assert.ok(!existsSync(resolve(paths.home, '.codex/skills/setup-matt-pocock-skills/assets')));
+  const result = runInstalledWorkflow(paths, 'validate');
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(readdirSync(paths.project), []);
+});
+
+test('restored setup skill only describes project configuration', () => {
+  const source = readFileSync(resolve(skillRoot, 'SKILL.md'), 'utf8');
+  assert.match(source, /^name: setup-matt-pocock-skills$/m);
+  assert.doesNotMatch(source, /scripts\/install\.mjs|agent-workflow\.mjs|Agent\/Subagent/);
+  const askMatt = readFileSync(resolve(root, 'skills/ask-matt/SKILL.md'), 'utf8');
+  assert.match(askMatt, /^name: ask-matt$/m);
+  assert.ok(!existsSync(resolve(root, 'skills/ask-ai-work-flow')));
+  assert.ok(!existsSync(resolve(root, 'skills/setup-ai-work-flow')));
 });
 
 test('all shipped skills route through the global routing file', () => {

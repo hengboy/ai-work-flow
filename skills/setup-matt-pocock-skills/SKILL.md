@@ -1,36 +1,21 @@
 ---
-name: setup-ai-work-flow
-description: 在当前项目中直接初始化 AI Work Flow 的 Agent/Subagent，并配置问题跟踪器、分类标签词汇表和领域文档布局。用于首次安装工作流、重新生成 Codex/Claude Code/OpenCode 代理配置，或更换项目跟踪器与领域文档布局。
+name: setup-matt-pocock-skills
+description: 配置当前项目的问题跟踪器、分类标签词汇表和领域文档布局。用于首次设置工程技能，或更换项目跟踪器与领域文档布局。
 ---
 
 ## 专职代理路由
 
 本技能由 **协调者** 路由。协调者只与用户交互、调度、等待和汇总，不直接访问工作区、运行 Shell、编辑文件或实施。将全库枚举、`glob`、`grep` 和代码地图交给 **文件探索员**；外部一手资料交给 **研究员**；普通文档交给 **文档维护者**；计划、任务、ADR、交接和跟踪器文本交给 **计划撰写者**；源码、测试、配置、调试和提交交给 **全栈开发者**；稳定差异的双轴评审交给 **代码审查者**。除文件探索员外，所有本地角色只读取其交接的路径及直接依赖；写入角色串行执行。生成工作流后，以 `~/.config/ai-work-flow/routing.md` 为最终规则。下文的每个命令和第二人称指代均由相应受委派角色执行，绝不由协调者执行。
 
-# 设置 AI 工作流技能
+# 设置 Matt Pocock 工程技能
 
-直接初始化工程技能所依赖的每个仓库：
+配置工程技能在当前仓库中依赖的项目约定：
 
-- **专职代理** — 为 Codex、Claude Code 和 OpenCode 生成 Agent/Subagent 配置
 - **问题跟踪器** — 问题存放的位置（默认为 GitHub；本地 Markdown 也开箱即用）
 - **分类标签** — 用于五个标准分类角色的字符串
 - **领域文档** — `CONTEXT.md` 和 ADR 的存放位置，以及阅读这些文档的消费规则
 
-代理通过仓库根目录的安装命令全局安装。脚本读取 `assets/agents/bodies/` 中统一维护的角色主体模板，再追加各平台 formatter；问题跟踪器和领域文档配置仍由提示驱动。项目设置只处理项目文档和跟踪器配置。
-
 ## 流程
-
-### 0. 确认全局代理已安装
-
-首次安装必须在 AI Work Flow 仓库根目录执行：
-
-```sh
-node scripts/install.mjs
-```
-
-该命令将所有 Skills 安装到 Codex、Claude Code 和 OpenCode 的全局目录，并在 `~/.config/ai-work-flow/config.json` 创建唯一的模型配置与 `routing.md`，随后生成三套全局 agents。使用 `XDG_CONFIG_HOME` 时，配置根改为 `$XDG_CONFIG_HOME/ai-work-flow`。模型或推理强度变更后，调用 `$regenerate-ai-work-flow`；新会话才会读取更新后的 agents。
-
-本技能不在目标项目创建 `.ai-work-flow`、`.codex`、`.claude`、`.opencode`、`AGENTS.md` 或 `CLAUDE.md`。若用户只要求初始化 Agent/Subagent，确认已完成全局安装后直接进入“完成”。若用户要求完整设置 AI Work Flow，则继续以下流程。
 
 ### 1. 探索工程配置
 

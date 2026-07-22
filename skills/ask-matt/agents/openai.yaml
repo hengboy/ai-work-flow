@@ -1,5 +1,5 @@
 interface:
-  display_name: "AI 工作流"
+  display_name: "Ask Matt"
   short_description: "为请求选择合适的工作流"
 policy:
   allow_implicit_invocation: false

@@ -1,6 +1,6 @@
 ---
-name: ask-ai-work-flow
-description: 通过 AI 工作流技能路由请求。
+name: ask-matt
+description: 为当前请求选择合适的工程技能或流程。
 disable-model-invocation: true
 ---
 
@@ -21,5 +21,4 @@ disable-model-invocation: true
 
 对于严重故障，请使用 `/diagnosing-bugs`；对于新提交的跟踪器任务，请使用 `/triage`；对于单次会话难以规划的工作，请使用 `/wayfinder`；对于需要可运行证据的问题，请使用 `/prototype`；对于基于资料的调查，请使用 `/research`；当上下文需要转移到另一个会话时，请使用 `/handoff`。
 
-`/setup-ai-work-flow` 配置由面向跟踪器的技能使用的跟踪器和领域文档。`/write-plan` 和 `/to-tasks` 不需要该配置。
-
+`/setup-matt-pocock-skills` 配置由面向跟踪器的技能使用的跟踪器和领域文档。`/write-plan` 和 `/to-tasks` 不需要该配置。
