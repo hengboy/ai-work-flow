@@ -1,21 +1,21 @@
 # AI Work Flow
 
-为 Codex、Claude Code 和 OpenCode 生成同一套专职代理工作流的技能库。协调者是唯一面向用户的入口，只负责路由、等待和汇总；它不读写工作区、不运行 Shell，也不实施变更。
+为 Codex、Claude Code 和 OpenCode 生成同一套专职代理工作流的技能库。**Coordinator** 是唯一面向用户的入口，只负责路由、等待和汇总；它不读写工作区、不运行 Shell，也不实施变更。
 
 ## 角色
 
 | 角色 | 职责 | 默认档位 |
 | --- | --- | --- |
-| 协调者 | 调度、等待和汇总 | 平衡 |
-| 文件探索员 | 全库枚举、搜索和代码地图 | 快速 |
-| 研究员 | 外部官方资料与依赖研究 | 平衡 |
-| 文档维护者 | README、`docs` 等常规文档 | 快速 |
-| 计划撰写者 | 计划、任务、ADR、交接和 tracker 文案 | 高级 |
-| 全栈开发者 | 源码、测试、必要配置、调试和提交 | 高级 |
-| 代码审查者 | 在稳定差异上汇总双轴评审 | 高级 |
-| 标准审查者 / 规范审查者 | 代码审查者并行启动的内部审查器 | 高级 |
+| **Coordinator** | 调度、等待和汇总 | 平衡 |
+| **File Explorer** | 全库枚举、搜索和代码地图 | 快速 |
+| **Researcher** | 外部官方资料与依赖研究 | 平衡 |
+| **Document Maintainer** | README、`docs` 等常规文档 | 快速 |
+| **Planning Writer** | 计划、任务、ADR、交接和 tracker 文案 | 高级 |
+| **Full Stack Coder** | 源码、测试、必要配置、调试和提交 | 高级 |
+| **Code Reviewer** | 在稳定差异上汇总双轴评审 | 高级 |
+| **Review Standards** / **Review Spec** | **Code Reviewer** 并行启动的内部审查器 | 高级 |
 
-文件探索员独占全库发现，研究员不访问本地工作区。写入者串行执行，完成时报告 `git diff --name-only`。代码审查者仅能并行启动标准审查和规范审查两条评审线；修复后由协调者重新派发评审。
+**File Explorer** 独占全库发现，**Researcher** 不访问本地工作区。写入者串行执行，完成时报告 `git diff --name-only`。**Code Reviewer** 仅能并行启动 **Review Standards** 和 **Review Spec** 两条评审线；修复后由 **Coordinator** 重新派发评审。
 
 ## 全局安装
 
@@ -29,7 +29,7 @@ node scripts/install.mjs
 
 安装保留无关的全局 Skills、agents 和工具配置。它会把 Codex 的 `agents.max_depth` 提升到至少 `2`，更新 Codex/Claude 全局指令文件中的受管理路由块，并在 OpenCode 配置中设定 `default_agent: "coordinator"`；旧的 `agent.explore: false` 会被移除。
 
-在任意项目中调用 `$setup-ai-work-flow`，只会继续完成项目的 issue tracker 和领域文档设置，不会创建任何项目级 agent 或工作流配置文件。
+在任意项目中调用 `$setup-matt-pocock-skills`，只会完成项目的 issue tracker 和领域文档设置。全局 Skills、配置和受管理 agents 的安装与持久化由 `scripts/install.mjs` 负责。
 
 ## 模型配置
 

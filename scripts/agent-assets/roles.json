@@ -3,7 +3,7 @@
   "roles": [
     {
       "id": "coordinator",
-      "name": "协调者",
+      "name": "Coordinator",
       "description": "负责路由工作、等待受委派结果并汇总结论。",
       "kind": "primary",
       "workspace": "none",
@@ -12,7 +12,7 @@
     },
     {
       "id": "file-explorer",
-      "name": "文件探索员",
+      "name": "File Explorer",
       "description": "负责全仓库枚举、搜索和代码地图。",
       "kind": "subagent",
       "workspace": "read",
@@ -21,7 +21,7 @@
     },
     {
       "id": "researcher",
-      "name": "研究员",
+      "name": "Researcher",
       "description": "负责研究外部官方资料并报告带引用的发现。",
       "kind": "subagent",
       "workspace": "none",
@@ -30,7 +30,7 @@
     },
     {
       "id": "document-maintainer",
-      "name": "文档维护者",
+      "name": "Document Maintainer",
       "description": "负责维护项目普通文档。",
       "kind": "subagent",
       "workspace": "write-docs",
@@ -39,7 +39,7 @@
     },
     {
       "id": "planning-writer",
-      "name": "计划撰写者",
+      "name": "Planning Writer",
       "description": "负责编写计划、ADR、任务拆分、交接和跟踪器文本。",
       "kind": "subagent",
       "workspace": "write-plans",
@@ -48,7 +48,7 @@
     },
     {
       "id": "full-stack-coder",
-      "name": "全栈开发者",
+      "name": "Full Stack Coder",
       "description": "负责实现源码、测试、必要配置和修复。",
       "kind": "subagent",
       "workspace": "write-code",
@@ -57,7 +57,7 @@
     },
     {
       "id": "code-reviewer",
-      "name": "代码审查者",
+      "name": "Code Reviewer",
       "description": "负责在差异稳定后执行独立的标准审查和规范审查。",
       "kind": "subagent",
       "workspace": "read",
@@ -66,7 +66,7 @@
     },
     {
       "id": "review-standards",
-      "name": "标准审查者",
+      "name": "Review Standards",
       "description": "负责依据仓库标准审查稳定差异。",
       "kind": "reviewer",
       "workspace": "read",
@@ -75,7 +75,7 @@
     },
     {
       "id": "review-spec",
-      "name": "规范审查者",
+      "name": "Review Spec",
       "description": "负责依据已批准的规范审查稳定差异。",
       "kind": "reviewer",
       "workspace": "read",

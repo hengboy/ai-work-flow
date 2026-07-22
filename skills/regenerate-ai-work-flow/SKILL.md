@@ -5,7 +5,7 @@ description: 验证全局 AI Work Flow 配置并重新生成 Codex、Claude Code
 
 ## 专职代理路由
 
-本技能由 **协调者** 路由。协调者只与用户交互、调度、等待和汇总，不直接访问工作区、运行 Shell、编辑文件或实施。将配置检查和命令执行交给 **全栈开发者**。生成工作流后，以 `~/.config/ai-work-flow/routing.md` 为最终规则。下文的每个命令和第二人称指代均由受委派的全栈开发者执行，绝不由协调者执行。
+本技能由 **Coordinator** 路由。**Coordinator** 只与用户交互、调度、等待和汇总，不直接访问工作区、运行 Shell、编辑文件或实施。将配置检查和命令执行交给 **Full Stack Coder**。生成工作流后，以 `~/.config/ai-work-flow/routing.md` 为最终规则。下文的每个命令和第二人称指代均由受委派的 **Full Stack Coder** 执行，绝不由 **Coordinator** 执行。
 
 # 重新生成 AI Work Flow
 
