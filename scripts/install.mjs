@@ -165,6 +165,10 @@ function tomlString(value) {
   return JSON.stringify(String(value));
 }
 
+function agentDescription(role) {
+  return `**${role.name}**: ${role.description}`;
+}
+
 function codexSandbox(role) {
   if (role.workspace === 'none') return 'read-only';
   if (role.workspace === 'read') return 'read-only';
@@ -174,7 +178,7 @@ function codexSandbox(role) {
 function renderCodex(role, settings, body) {
   return [
     `name = ${tomlString(role.id)}`,
-    `description = ${tomlString(role.description)}`,
+    `description = ${tomlString(agentDescription(role))}`,
     `model = ${tomlString(settings.model)}`,
     `model_reasoning_effort = ${tomlString(settings.reasoning)}`,
     `sandbox_mode = ${tomlString(codexSandbox(role))}`,
@@ -192,7 +196,7 @@ function renderClaude(role, settings, body) {
   return [
     '---',
     `name: ${role.id}`,
-    `description: ${JSON.stringify(role.description)}`,
+    `description: ${JSON.stringify(agentDescription(role))}`,
     `model: ${settings.model}`,
     `effort: ${settings.effort}`,
     `tools: ${role.tools.join(', ') || 'Task'}`,
@@ -213,7 +217,7 @@ function openCodePermission(role) {
 function renderOpenCode(role, settings, body) {
   const frontmatter = [
     '---',
-    `description: ${JSON.stringify(role.description)}`,
+    `description: ${JSON.stringify(agentDescription(role))}`,
     `mode: ${role.kind === 'primary' ? 'primary' : 'subagent'}`,
     `permission: ${JSON.stringify(openCodePermission(role))}`
   ];
@@ -271,8 +275,8 @@ function updateCodexConfig(source, path) {
 
 function markerBlock(kind) {
   const content = kind === 'claude'
-    ? '@~/.config/ai-work-flow/routing.md\n\n使用协调者作为唯一面向用户的角色，并按照上述角色规则委派所有工作。'
-    : '使用 `~/.config/ai-work-flow/routing.md`。协调者只负责调度：不得检查、编辑或实施。所有工作区操作都必须委派给专职角色。';
+    ? '@~/.config/ai-work-flow/routing.md\n\n使用 **Coordinator** 作为唯一面向用户的角色，并按照上述角色规则委派所有工作。'
+    : '使用 `~/.config/ai-work-flow/routing.md`。**Coordinator** 只负责调度：不得检查、编辑或实施。所有工作区操作都必须委派给专职角色。';
   return `${MARKER_START}\n## AI Work Flow 代理\n\n${content}\n${MARKER_END}\n`;
 }
 
