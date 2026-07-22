@@ -17,4 +17,3 @@ disable-model-invocation: true
 完成后，使用 /code-review 对工作进行评审。
 
 将您的工作提交到当前分支。
-

@@ -1,6 +1,6 @@
 # MISSION.md 格式
 
-`MISSION.md` 位于工作区的根目录。它记录了用户学习该主题的_原因_。每一个教学决策——接下来教什么、展示哪些资源、设计哪些练习——都应追溯到本文档。
+`MISSION.md` 位于工作区的根目录。它记录了用户学习该主题的*原因*。每一个教学决策——接下来教什么、展示哪些资源、设计哪些练习——都应追溯到本文档。
 
 ## 模板
 
@@ -8,17 +8,21 @@
 # Mission: {Topic}
 
 ## Why
+
 {1-3 sentences. The concrete real-world goal the user is chasing. What changes in their life or work when they have this skill? Avoid abstract framings like "to understand X" — push for the underlying outcome.}
 
 ## Success looks like
+
 - {A specific, observable thing the user will be able to do}
 - {Another specific thing}
 - {…}
 
 ## Constraints
+
 - {Time, budget, prior commitments, learning preferences, anything that bounds the approach}
 
 ## Out of scope
+
 - {Adjacent topics the user explicitly does not want to chase right now — protects the zone of proximal development}
 ```
 
@@ -29,5 +33,3 @@
 - **对模糊性提出质疑。** 如果用户无法说明原因，在动笔之前先与他们沟通。一份糟糕的使命声明比没有使命更糟。
 - **当现实发生变化时及时修订。** 使命会随时间调整。当用户的目标发生改变时，更新此文件——不要让过时的使命继续指导后续的学习。
 - **保持简短。** 如果 `MISSION.md` 的内容超过一屏，它就不再是指南针，而变成了计划书。
-
-

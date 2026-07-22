@@ -3,5 +3,3 @@ interface:
   short_description: "对传入的跟踪器任务进行分类和准备"
 policy:
   allow_implicit_invocation: false
-
-

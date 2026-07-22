@@ -59,13 +59,13 @@
 
 ```tsx
 // pseudo-code — adapt to the project's framework
-const variant = searchParams.get('variant') ?? 'A';
+const variant = searchParams.get("variant") ?? "A";
 return (
   <>
-    {variant === 'A' && <VariantA {...data} />}
-    {variant === 'B' && <VariantB {...data} />}
-    {variant === 'C' && <VariantC {...data} />}
-    <PrototypeSwitcher variants={['A','B','C']} current={variant} />
+    {variant === "A" && <VariantA {...data} />}
+    {variant === "B" && <VariantB {...data} />}
+    {variant === "C" && <VariantC {...data} />}
+    <PrototypeSwitcher variants={["A", "B", "C"]} current={variant} />
   </>
 );
 ```
@@ -110,5 +110,3 @@ return (
 - **变体之间共享过多代码。** 共享 `<Header>` 没问题；但共享 `<Layout>` 则违背了原型设计的初衷。每个变体都应能自由地舍弃现有布局。
 - **将变体与真实的数据变更关联起来。** 只读的原型是可以的。如果某个变体需要触发变更，请指向一个模拟接口——问题在于“它应该是什么样子”，而非“后端是否正常工作”。
 - **直接将原型推送到生产环境。** 变体代码是在原型开发约束下编写的（无测试、极少错误处理）。在正式合并时，请务必重新编写。
-
-

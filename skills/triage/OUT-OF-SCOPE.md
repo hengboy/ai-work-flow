@@ -20,7 +20,7 @@
 
 文件应以轻松、易读的风格撰写——更像是简短的设计文档，而不是数据库条目。使用段落、代码示例和实例来使推理清晰明了，便于初次接触的人理解。
 
-```markdown
+````markdown
 # Dark Mode
 
 This project does not support dark mode or user-facing theming.
@@ -45,12 +45,14 @@ interface ThemeConfig {
   fonts: FontStack;
 }
 ```
+````
 
 ## Prior requests
 
 - #42 — "Add dark mode support"
 - #87 — "Night theme for accessibility"
 - #134 — "Dark theme option"
+
 ```
 
 ### 文件命名
@@ -105,3 +107,4 @@ interface ThemeConfig {
 - 触发重新考虑的新问题将按正常流程继续分类
 
 
+```

@@ -43,7 +43,7 @@ function processPayment(order) {
 const api = {
   getUser: (id) => fetch(`/users/${id}`),
   getOrders: (userId) => fetch(`/users/${userId}/orders`),
-  createOrder: (data) => fetch('/orders', { method: 'POST', body: data }),
+  createOrder: (data) => fetch("/orders", { method: "POST", body: data }),
 };
 
 // BAD: Mocking requires conditional logic inside the mock
@@ -53,9 +53,8 @@ const api = {
 ```
 
 SDK 方式意味着：
+
 - 每个 Mock 都返回一种特定的结构
 - 测试设置中无需条件逻辑
 - 更容易看出测试覆盖了哪些端点
 - 每个端点都有类型安全性
-
-

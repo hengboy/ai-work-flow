@@ -3,5 +3,3 @@ interface:
   short_description: "使用一手资料研究一个问题"
 policy:
   allow_implicit_invocation: true
-
-

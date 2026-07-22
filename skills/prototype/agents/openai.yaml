@@ -3,5 +3,3 @@ interface:
   short_description: "构建一个用于回答设计问题的可丢弃答案"
 policy:
   allow_implicit_invocation: true
-
-

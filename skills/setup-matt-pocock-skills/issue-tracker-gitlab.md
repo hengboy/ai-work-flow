@@ -44,4 +44,3 @@
 - **前沿查询**：`glab issue list -F json`，限定在地图的子问题范围内，剔除任何带有未解决阻塞项的工单——无论是原生的 `blocked_by` 链接指向未关闭的问题（可通过 `glab api projects/:id/issues/:iid/links` 查询），还是描述中写着 `Blocked by` 的未关闭问题——或者已有分配对象；按地图顺序，先到先得。
 - **认领**：`glab issue update <n> --assignee @me`——本次会话中的首次修改。
 - **解决**：`glab issue note <n> --message "<answer>"`，然后 `glab issue close <n>`，最后在地图的“决策记录”部分追加上下文指针（gist + 链接）。
-

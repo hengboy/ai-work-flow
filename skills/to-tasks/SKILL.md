@@ -36,18 +36,23 @@ disable-model-invocation: true
 # NN - <Task title>
 
 ## Goal
+
 <end-to-end behavior this task delivers>
 
 ## Dependencies
+
 <task numbers and titles, or "None - can start immediately">
 
 ## Status
+
 ready-for-agent
 
 ## Acceptance Criteria
+
 - [ ] <observable criterion>
 
 ## Verification
+
 <commands or checks that prove the acceptance criteria>
 ```
 

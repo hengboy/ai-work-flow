@@ -3,5 +3,3 @@ interface:
   short_description: "通过结构化的工作空间学习一个概念"
 policy:
   allow_implicit_invocation: false
-
-

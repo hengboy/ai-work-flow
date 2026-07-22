@@ -43,4 +43,3 @@ GitHub 在 issues 和 PRs 之间共享同一个编号空间，因此单纯的 `#
 - **前沿查询**：列出地图的未完成子工单（`gh issue list --state open`，限定为地图的子问题或任务列表），剔除任何带有未解阻塞（`issue_dependencies_summary.blocked_by > 0`，或 `Blocked by` 行中仍有未解决的问题）或已有分配对象的工单；按地图顺序优先选择。
 - **认领**：`gh issue edit <n> --add-assignee @me`——本次会话中的首次写入。
 - **解决**：`gh issue comment <n> --body "<answer>"`，随后 `gh issue close <n>`，并在地图的 Decisions-so-far 中追加一个上下文指针（gist + 链接）。
-

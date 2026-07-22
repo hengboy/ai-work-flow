@@ -3,5 +3,3 @@ interface:
   short_description: "根据标准和意图审查变更"
 policy:
   allow_implicit_invocation: true
-
-

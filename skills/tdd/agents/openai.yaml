@@ -3,5 +3,3 @@ interface:
   short_description: "通过红-绿-重构构建行为"
 policy:
   allow_implicit_invocation: true
-
-

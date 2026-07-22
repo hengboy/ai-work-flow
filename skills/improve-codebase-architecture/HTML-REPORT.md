@@ -13,14 +13,24 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module">
       import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: "neutral",
+        securityLevel: "loose",
+      });
     </script>
     <style>
       /* small custom layer for things Tailwind doesn't cover cleanly:
          dashed seam lines, hand-drawn-feeling arrow heads, etc. */
-      .seam { stroke-dasharray: 4 4; }
-      .leak { stroke: #dc2626; }
-      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+      .seam {
+        stroke-dasharray: 4 4;
+      }
+      .leak {
+        stroke: #dc2626;
+      }
+      .deep {
+        background: linear-gradient(135deg, #0f172a, #1e293b);
+      }
     </style>
   </head>
   <body class="bg-stone-50 text-slate-900 font-sans">
@@ -118,8 +128,6 @@
 - “深化：一个接口，一处测试入口。”
 - “两个适配器证明了接缝的必要性：生产环境使用 HTTP，测试环境使用内存存储。”
 
-**收益列表** 使用术语库中的词汇表述成果：*“局部性：缺陷集中在一个模块内”*，*“杠杆：一个接口，N 个调用点”*，*“接口缩小，实现吸收了包装层”*。不要写“更易维护”或“代码更整洁”——这些术语不在术语库中，也不应随意引入。
+**收益列表** 使用术语库中的词汇表述成果：_“局部性：缺陷集中在一个模块内”_，_“杠杆：一个接口，N 个调用点”_，_“接口缩小，实现吸收了包装层”_。不要写“更易维护”或“代码更整洁”——这些术语不在术语库中，也不应随意引入。
 
 不打太极，不绕圈子，不说“值得注意的是……”。如果某句话可以作为收益点，就把它变成收益点；如果某个收益点可以删减，就删掉它。如果某个术语不在 `/codebase-design` 术语库中，先寻找现有术语，再考虑是否需要新增。
-
-
