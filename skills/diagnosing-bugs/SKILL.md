@@ -3,6 +3,10 @@ name: diagnosing-bugs
 description: 针对棘手的 Bug 和性能回归问题的诊断循环。当用户说“诊断一下”或“调试这个”，或者报告某些功能损坏、抛出异常、失败或运行缓慢时使用。
 ---
 
+## 专职代理路由
+
+本技能由 **Coordinator** 路由。Coordinator 只与用户交互、调度、等待和汇总，不直接访问工作区、运行 Shell、编辑文件或实施。将全库枚举、`glob`、`grep` 和代码地图交给 **File Explorer**；外部一手资料交给 **Researcher**；普通文档交给 **Document Maintainer**；计划、任务、ADR、交接和跟踪器文本交给 **Planning Writer**；源码、测试、配置、调试和提交交给 **Full-Stack Coder**；稳定差异的双轴评审交给 **Code Reviewer**。除 File Explorer 外，所有本地角色只读取其交接的路径及直接依赖；写入角色串行执行。生成工作流后，以 `.ai-work-flow/agents/routing.md` 为最终规则。下文的每个命令和第二人称指代均由相应受委派角色执行，绝不由 Coordinator 执行。
+
 # 诊断 Bug
 
 针对棘手 Bug 的一种方法论。只有在有明确理由的情况下才能跳过某些阶段。

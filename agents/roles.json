@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "roles": [
+    {
+      "id": "coordinator",
+      "name": "Coordinator",
+      "description": "Routes work, waits for delegated results, and summarizes outcomes.",
+      "kind": "primary",
+      "workspace": "none",
+      "delegates": ["file-explorer", "researcher", "document-maintainer", "planning-writer", "full-stack-coder", "code-reviewer"],
+      "tools": []
+    },
+    {
+      "id": "file-explorer",
+      "name": "File Explorer",
+      "description": "Owns repository-wide enumeration, search, and code maps.",
+      "kind": "subagent",
+      "workspace": "read",
+      "delegates": [],
+      "tools": ["Read", "Glob", "Grep", "Bash"]
+    },
+    {
+      "id": "researcher",
+      "name": "Researcher",
+      "description": "Researches official external sources and reports cited findings.",
+      "kind": "subagent",
+      "workspace": "none",
+      "delegates": [],
+      "tools": ["WebSearch", "WebFetch"]
+    },
+    {
+      "id": "document-maintainer",
+      "name": "Document Maintainer",
+      "description": "Maintains ordinary project documentation.",
+      "kind": "subagent",
+      "workspace": "write-docs",
+      "delegates": [],
+      "tools": ["Read", "Edit", "Write", "Bash"]
+    },
+    {
+      "id": "planning-writer",
+      "name": "Planning Writer",
+      "description": "Writes plans, ADRs, task breakdowns, handoffs, and tracker text.",
+      "kind": "subagent",
+      "workspace": "write-plans",
+      "delegates": [],
+      "tools": ["Read", "Edit", "Write", "Bash"]
+    },
+    {
+      "id": "full-stack-coder",
+      "name": "Full-Stack Coder",
+      "description": "Implements source, tests, required configuration, and fixes.",
+      "kind": "subagent",
+      "workspace": "write-code",
+      "delegates": [],
+      "tools": ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
+    },
+    {
+      "id": "code-reviewer",
+      "name": "Code Reviewer",
+      "description": "Runs independent standards and specification reviews on a stable diff.",
+      "kind": "subagent",
+      "workspace": "read",
+      "delegates": ["review-standards", "review-spec"],
+      "tools": ["Read", "Glob", "Grep", "Bash", "Task"]
+    },
+    {
+      "id": "review-standards",
+      "name": "Review Standards",
+      "description": "Reviews a stable diff against repository standards.",
+      "kind": "reviewer",
+      "workspace": "read",
+      "delegates": [],
+      "tools": ["Read", "Glob", "Grep", "Bash"]
+    },
+    {
+      "id": "review-spec",
+      "name": "Review Spec",
+      "description": "Reviews a stable diff against the approved specification.",
+      "kind": "reviewer",
+      "workspace": "read",
+      "delegates": [],
+      "tools": ["Read", "Glob", "Grep", "Bash"]
+    }
+  ]
+}
