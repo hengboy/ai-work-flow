@@ -1,4 +1,4 @@
-import { readExecutionPlan, verifyExecutionPlan } from "./execution-plan.mjs";
+import { readExecutionPlan, verifyExecutionPlan } from "./spec-intake.mjs";
 import { readCheckpoint, verifyCheckpointShape } from "./checkpoint.mjs";
 import { git, gitSucceeds, isAncestor } from "./git.mjs";
 import { sourceSpecPath } from "./paths.mjs";

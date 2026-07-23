@@ -3,10 +3,12 @@ import { checkpointPath, deriveSpecLocation, executionPlanPath } from "./paths.m
 import { beginReview, beginStashOperation, beginStashRestoration, blockTicket, clearRestoredStashReference, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, markRestoredStashDropped, markStashRestored, readCheckpoint, recordStashReference, relocateCheckpoint, startTickets, writeCheckpoint as writeCheckpointToDisk } from "./checkpoint.mjs";
 import { verifyCheckpointIntegrity } from "./checkpoint-integrity.mjs";
 import { currentHead, git, gitOutput, gitSucceeds, gitSucceedsWithInput, isAncestor } from "./git.mjs";
-import { assertSpecArtifactsInMainWorktree, createTicketReader, localIssuePaths, materializeLocalSpec, markLocalIssueComplete, readExecutionPlan, verifyExecutionPlan, writeExecutionPlan } from "./execution-plan.mjs";
+import { assertSpecArtifactsInMainWorktree, materializeSpec, readExecutionPlan, verifyExecutionPlan, writeExecutionPlan } from "./spec-intake.mjs";
+import { createIssueTracker } from "./issue-tracker.mjs";
 import { assertCompletionResult } from "./validation.mjs";
 import { toShanghaiTimestamp } from "./time.mjs";
 import { createExecutionWorktree, ensureExecutionWorktree, findExecutionWorktree, findMainWorktree, removeExecutionWorktree, worktreeIsClean } from "./worktree-lifecycle.mjs";
+import { createPreMergeStash } from "./pre-merge-stash.mjs";
 
 async function commitFiles(worktree, files, message) {
   const changed = new Set(await changedPaths(worktree));
@@ -26,66 +28,13 @@ async function changedPaths(worktree) {
 }
 
 async function executionRecordFiles({ mainWorktree, featureSlug, executionPlan }) {
-  return [executionPlanPath(featureSlug), checkpointPath(featureSlug), ...await localIssuePaths({ mainWorktree, executionPlan })];
+  const issueTracker = createIssueTracker({ mainWorktree, executionPlan });
+  return [executionPlanPath(featureSlug), checkpointPath(featureSlug), ...await issueTracker.paths()];
 }
 
 async function unexpectedMainWorktreeChanges({ mainWorktree, featureSlug, executionPlan }) {
   const allowed = new Set(await executionRecordFiles({ mainWorktree, featureSlug, executionPlan }));
   return (await changedPaths(mainWorktree)).filter((path) => !allowed.has(path));
-}
-
-function stashMessage(featureSlug, operationId) {
-  return `run-matt-spec-to-completion:${featureSlug}:${operationId}`;
-}
-
-async function stashChanges(worktree, paths, featureSlug, operationId) {
-  if (paths.length === 0) return null;
-  const previous = await gitSucceeds(worktree, ["rev-parse", "--verify", "refs/stash"])
-    ? await git(worktree, ["rev-parse", "refs/stash"])
-    : null;
-  await git(worktree, ["stash", "push", "--include-untracked", "--message", stashMessage(featureSlug, operationId), "--", ...paths]);
-  const reference = await gitSucceeds(worktree, ["rev-parse", "--verify", "refs/stash"])
-    ? await git(worktree, ["rev-parse", "refs/stash"])
-    : null;
-  if (!reference || reference === previous) return null;
-  return reference;
-}
-
-async function findStashForOperation(worktree, featureSlug, operationId) {
-  const message = stashMessage(featureSlug, operationId);
-  const references = (await git(worktree, ["stash", "list", "--format=%H"])).split("\n").filter(Boolean);
-  for (const reference of references) {
-    if ((await git(worktree, ["log", "-1", "--format=%B", reference])).includes(message)) return reference;
-  }
-  return null;
-}
-
-async function restoreStashedChanges(worktree, reference) {
-  if (!reference) throw new Error("Checkpoint does not identify a stash to restore");
-  if (!await gitSucceeds(worktree, ["rev-parse", "--verify", `${reference}^{commit}`])) {
-    throw new Error(`Checkpoint requires stash ${reference}, but that stash is unavailable`);
-  }
-  try {
-    await git(worktree, ["stash", "apply", "--index", reference]);
-  } catch (error) {
-    throw new Error(`Could not restore unrelated main worktree changes from stash ${reference}; resolve them manually`, { cause: error });
-  }
-}
-
-async function dropRestoredStash(worktree, reference) {
-  if (await git(worktree, ["rev-parse", "refs/stash"]) !== reference) {
-    throw new Error(`Could not remove restored stash ${reference}; it is no longer the top stash`);
-  }
-  await git(worktree, ["stash", "drop", "stash@{0}"]);
-}
-
-async function stashIsListed(worktree, reference) {
-  return (await git(worktree, ["stash", "list", "--format=%H"])).split("\n").includes(reference);
-}
-
-async function stashPatchIsApplied(worktree, reference) {
-  const patch = await gitOutput(worktree, ["stash", "show", "--include-untracked", "--patch", reference]);
-  return patch !== "" && gitSucceedsWithInput(worktree, ["apply", "--reverse", "--check"], patch);
 }
 
 async function commitExecutionRecords({ mainWorktree, featureSlug, executionPlan, generateCommitMessage }) {
@@ -112,7 +61,9 @@ async function assertResultCommits(worktree, result) {
   }
 }
 
-export function createExecutionCoordinator({ adapter, directExecutor, materialize = materializeLocalSpec, now = toShanghaiTimestamp, generateCommitMessage, checkpointWriter = writeCheckpointToDisk } = {}) {
+export function createExecutionCoordinator({ adapter, directExecutor, materialize = materializeSpec, now = toShanghaiTimestamp, generateCommitMessage, checkpointWriter = writeCheckpointToDisk } = {}) {
+  const stash = createPreMergeStash({ git, gitSucceeds, gitOutput, gitSucceedsWithInput });
+
   const requireIntegrity = async ({ mainWorktree, featureSlug, executionWorktree, checkExecutionWorktree = true, allowWorktreeRelocation = false }) => {
     const integrity = await verifyCheckpointIntegrity({ worktree: mainWorktree, executionWorktree, featureSlug, checkExecutionWorktree, allowWorktreeRelocation });
     if (integrity.status !== "valid") throw new Error(`Checkpoint integrity failed: ${JSON.stringify(integrity.diagnostics)}`);
@@ -129,10 +80,11 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
     if (checkpoint.integration.stash_restore_state !== "restored" || checkpoint.integration.stash_cleanup_state === "dropped") return checkpoint;
     const reference = checkpoint.integration.stash_ref;
     if (!reference) throw new Error("Checkpoint does not identify a restored stash to clean up");
-    if (await stashIsListed(mainWorktree, reference)) {
+    const { listed, applied } = await stash.reconcile(mainWorktree, reference);
+    if (listed) {
       await requireIntegrity({ mainWorktree, featureSlug, checkExecutionWorktree: false });
-      await dropRestoredStash(mainWorktree, reference);
-    } else if (!await stashPatchIsApplied(mainWorktree, reference)) {
+      await stash.drop(mainWorktree, reference);
+    } else if (!applied) {
       throw new Error(`Could not reconcile restored stash ${reference}; it is unavailable and its patch is not present`);
     }
     checkpoint = markRestoredStashDropped(checkpoint, now());
@@ -150,18 +102,20 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
           ...checkpoint,
           integration,
         }, now());
-      } else if (await stashPatchIsApplied(mainWorktree, checkpoint.integration.stash_ref)) {
-        checkpoint = markStashRestored(checkpoint, now());
-        await persist(mainWorktree, featureSlug, checkpoint);
-        return checkpoint;
       } else {
+        const { applied } = await stash.reconcile(mainWorktree, checkpoint.integration.stash_ref);
+        if (applied) {
+          checkpoint = markStashRestored(checkpoint, now());
+          await persist(mainWorktree, featureSlug, checkpoint);
+          return checkpoint;
+        }
         throw new Error(`Stash ${checkpoint.integration.stash_ref} restoration is ambiguous; resolve the worktree manually without dropping the stash`);
       }
     } else {
       checkpoint = beginStashRestoration(checkpoint, now());
     }
     await persist(mainWorktree, featureSlug, checkpoint);
-    await restoreStashedChanges(mainWorktree, checkpoint.integration.stash_ref);
+    await stash.restore(mainWorktree, checkpoint.integration.stash_ref);
     checkpoint = markStashRestored(checkpoint, now());
     await persist(mainWorktree, featureSlug, checkpoint);
     return checkpoint;
@@ -207,9 +161,9 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
         if (mainCheckpoint.status === "integrating" && await isAncestor(mainWorktree, branch)) {
           let checkpointForMerge = mainCheckpoint;
           if (checkpointForMerge.integration.stash_operation_id && !checkpointForMerge.integration.stash_ref) {
-            const stash = await findStashForOperation(mainWorktree, featureSlug, checkpointForMerge.integration.stash_operation_id);
-            if (!stash) throw new Error("Recorded pre-merge stash operation has no recoverable stash reference");
-            checkpointForMerge = recordStashReference(checkpointForMerge, stash, now());
+            const stashRef = await stash.locate(mainWorktree, featureSlug, checkpointForMerge.integration.stash_operation_id);
+            if (!stashRef) throw new Error("Recorded pre-merge stash operation has no recoverable stash reference");
+            checkpointForMerge = recordStashReference(checkpointForMerge, stashRef, now());
             await persist(mainWorktree, featureSlug, checkpointForMerge);
           }
           const merged = markMerged(checkpointForMerge, { executionHead: await git(mainWorktree, ["rev-parse", branch]), mainWorktree, mergedCommit: await currentHead(mainWorktree), stashRef: checkpointForMerge.integration.stash_ref }, now());
@@ -232,7 +186,7 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       return { ...integrity, status: "resumed", worktree: ensured.worktree, mainWorktree, executionPlan, checkpoint };
     },
 
-    async executeFrontier({ worktree, mainWorktree, featureSlug, executionPlan, checkpoint, readTicket = createTicketReader({ mainWorktree, executionPlan }) }) {
+    async executeFrontier({ worktree, mainWorktree, featureSlug, executionPlan, checkpoint, readTicket = createIssueTracker({ mainWorktree, executionPlan }).read.bind(null) }) {
       checkpoint = (await requireIntegrity({ mainWorktree, featureSlug, executionWorktree: worktree })).checkpoint;
       if (checkpoint.tickets.some((task) => task.status === "blocked")) return { status: "blocked", checkpoint, results: [] };
       if (checkpoint.tickets.some((task) => task.status === "in_progress")) {
@@ -275,7 +229,8 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
         await persist(mainWorktree, featureSlug, checkpoint);
         if (result?.status === "done") {
           await requireIntegrity({ mainWorktree, featureSlug, executionWorktree: worktree });
-          await markLocalIssueComplete({ mainWorktree, executionPlan, ticketId: task.id });
+          const issueTracker = createIssueTracker({ mainWorktree, executionPlan });
+          await issueTracker.markComplete(task.id);
         }
       }
       return { checkpoint, results };
@@ -303,7 +258,8 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       if (execution.status === "complete") return execution;
       let { worktree, mainWorktree, executionPlan, checkpoint } = execution;
       const featureSlug = executionPlan.spec.feature_slug;
-      const readTicket = createTicketReader({ mainWorktree, executionPlan });
+      const issueTracker = createIssueTracker({ mainWorktree, executionPlan });
+      const readTicket = issueTracker.read.bind(issueTracker);
       while (checkpoint.status === "executing") {
         const result = await this.executeFrontier({ worktree, mainWorktree, featureSlug, executionPlan, checkpoint, readTicket });
         if (result.status === "blocked") return result;
@@ -334,16 +290,16 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
         integrationCheckpoint = clearRestoredStashReference(integrationCheckpoint, now());
         await persist(mainWorktree, featureSlug, integrationCheckpoint);
       }
-      let stash = integrationCheckpoint.integration.stash_ref;
-      if (!stash && integrationCheckpoint.integration.stash_operation_id) {
-        stash = await findStashForOperation(mainWorktree, featureSlug, integrationCheckpoint.integration.stash_operation_id);
-        if (!stash) throw new Error("Recorded pre-merge stash operation has no recoverable stash reference");
-        integrationCheckpoint = recordStashReference(integrationCheckpoint, stash, now());
+      let stashRef = integrationCheckpoint.integration.stash_ref;
+      if (!stashRef && integrationCheckpoint.integration.stash_operation_id) {
+        stashRef = await stash.locate(mainWorktree, featureSlug, integrationCheckpoint.integration.stash_operation_id);
+        if (!stashRef) throw new Error("Recorded pre-merge stash operation has no recoverable stash reference");
+        integrationCheckpoint = recordStashReference(integrationCheckpoint, stashRef, now());
         await persist(mainWorktree, featureSlug, integrationCheckpoint);
       }
-      if (stash) {
-        if (!await gitSucceeds(mainWorktree, ["rev-parse", "--verify", `${stash}^{commit}`])) {
-          throw new Error(`Checkpoint requires stash ${stash}, but that stash is unavailable`);
+      if (stashRef) {
+        if (!await gitSucceeds(mainWorktree, ["rev-parse", "--verify", `${stashRef}^{commit}`])) {
+          throw new Error(`Checkpoint requires stash ${stashRef}, but that stash is unavailable`);
         }
       } else {
         const paths = await unexpectedMainWorktreeChanges({ mainWorktree, featureSlug, executionPlan });
@@ -352,13 +308,13 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
             integrationCheckpoint = beginStashOperation(integrationCheckpoint, randomUUID(), now());
             await persist(mainWorktree, featureSlug, integrationCheckpoint);
           }
-          stash = await findStashForOperation(mainWorktree, featureSlug, integrationCheckpoint.integration.stash_operation_id);
-          if (!stash) {
+          stashRef = await stash.locate(mainWorktree, featureSlug, integrationCheckpoint.integration.stash_operation_id);
+          if (!stashRef) {
             await requireIntegrity({ mainWorktree, featureSlug, executionWorktree: worktree });
-            stash = await stashChanges(mainWorktree, paths, featureSlug, integrationCheckpoint.integration.stash_operation_id);
+            stashRef = await stash.save(mainWorktree, paths, featureSlug, integrationCheckpoint.integration.stash_operation_id);
           }
-          if (!stash) throw new Error("Could not create the pre-merge stash; resume will retry the recorded stash operation");
-          integrationCheckpoint = recordStashReference(integrationCheckpoint, stash, now());
+          if (!stashRef) throw new Error("Could not create the pre-merge stash; resume will retry the recorded stash operation");
+          integrationCheckpoint = recordStashReference(integrationCheckpoint, stashRef, now());
           await persist(mainWorktree, featureSlug, integrationCheckpoint);
         }
       }
@@ -370,13 +326,13 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
         mergeApplied = true;
         if (!await isAncestor(mainWorktree, executionHead)) throw new Error("Merged main does not contain execution HEAD");
         const mainCheckpoint = await readCheckpoint(mainWorktree, featureSlug);
-        const merged = markMerged(mainCheckpoint, { executionHead, mainWorktree, mergedCommit: await currentHead(mainWorktree), stashRef: stash }, now());
+        const merged = markMerged(mainCheckpoint, { executionHead, mainWorktree, mergedCommit: await currentHead(mainWorktree), stashRef }, now());
         await persist(mainWorktree, featureSlug, merged);
         return this.completeMergedCleanup({ repository, mainWorktree, featureSlug, executionPlan, checkpoint: merged });
       } catch (error) {
         if (mergeApplied) throw error;
         await gitSucceeds(mainWorktree, ["merge", "--abort"]);
-        if (stash) {
+        if (stashRef) {
           try {
             const restored = await restoreRecordedStash({ mainWorktree, featureSlug, executionPlan, checkpoint: integrationCheckpoint });
             const reconciled = await reconcileRestoredStash({ mainWorktree, featureSlug, checkpoint: restored });

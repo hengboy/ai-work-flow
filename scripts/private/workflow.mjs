@@ -5,9 +5,7 @@ import process from 'node:process';
 import { loadAgentAssets } from './asset-catalog.mjs';
 import { globalPaths } from './paths.mjs';
 import { fail, isPlainObject, readJson, write } from './shared.mjs';
-import { generateClaude } from './platforms/claude.mjs';
-import { generateCodex } from './platforms/codex.mjs';
-import { generateOpenCode } from './platforms/opencode.mjs';
+import { generate as generatePlatform } from './platform-adapter.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const SKILLS_ROOT = resolve(ROOT, 'skills');
@@ -137,10 +135,9 @@ function generate(platforms, dryRun, assets, config = loadConfig(assets, dryRun)
   const paths = globalPaths();
   const validation = validateConfig(config, assets.roles);
   if (validation.errors.length) fail(validation.errors.join('\n'));
-  const adapters = { codex: generateCodex, claude: generateClaude, opencode: generateOpenCode };
   const changed = [];
   for (const platform of platforms) {
-    changed.push(...adapters[platform]({ paths, roles: assets.roles, config, bodies: assets.bodies, dryRun }));
+    changed.push(...generatePlatform({ platform, paths, roles: assets.roles, config, bodies: assets.bodies, dryRun }));
   }
   return { changed, warnings: validation.warnings, paths };
 }

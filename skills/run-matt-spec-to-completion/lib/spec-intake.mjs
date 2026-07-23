@@ -76,7 +76,7 @@ function executionTicketFrom({ content, work_item_count, ...ticket }) {
   return ticket;
 }
 
-export async function materializeLocalSpec({ mainWorktree, specPath, now = new Date() }) {
+export async function materializeSpec({ mainWorktree, specPath, now = new Date() }) {
   now = toShanghaiTimestamp(now);
   const requestedLocation = deriveSpecLocation(mainWorktree, specPath);
   const mainRoot = await realpath(mainWorktree);
@@ -146,36 +146,6 @@ export async function assertSpecArtifactsInMainWorktree({ mainWorktree, executio
   const mainRoot = await realpath(mainWorktree);
   await pathWithin(mainRoot, resolve(mainRoot, executionPlan.spec.ref));
   await Promise.all(executionPlan.tickets.map((ticket) => pathWithin(mainRoot, resolve(mainRoot, ticket.ref))));
-}
-
-export function createTicketReader({ mainWorktree, executionPlan }) {
-  return async function readTicket(ticketId) {
-    const { issuePath } = await localIssuePath({ mainWorktree, executionPlan, ticketId });
-    return readFile(issuePath, "utf8");
-  };
-}
-
-export async function markLocalIssueComplete({ mainWorktree, executionPlan, ticketId }) {
-  const { issuePath, relativePath } = await localIssuePath({ mainWorktree, executionPlan, ticketId });
-  const content = await readFile(issuePath, "utf8");
-  const updated = content.replace(/^(\s*-\s*)\[ \]/gm, "$1[x]");
-  if (updated === content) return [];
-  await writeFile(issuePath, updated);
-  return [relativePath];
-}
-
-export async function localIssuePaths({ mainWorktree, executionPlan }) {
-  return Promise.all(executionPlan.tickets.map(async ({ id: ticketId }) => {
-    const { relativePath } = await localIssuePath({ mainWorktree, executionPlan, ticketId });
-    return relativePath;
-  }));
-}
-
-async function localIssuePath({ mainWorktree, executionPlan, ticketId }) {
-  const ticket = executionPlan.tickets.find((candidate) => candidate.id === ticketId);
-  if (!ticket) throw new Error(`Unknown spec ticket: ${ticketId}`);
-  const issuePath = resolve(await realpath(mainWorktree), ticket.ref);
-  return { issuePath, relativePath: await pathWithin(mainWorktree, issuePath) };
 }
 
 export function verifyExecutionPlan(executionPlan) {

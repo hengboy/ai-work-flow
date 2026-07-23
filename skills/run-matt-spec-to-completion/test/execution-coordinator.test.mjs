@@ -8,7 +8,7 @@ import test from "node:test";
 
 import { beginReview, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, readCheckpoint, startTickets, writeCheckpoint } from "../lib/checkpoint.mjs";
 import { createExecutionCoordinator } from "../lib/execution-coordinator.mjs";
-import { materializeLocalSpec, writeExecutionPlan } from "../lib/execution-plan.mjs";
+import { materializeSpec, writeExecutionPlan } from "../lib/spec-intake.mjs";
 import { assertCheckpoint } from "../lib/validation.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -31,7 +31,7 @@ async function coordinatorFixture() {
   await git(root, "add", ".");
   await git(root, "commit", "-m", "fixture");
   const head = await git(root, "rev-parse", "HEAD");
-  const executionPlan = await materializeLocalSpec({ mainWorktree: root, specPath, now: new Date("2026-07-23T12:00:00+08:00") });
+  const executionPlan = await materializeSpec({ mainWorktree: root, specPath, now: new Date("2026-07-23T12:00:00+08:00") });
   await writeExecutionPlan(root, executionPlan);
   let checkpoint = createCheckpoint({ executionPlan, baseline: head, branch: "feat/migrate-runtime", worktree: root, now: new Date("2026-07-23T12:00:00+08:00") });
   checkpoint = startTickets(checkpoint, ["01"], head);
@@ -291,7 +291,7 @@ test("keeps undispatched tasks pending after the first serial blocked result", a
   const { root, executionPlan, executionWorktree } = await pendingIntegrationFixture();
   await writeFile(join(root, ".scratch", "migrate-runtime", "issues", "02-follow-up.md"), "# Follow up\n");
   const specPath = join(root, ".scratch", "migrate-runtime", "spec.md");
-  const twoTaskPlan = await materializeLocalSpec({ mainWorktree: root, specPath });
+  const twoTaskPlan = await materializeSpec({ mainWorktree: root, specPath });
   await writeExecutionPlan(root, twoTaskPlan);
   const head = await git(root, "rev-parse", "HEAD");
   const checkpoint = createCheckpoint({ executionPlan: twoTaskPlan, baseline: head, branch: "feat/migrate-runtime", worktree: executionWorktree });

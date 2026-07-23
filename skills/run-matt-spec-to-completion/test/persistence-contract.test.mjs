@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { completeIntegration, createCheckpoint, markMerged, readCheckpoint, writeCheckpoint } from "../lib/checkpoint.mjs";
-import { materializeLocalSpec, readExecutionPlan, writeExecutionPlan } from "../lib/execution-plan.mjs";
+import { materializeSpec, readExecutionPlan, writeExecutionPlan } from "../lib/spec-intake.mjs";
 import { deriveSpecLocation, sourceSpecPath } from "../lib/paths.mjs";
 import { assertCheckpoint, assertExecutionPlan } from "../lib/validation.mjs";
 
@@ -42,7 +42,7 @@ test("derives a feature slug only from the canonical spec path", async () => {
 test("persists execution records beside the canonical spec with the spec/ticket schema", async () => {
   const { root, specPath } = await specFixture();
   const now = new Date("2026-07-23T12:00:00+08:00");
-  const executionPlan = await materializeLocalSpec({ mainWorktree: root, specPath, now });
+  const executionPlan = await materializeSpec({ mainWorktree: root, specPath, now });
   assert.equal(executionPlan.spec.feature_slug, "migrate-runtime");
   assert.equal(executionPlan.spec.ref, sourceSpecPath("migrate-runtime"));
   assert.deepEqual(executionPlan.tickets.map((ticket) => ticket.id), ["01"]);
@@ -98,14 +98,14 @@ test("rejects duplicate ticket IDs derived from issue file names", async () => {
   await writeFile(join(issueDirectory, "01-second-contract.md"), "# 01 — Second contract\n");
 
   await assert.rejects(
-    materializeLocalSpec({ mainWorktree: root, specPath }),
+    materializeSpec({ mainWorktree: root, specPath }),
     /Duplicate derived ticket ID: 01/,
   );
 });
 
 test("retains a persisted stash reference when integration is marked merged", async () => {
   const { root, specPath } = await specFixture();
-  const executionPlan = await materializeLocalSpec({ mainWorktree: root, specPath });
+  const executionPlan = await materializeSpec({ mainWorktree: root, specPath });
   const checkpoint = createCheckpoint({
     executionPlan,
     baseline: "a".repeat(40),
@@ -126,7 +126,7 @@ test("retains a persisted stash reference when integration is marked merged", as
 
 test("rejects terminal integration while stash restoration is applying", async () => {
   const { root, specPath } = await specFixture();
-  const executionPlan = await materializeLocalSpec({ mainWorktree: root, specPath });
+  const executionPlan = await materializeSpec({ mainWorktree: root, specPath });
   const checkpoint = createCheckpoint({ executionPlan, baseline: "a".repeat(40), branch: "feat/migrate-runtime", worktree: root });
   checkpoint.status = "integrating";
   checkpoint.review = { status: "done", findings_summary: "approved", completed_at: "2026-07-23T12:00:00+08:00" };
@@ -139,7 +139,7 @@ test("rejects terminal integration while stash restoration is applying", async (
 
 test("requires completed tickets and review before integrating or merged records", async () => {
   const { root, specPath } = await specFixture();
-  const executionPlan = await materializeLocalSpec({ mainWorktree: root, specPath });
+  const executionPlan = await materializeSpec({ mainWorktree: root, specPath });
   const checkpoint = createCheckpoint({ executionPlan, baseline: "a".repeat(40), branch: "feat/migrate-runtime", worktree: root });
   checkpoint.status = "integrating";
   assertCheckpoint(checkpoint);
