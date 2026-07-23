@@ -6,7 +6,6 @@ import { resolve } from 'node:path';
 import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '..');
-const skillRoot = resolve(root, 'skills/setup-matt-pocock-skills');
 const installer = resolve(root, 'scripts/install.mjs');
 const agentAssets = resolve(root, 'scripts/agent-assets');
 const catalog = JSON.parse(readFileSync(resolve(agentAssets, 'roles.json'), 'utf8'));
@@ -211,13 +210,6 @@ test('only writer bodies require git diff reporting', () => {
   }
 });
 
-test('skills use the catalog display name for Full Stack Coder', () => {
-  for (const entry of readdirSync(resolve(root, 'skills'), { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const source = readFileSync(resolve(root, 'skills', entry.name, 'SKILL.md'), 'utf8');
-    assert.doesNotMatch(source, /Full-Stack Coder/, entry.name);
-  }
-});
 
 test('generated agent descriptions prominently use their title-cased display names', () => {
   const paths = environment();
@@ -382,7 +374,7 @@ test('each platform adapter validates its own preservation work before writing i
   assert.ok(!existsSync(agentPath(paths, 'opencode', 'coordinator', 'md')));
 });
 
-test('repeated installation is idempotent and the global workflow is independent from setup', () => {
+test("repeated installation is idempotent and the global workflow is independent from setup", () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
   const repeated = install(paths);
@@ -390,35 +382,10 @@ test('repeated installation is idempotent and the global workflow is independent
   assert.match(repeated.stdout, /Generated 0 file\(s\)\./);
 
   mkdirSync(paths.project, { recursive: true });
-  assert.ok(!existsSync(resolve(paths.home, '.codex/skills/setup-matt-pocock-skills/scripts')));
-  assert.ok(!existsSync(resolve(paths.home, '.codex/skills/setup-matt-pocock-skills/assets')));
   const result = runInstalledWorkflow(paths, 'validate');
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(readdirSync(paths.project), []);
 });
 
-test('restored setup skill only describes project configuration', () => {
-  const source = readFileSync(resolve(skillRoot, 'SKILL.md'), 'utf8');
-  assert.match(source, /^name: setup-matt-pocock-skills$/m);
-  assert.doesNotMatch(source, /scripts\/install\.mjs|agent-workflow\.mjs|Agent\/Subagent/);
-  const askMatt = readFileSync(resolve(root, 'skills/ask-matt/SKILL.md'), 'utf8');
-  assert.match(askMatt, /^name: ask-matt$/m);
-  assert.ok(!existsSync(resolve(root, 'skills/ask-ai-work-flow')));
-  assert.ok(!existsSync(resolve(root, 'skills/setup-ai-work-flow')));
-});
 
-test('all shipped skills route through the global routing file', () => {
-  for (const entry of readdirSync(resolve(root, 'skills'), { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const source = readFileSync(resolve(root, 'skills', entry.name, 'SKILL.md'), 'utf8');
-    assert.match(source, /## 专职代理路由/, entry.name);
-    assert.match(source, /~\/\.config\/ai-work-flow\/routing\.md/, entry.name);
-    assert.doesNotMatch(source, /\.ai-work-flow\/agents\/routing\.md/, entry.name);
-  }
-});
 
-test('grill-with-docs assigns discussion-time CONTEXT.md updates to Document Maintainer', () => {
-  const source = readFileSync(resolve(root, 'skills/grill-with-docs/SKILL.md'), 'utf8');
-  assert.match(source, /只委派 \*\*Document Maintainer\*\* 即时更新项目的 `CONTEXT\.md`/);
-  assert.match(source, /不得将此写入委派给 \*\*Planning Writer\*\*/);
-});

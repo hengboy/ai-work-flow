@@ -1,12 +1,15 @@
 # AI Work Flow
 
-为 Codex、Claude Code 和 OpenCode 生成统一专职代理工作流的技能库。安装后，**Coordinator** 是唯一面向用户的入口，负责路由、等待和汇总；实际的发现、研究、写作、实现和评审由专职角色完成。
+为 Codex、Claude Code 和 OpenCode 生成统一专职代理工作流的配置系统。安装后，**Coordinator** 是唯一面向用户的入口，负责路由、等待和汇总；实际的发现、研究、写作、实现和评审由专职角色完成。
+
+与上游 [Matt Pocock Skills](https://github.com/mattpocock/skills) 配合使用，AI Work Flow 仅提供 Coordinator 路由层和执行引擎，不复制上游技能。
 
 ## 前置条件
 
 - Node.js 运行环境
 - 已安装并配置 Codex、Claude Code 或 OpenCode 中至少一个客户端
 - 当前用户对对应全局配置目录具有读写权限
+- 已安装 Matt Pocock Skills（提供 `to-spec`、`to-tickets`、`implement`、`code-review` 等技能）
 
 ## 安装
 
@@ -18,7 +21,7 @@ node scripts/install.mjs
 
 安装会完成以下工作：
 
-- 将 `skills/*` 同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录
+- 将自定义技能（`run-matt-spec-to-completion`、`regenerate-ai-work-flow`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录
 - 创建 `~/.config/ai-work-flow/config.json` 和 `routing.md`
 - 生成三端的 9 个受管理 agent
 - 更新三端的路由配置，并将 OpenCode 默认 agent 设为 `coordinator`

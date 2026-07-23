@@ -1,5 +1,0 @@
-interface:
-  display_name: "代码库设计"
-  short_description: "设计更深层次的模块和更清晰的接口"
-policy:
-  allow_implicit_invocation: true

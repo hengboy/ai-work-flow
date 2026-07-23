@@ -1,5 +1,0 @@
-interface:
-  display_name: "测试驱动开发"
-  short_description: "通过红-绿-重构构建行为"
-policy:
-  allow_implicit_invocation: true

@@ -3,10 +3,6 @@ name: regenerate-ai-work-flow
 description: 验证全局 AI Work Flow 配置并重新生成 Codex、Claude Code 或 OpenCode agents。用于修改 ~/.config/ai-work-flow/config.json 后使模型、推理强度、OpenCode 模型或 variant 生效，或用户要求重新生成全局 agents 时使用。
 ---
 
-## 专职代理路由
-
-本技能由 **Coordinator** 路由。**Coordinator** 只与用户交互、调度、等待和汇总，不直接访问工作区、运行 Shell、编辑文件或实施。将配置检查和命令执行交给 **Full Stack Coder**。生成工作流后，以 `~/.config/ai-work-flow/routing.md` 为最终规则。下文的每个命令和第二人称指代均由受委派的 **Full Stack Coder** 执行，绝不由 **Coordinator** 执行。
-
 # 重新生成 AI Work Flow
 
 全局配置为 `~/.config/ai-work-flow/config.json`；设置 `XDG_CONFIG_HOME` 时，使用 `$XDG_CONFIG_HOME/ai-work-flow/config.json`。本技能绝不在当前项目写入 `.ai-work-flow`、`.codex`、`.claude`、`.opencode`、`AGENTS.md` 或 `CLAUDE.md`。

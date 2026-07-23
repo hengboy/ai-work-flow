@@ -1,5 +1,0 @@
-interface:
-  display_name: "领域建模"
-  short_description: "维护共享的领域语言和决策"
-policy:
-  allow_implicit_invocation: true

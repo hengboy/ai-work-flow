@@ -1,5 +1,0 @@
-interface:
-  display_name: "拆分任务"
-  short_description: "将已批准的计划拆分为本地任务文件"
-policy:
-  allow_implicit_invocation: false

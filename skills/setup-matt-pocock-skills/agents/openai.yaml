@@ -1,6 +1,0 @@
-interface:
-  display_name: "设置 Matt Pocock 工程技能"
-  short_description: "配置当前项目的跟踪器与领域文档"
-  default_prompt: "使用 $setup-matt-pocock-skills 配置当前项目的工程技能。"
-policy:
-  allow_implicit_invocation: false

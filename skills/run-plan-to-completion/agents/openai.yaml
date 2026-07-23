@@ -1,5 +1,0 @@
-interface:
-  display_name: "完成计划全流程"
-  short_description: "执行 run-plan-to-completion：完成已签署计划的任务、实施、评审、合并与执行记录提交"
-policy:
-  allow_implicit_invocation: false

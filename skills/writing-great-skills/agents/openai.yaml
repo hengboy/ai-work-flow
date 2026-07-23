@@ -1,5 +1,0 @@
-interface:
-  display_name: "编写优秀的技能"
-  short_description: "创建可靠技能的参考指南"
-policy:
-  allow_implicit_invocation: false

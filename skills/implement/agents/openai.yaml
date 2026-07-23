@@ -1,5 +1,0 @@
-interface:
-  display_name: "实现"
-  short_description: "执行一项已批准的任务或计划"
-policy:
-  allow_implicit_invocation: false

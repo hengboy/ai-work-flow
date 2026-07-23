@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mattpocock/skills/run-matt-spec-to-completion/execution-plan.schema.json",
+  "$defs": {
+    "shanghai-date-time": { "type": "string", "format": "date-time", "pattern": "\\+08:00$" }
+  },
+  "title": "run-matt-spec-to-completion Execution Plan",
+  "type": "object",
+  "required": ["version", "revision", "created_at", "execution_mode", "spec", "tickets"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "created_at": { "$ref": "#/$defs/shanghai-date-time" },
+    "execution_mode": {
+      "type": "string",
+      "enum": ["coordinator", "delegated"],
+      "description": "单 Ticket Spec 的实施者。"
+    },
+    "spec": {
+      "type": "object",
+      "required": ["ref", "feature_slug", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": { "type": "string", "pattern": "^\\.scratch/[a-z0-9][a-z0-9-]*/spec\\.md$" },
+        "feature_slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "title": { "type": "string", "minLength": 1 }
+      }
+    },
+    "tickets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "ref", "title", "level", "blocked_by"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "ref": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "level": { "type": "integer", "minimum": 0 },
+          "blocked_by": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    }
+  }
+}

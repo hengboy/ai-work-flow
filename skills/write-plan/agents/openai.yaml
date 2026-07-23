@@ -1,5 +1,0 @@
-interface:
-  display_name: "编写计划"
-  short_description: "编写一份持久的本地实施计划"
-policy:
-  allow_implicit_invocation: false

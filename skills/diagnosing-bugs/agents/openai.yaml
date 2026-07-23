@@ -1,5 +1,0 @@
-interface:
-  display_name: "诊断错误"
-  short_description: "通过紧密的反馈循环查找原因"
-policy:
-  allow_implicit_invocation: true
