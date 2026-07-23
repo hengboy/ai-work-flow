@@ -93,7 +93,7 @@
     },
     "code-reviewer": {
       "codex": {
-        "model": "gpt-5.6-sol",
+        "model": "gpt-5.6-terra",
         "reasoning": "high"
       },
       "claude": {
@@ -101,14 +101,14 @@
         "effort": "high"
       },
       "opencode": {
-        "model": "baibai/gpt-5.6-sol",
+        "model": "baibai/gpt-5.6-terra",
         "variant": "high",
         "options": {}
       }
     },
     "review-standards": {
       "codex": {
-        "model": "gpt-5.6-sol",
+        "model": "gpt-5.6-terra",
         "reasoning": "high"
       },
       "claude": {
@@ -116,14 +116,14 @@
         "effort": "high"
       },
       "opencode": {
-        "model": "baibai/gpt-5.6-sol",
+        "model": "baibai/gpt-5.6-terra",
         "variant": "high",
         "options": {}
       }
     },
     "review-spec": {
       "codex": {
-        "model": "gpt-5.6-sol",
+        "model": "gpt-5.6-terra",
         "reasoning": "high"
       },
       "claude": {
@@ -131,7 +131,7 @@
         "effort": "high"
       },
       "opencode": {
-        "model": "baibai/gpt-5.6-sol",
+        "model": "baibai/gpt-5.6-terra",
         "variant": "high",
         "options": {}
       }

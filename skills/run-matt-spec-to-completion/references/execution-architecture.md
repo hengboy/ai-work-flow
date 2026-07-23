@@ -26,8 +26,8 @@ Coordinator 委派 Full Stack Coder 只在主仓库的 `main` 维护执行记录
 - `delegated` 用于多 Ticket和高风险或复杂的单 Ticket；只有内容不超过 1000 字符、工作项不超过两项且不涉及迁移、安全、发布或性能的单 Ticket可使用 `coordinator` mode，由 Coordinator 委派 Full Stack Coder 执行。
 - 执行计划是不可变输入；Checkpoint 是唯一的可变执行记录。`done` Ticket的 `end_commit` 必须是实现提交，Git 事实优先于 Checkpoint。
 - 子代理只能在feature worktree 编辑、测试和提交实现代码；主代理在 main 更新 Ticket和 Checkpoint。
-- Coordinator 在稳定差异后委派 Code Reviewer 完成最终 Standards 与Spec 两轴评审；用户确认的修复由 Full Stack Coder 在feature worktree 完成。
-- 整合只在 `approved: true` 和非空 `findingsSummary` 后开始；feature worktree 必须干净。main 的无关改动以路径限定 stash 隔离，合并冲突时 abort merge 并恢复 stash。
+- Coordinator 在稳定差异后委派 Code Reviewer 完成最终 Standards 与 Spec 两轴评审（单次通过）。评审发现报告给用户，由用户决定是否修复。用户确认的修复由 Full Stack Coder 在 feature worktree 完成。
+- 整合在用户确认评审结果后开始；feature worktree 必须干净。main 的无关改动以路径限定 stash 隔离，合并冲突时 abort merge 并恢复 stash。
 - 合并成功后，确认执行 HEAD 是 main 的祖先，记录带 stash 引用的 `merged`，清理 worktree、恢复 stash，再使用 `git-commit` 提交执行计划、最终 Checkpoint 与本地 Issue 复选框。清理或恢复 stash 失败时保留 `merged` 或 stash 引用并报告；后续只重试未完成的清理。
 - 每次持久化状态或执行 stash、merge、worktree 删除、terminal 记录提交前都先验证 Checkpoint 完整性。恢复时发现 `in_progress` Ticket会停止并保留该状态，直到有已停止 worker 的证据；不会自动重新派发。
 - stash 恢复先持久化 `restored` 和 `stash_cleanup_state: pending`，然后删除 stash 并持久化 `dropped`。恢复可重试或校验这个清理步骤；未完成时不能写 terminal Checkpoint。

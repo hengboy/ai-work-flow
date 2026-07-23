@@ -45,8 +45,10 @@ disable-model-invocation: true
 
 ## 4. 评审与整合
 
-1. 主协调器亲自完成 Standards 与 Spec 两轴评审，并直接完成用户确认的修复。
-2. 仅在 `approved: true` 且 `findingsSummary` 非空时执行整合生命周期。
-3. 完成执行记录的最终提交。
+1. 委派 **Code Reviewer** 完成 Standards 与 Spec 两轴评审（单次通过）。
+2. 将评审发现报告给用户，由用户决定是否修复以及修复哪些项。
+3. 用户确认后，委派 **Full Stack Coder** 完成用户指定的修复。
+4. 修复完成后（或用户确认无需修复），执行整合生命周期。
+5. 完成执行记录的最终提交。
 
 **完成条件：** main 包含唯一的执行记录提交；若合并后清理失败，保留 `merged` 并且下次只重试清理。

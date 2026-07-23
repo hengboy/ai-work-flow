@@ -16,4 +16,4 @@
 
 可写角色必须串行执行。**Document Maintainer** 写入 README、`docs/` 等普通文档。**Planning Writer** 写入 ADR、交接和跟踪器工件。**Full Stack Coder** 写入源码、测试、必要配置并提交。每个写入者完成后都要报告 `git diff --name-only`。
 
-**Code Reviewer** 只有在差异稳定后才能并行启动 **Review Standards** 和 **Review Spec**，并分别保留两者的发现。其他角色不得委派工作。修复后，由 **Coordinator** 重新发起审查。
+**Code Reviewer** 只有在差异稳定后才能并行启动 **Review Standards** 和 **Review Spec**，并分别保留两者的发现。其他角色不得委派工作。审查完成后，**Coordinator** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
