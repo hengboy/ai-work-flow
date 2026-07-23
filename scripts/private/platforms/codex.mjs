@@ -74,7 +74,7 @@ function updateConfig(source, path) {
 }
 
 function markerBlock() {
-  return `${MARKER_START}\n## AI Work Flow 代理\n\n使用 \`~/.config/ai-work-flow/routing.md\`。**Coordinator** 只负责调度：不得检查、编辑或实施。所有工作区操作都必须委派给专职角色。\n${MARKER_END}\n`;
+  return `${MARKER_START}\n## AI Work Flow 代理\n\n仅当使用 **Coordinator** 代理时，遵循 \`~/.config/ai-work-flow/routing.md\` 进行子代理委派。其他代理模式下保持原生行为，按需调用子代理。\n${MARKER_END}\n`;
 }
 
 function updateMarker(source, path) {

@@ -31,7 +31,7 @@ function render(role, settings, body) {
 }
 
 function markerBlock() {
-  return `${MARKER_START}\n## AI Work Flow 代理\n\n@~/.config/ai-work-flow/routing.md\n\n使用 **Coordinator** 作为唯一面向用户的角色，并按照上述角色规则委派所有工作。\n${MARKER_END}\n`;
+  return `${MARKER_START}\n## AI Work Flow 代理\n\n仅当使用 **Coordinator** 代理时，遵循 \`~/.config/ai-work-flow/routing.md\` 进行子代理委派。其他代理模式下保持原生行为，按需调用子代理。\n${MARKER_END}\n`;
 }
 
 function updateMarker(source, path) {
