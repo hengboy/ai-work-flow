@@ -289,7 +289,7 @@ test("does not stash, merge, or remove a worktree when integration integrity is 
 
 test("keeps undispatched tasks pending after the first serial blocked result", async () => {
   const { root, executionPlan, executionWorktree } = await pendingIntegrationFixture();
-  await writeFile(join(root, ".scratch", "migrate-runtime", "tasks", "02-follow-up.md"), "# Follow up\n");
+  await writeFile(join(root, ".scratch", "migrate-runtime", "issues", "02-follow-up.md"), "# Follow up\n");
   const specPath = join(root, ".scratch", "migrate-runtime", "spec.md");
   const twoTaskPlan = await materializeLocalSpec({ mainWorktree: root, specPath });
   await writeExecutionPlan(root, twoTaskPlan);
@@ -299,7 +299,7 @@ test("keeps undispatched tasks pending after the first serial blocked result", a
   const dispatched = [];
   const coordinator = createExecutionCoordinator({
     adapter: {
-      async executeFrontier({ tickets: tasks }) {
+      async executeFrontier({ tasks }) {
         dispatched.push(...tasks.map((task) => task.id));
         return [{ ticket_id: "01", status: "blocked", commits: [], tests: [], summary: "blocked", error: "stop" }];
       },
@@ -359,7 +359,7 @@ test("recovers a pre-merge restoration after its restored checkpoint write fails
   const resumed = await coordinator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree });
   await assert.rejects(
     coordinator.integrate({ repository: root, worktree: resumed.worktree, featureSlug: "migrate-runtime", executionPlan, checkpoint: resumed.checkpoint }),
-    /git merge --no-edit plan\/migrate-runtime failed/,
+    /git merge --no-edit feat\/migrate-runtime failed/,
   );
   const recovered = await readCheckpoint(root, "migrate-runtime");
   assert.equal(recovered.integration.stash_ref, undefined);
@@ -420,7 +420,7 @@ test("rejects complete checkpoints with pending work before terminal handling", 
 
   await assert.rejects(
     coordinator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: join(root, "unused-worktree") }),
-    /Checkpoint violates schema/,
+    /Checkpoint integrity failed/,
   );
   assert.equal(writes, 0);
   assert.equal(generated, false);

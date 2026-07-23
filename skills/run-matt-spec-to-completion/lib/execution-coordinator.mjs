@@ -238,17 +238,17 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       if (checkpoint.tickets.some((task) => task.status === "in_progress")) {
         return { status: "blocked", checkpoint, results: [], reason: "A ticket is still in progress; confirm its worker has stopped before recovery" };
       }
-      const unfinished = executionPlan.tickets.filter((task) => checkpoint.tickets.find((state) => state.id === ticket.id)?.status !== "done");
+      const unfinished = executionPlan.tickets.filter((task) => checkpoint.tickets.find((state) => state.id === task.id)?.status !== "done");
       if (unfinished.length === 0) throw new Error("No unfinished ticket remains");
-      const activeLevel = Math.min(...unfinished.map((task) => ticket.level));
-      const frontier = executionPlan.tickets.filter((task) => ticket.level === activeLevel && checkpoint.tickets.find((state) => state.id === ticket.id)?.status === "pending").sort((left, right) => left.id.localeCompare(right.id)).slice(0, 1);
+      const activeLevel = Math.min(...unfinished.map((task) => task.level));
+      const frontier = executionPlan.tickets.filter((task) => task.level === activeLevel && checkpoint.tickets.find((state) => state.id === task.id)?.status === "pending").sort((left, right) => left.id.localeCompare(right.id)).slice(0, 1);
       if (executionPlan.execution_mode === "coordinator") {
         if (!directExecutor) throw new Error("A direct executor is required for coordinator execution");
         if (frontier.length !== 1) throw new Error("Single-ticket execution requires exactly one active ticket");
       }
       const pending = frontier;
       if (pending.length > 0) {
-        checkpoint = startTickets(checkpoint, pending.map((task) => ticket.id), await currentHead(worktree), now());
+        checkpoint = startTickets(checkpoint, pending.map((task) => task.id), await currentHead(worktree), now());
         await persist(mainWorktree, featureSlug, checkpoint);
       }
       let rawResults;
@@ -266,16 +266,16 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       const results = rawResults.map(assertCompletionResult);
       const byTask = new Map(results.map((result) => [result.ticket_id, result]));
       for (const task of frontier) {
-        const result = byTask.get(ticket.id);
-        if (!result) checkpoint = blockTicket(checkpoint, ticket.id, "Completion adapter omitted this task", now());
+        const result = byTask.get(task.id);
+        if (!result) checkpoint = blockTicket(checkpoint, task.id, "Completion adapter omitted this task", now());
         else if (result.status === "done") {
           await assertResultCommits(worktree, result);
-          checkpoint = completeTicket(checkpoint, ticket.id, result.commits.at(-1), now());
-        } else checkpoint = blockTicket(checkpoint, ticket.id, result.error, now());
+          checkpoint = completeTicket(checkpoint, task.id, result.commits.at(-1), now());
+        } else checkpoint = blockTicket(checkpoint, task.id, result.error, now());
         await persist(mainWorktree, featureSlug, checkpoint);
         if (result?.status === "done") {
           await requireIntegrity({ mainWorktree, featureSlug, executionWorktree: worktree });
-          await markLocalIssueComplete({ mainWorktree, executionPlan, ticketId: ticket.id });
+          await markLocalIssueComplete({ mainWorktree, executionPlan, ticketId: task.id });
         }
       }
       return { checkpoint, results };
