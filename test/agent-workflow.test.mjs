@@ -253,7 +253,7 @@ test('generation preserves unrelated global configuration and agents', () => {
   assert.match(readFileSync(resolve(paths.home, '.codex/config.toml'), 'utf8'), /^max_depth = 2$/m);
   assert.match(readFileSync(resolve(paths.home, '.codex/config.toml'), 'utf8'), /^\[projects\."\/user\/project"\]$/m);
   assert.match(readFileSync(resolve(paths.home, '.codex/AGENTS.md'), 'utf8'), /~\/\.config\/ai-work-flow\/routing\.md/);
-  assert.match(readFileSync(resolve(paths.home, '.claude/CLAUDE.md'), 'utf8'), /@~\/\.config\/ai-work-flow\/routing\.md/);
+  assert.match(readFileSync(resolve(paths.home, '.claude/CLAUDE.md'), 'utf8'), /`~\/\.config\/ai-work-flow\/routing\.md`/);
   const opencode = JSON.parse(readFileSync(resolve(paths.config, 'opencode/opencode.json'), 'utf8'));
   assert.equal(opencode.theme, 'user');
   assert.equal(opencode.agent.explore, undefined);

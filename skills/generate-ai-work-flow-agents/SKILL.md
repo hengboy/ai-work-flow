@@ -1,5 +1,5 @@
 ---
-name: regenerate-ai-work-flow
+name: generate-ai-work-flow-agents
 description: 验证全局 AI Work Flow 配置并重新生成 Codex、Claude Code 或 OpenCode agents。用于修改 ~/.config/ai-work-flow/config.json 后使模型、推理强度、OpenCode 模型或 variant 生效，或用户要求重新生成全局 agents 时使用。
 ---
 

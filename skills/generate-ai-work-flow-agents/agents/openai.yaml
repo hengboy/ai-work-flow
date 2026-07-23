@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generate AI Work Flow Agents"
+  short_description: "Validate config and generate global agents"
+  default_prompt: "Use $generate-ai-work-flow-agents to validate my global configuration and generate agents."

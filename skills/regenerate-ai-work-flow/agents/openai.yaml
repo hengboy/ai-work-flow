@@ -1,4 +1,0 @@
-interface:
-  display_name: "Regenerate AI Work Flow"
-  short_description: "Validate config and regenerate global agents"
-  default_prompt: "Use $regenerate-ai-work-flow to validate my global configuration and regenerate agents."

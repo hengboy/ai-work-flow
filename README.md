@@ -21,7 +21,7 @@ node scripts/install.mjs
 
 安装会完成以下工作：
 
-- 将自定义技能（`run-matt-spec-to-completion`、`regenerate-ai-work-flow`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录
+- 将自定义技能（`run-matt-spec-to-completion`、`generate-ai-work-flow-agents`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录
 - 创建 `~/.config/ai-work-flow/config.json` 和 `routing.md`
 - 生成三端的 9 个受管理 agent
 - 更新三端的路由配置，并将 OpenCode 默认 agent 设为 `coordinator`
@@ -53,7 +53,7 @@ node scripts/install.mjs validate
 node scripts/install.mjs --help
 ```
 
-`install` 是完整流程：同步 Skills、初始化配置和路由、安装运行时文件，然后生成 agents。`init` 和 `validate` 适合安装或排查问题；配置更新后的 agents 重新生成应通过 `$regenerate-ai-work-flow` 完成。
+`install` 是完整流程：同步 Skills、初始化配置和路由、安装运行时文件，然后生成 agents。`init` 和 `validate` 适合安装或排查问题；配置更新后的 agents 重新生成应通过 `$generate-ai-work-flow-agents` 完成。
 
 ## 模型配置
 
@@ -84,10 +84,10 @@ node scripts/install.mjs --help
 
 实际配置必须保留全部受管理角色及三端配置。Codex 的 `reasoning` 使用非空字符串，可配置 `low`、`medium`、`high` 或模型支持的更高档位（例如 `xhigh`）；Claude Code 的 `effort` 只能使用 `low`、`medium` 或 `high`。OpenCode 的 `model` 可以为 `null`，表示继承主会话模型；需要明确指定时填写提供方和模型，例如 `provider/model`，并按提供方填写 `variant` 或 `options`。
 
-修改配置后，调用唯一的更新入口 `$regenerate-ai-work-flow`：
+修改配置后，调用唯一的更新入口 `$generate-ai-work-flow-agents`：
 
 ```text
-$regenerate-ai-work-flow
+$generate-ai-work-flow-agents
 ```
 
 该 Skill 会定位已安装的运行时，先执行 `validate`，验证通过后再执行 `generate`。需要限定平台时，在调用中明确指定 Codex、Claude Code、OpenCode，或它们的组合。生成完成后，新会话才会读取更新后的 agents。
