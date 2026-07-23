@@ -1,10 +1,10 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import process from 'node:process';
 
 import { loadAgentAssets } from './asset-catalog.mjs';
 import { globalPaths } from './paths.mjs';
-import { fail, isPlainObject, readJson, write } from './shared.mjs';
+import { fail, isPlainObject, mergeRoles, readJson, write } from './shared.mjs';
 import { generate as generatePlatform } from './platform-adapter.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -17,7 +17,11 @@ function usage() {
   node scripts/install.mjs [--platform codex,claude,opencode] [--dry-run]
   node scripts/install.mjs init [--dry-run]
   node scripts/install.mjs generate [--platform codex,claude,opencode] [--dry-run]
-  node scripts/install.mjs validate`;
+  node scripts/install.mjs validate
+  node scripts/install.mjs env
+  node scripts/install.mjs env use <name>
+  node scripts/install.mjs env create <name>
+  node scripts/install.mjs env delete <name>`;
 }
 
 function parseArgs(argv) {
@@ -26,6 +30,13 @@ function parseArgs(argv) {
   const command = hasCommand ? argv[0] : 'install';
   const rest = hasCommand ? argv.slice(1) : argv;
   const options = { command, dryRun: false, platforms: [...PLATFORMS] };
+  
+  if (command === 'env') {
+    options.envAction = rest[0];
+    options.envName = rest[1];
+    return options;
+  }
+  
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
     if (arg === '--dry-run') options.dryRun = true;
@@ -77,7 +88,111 @@ function loadConfig(assets, allowDefaults = false) {
     if (allowDefaults) return { config: assets.defaults, paths };
     fail(`Missing ${paths.config}. Run init first.`);
   }
-  return { config: readJson(paths.config), paths };
+  const baseConfig = readJson(paths.config);
+  return { config: resolveConfig(baseConfig, paths), paths };
+}
+
+function resolveConfig(baseConfig, paths) {
+  if (!existsSync(paths.environmentMarker)) {
+    return baseConfig;
+  }
+  const envName = readFileSync(paths.environmentMarker, 'utf8').trim();
+  const envPath = resolve(paths.environments, `${envName}.json`);
+  if (!existsSync(envPath)) {
+    fail(`Environment file not found: ${envPath}`);
+  }
+  const envConfig = readJson(envPath);
+  return {
+    version: baseConfig.version,
+    roles: mergeRoles(baseConfig.roles, envConfig.roles || {})
+  };
+}
+
+function listEnvironments() {
+  const paths = globalPaths();
+  const currentEnv = existsSync(paths.environmentMarker) 
+    ? readFileSync(paths.environmentMarker, 'utf8').trim() 
+    : null;
+  
+  console.log('Available environments:');
+  console.log('  * default (no environment selected)');
+  
+  if (!existsSync(paths.environments)) {
+    return;
+  }
+  
+  const files = readdirSync(paths.environments).filter(f => f.endsWith('.json'));
+  for (const file of files) {
+    const name = file.replace(/\.json$/, '');
+    const marker = name === currentEnv ? '*' : ' ';
+    console.log(`  ${marker} ${name}`);
+  }
+}
+
+function useEnvironment(name) {
+  const paths = globalPaths();
+  
+  if (name === 'default') {
+    if (existsSync(paths.environmentMarker)) {
+      unlinkSync(paths.environmentMarker);
+      console.log('Switched to default environment (no environment selected).');
+    } else {
+      console.log('Already using default environment.');
+    }
+    return;
+  }
+  
+  const envPath = resolve(paths.environments, `${name}.json`);
+  if (!existsSync(envPath)) {
+    fail(`Environment not found: ${name}`);
+  }
+  
+  mkdirSync(paths.dir, { recursive: true });
+  writeFileSync(paths.environmentMarker, name);
+  console.log(`Switched to environment: ${name}`);
+}
+
+function createEnvironment(name) {
+  const paths = globalPaths();
+  
+  if (!existsSync(paths.config)) {
+    fail(`Missing ${paths.config}. Run init first.`);
+  }
+  
+  const envPath = resolve(paths.environments, `${name}.json`);
+  if (existsSync(envPath)) {
+    fail(`Environment already exists: ${name}`);
+  }
+  
+  const baseConfig = readJson(paths.config);
+  const resolvedConfig = resolveConfig(baseConfig, paths);
+  
+  mkdirSync(paths.environments, { recursive: true });
+  writeFileSync(envPath, `${JSON.stringify(resolvedConfig, null, 2)}\n`);
+  console.log(`Created environment: ${name}`);
+  console.log(`WRITE ${envPath}`);
+}
+
+function deleteEnvironment(name) {
+  const paths = globalPaths();
+  const envPath = resolve(paths.environments, `${name}.json`);
+  
+  if (!existsSync(envPath)) {
+    fail(`Environment not found: ${name}`);
+  }
+  
+  const currentEnv = existsSync(paths.environmentMarker) 
+    ? readFileSync(paths.environmentMarker, 'utf8').trim() 
+    : null;
+  
+  if (name === currentEnv) {
+    unlinkSync(paths.environmentMarker);
+    console.log(`Deleted environment: ${name} (was active, switched to default)`);
+  } else {
+    console.log(`Deleted environment: ${name}`);
+  }
+  
+  unlinkSync(envPath);
 }
 
 function validateConfig(config, roles) {
@@ -145,6 +260,30 @@ function generate(platforms, dryRun, assets, config = loadConfig(assets, dryRun)
 export function runCli(argv) {
   const options = parseArgs(argv);
   if (options.help) return console.log(usage());
+  
+  if (options.command === 'env') {
+    if (!options.envAction || options.envAction === 'list') {
+      listEnvironments();
+      return;
+    }
+    if (options.envAction === 'use') {
+      if (!options.envName) fail('env use requires an environment name.');
+      useEnvironment(options.envName);
+      return;
+    }
+    if (options.envAction === 'create') {
+      if (!options.envName) fail('env create requires an environment name.');
+      createEnvironment(options.envName);
+      return;
+    }
+    if (options.envAction === 'delete') {
+      if (!options.envName) fail('env delete requires an environment name.');
+      deleteEnvironment(options.envName);
+      return;
+    }
+    fail(`Unknown env action: ${options.envAction}`);
+  }
+  
   // The catalog is validated before any lifecycle step can write global files.
   const assets = loadAgentAssets();
   if (options.command === 'install') installSkills(options.dryRun);

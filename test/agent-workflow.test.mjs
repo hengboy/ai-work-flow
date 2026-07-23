@@ -387,5 +387,112 @@ test("repeated installation is idempotent and the global workflow is independent
   assert.deepEqual(readdirSync(paths.project), []);
 });
 
+test('environment merge overrides only specified roles from base config', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  
+  const envDir = resolve(paths.config, 'ai-work-flow/environments');
+  mkdirSync(envDir, { recursive: true });
+  const envConfig = {
+    version: 1,
+    roles: {
+      coordinator: {
+        codex: { model: 'env-codex', reasoning: 'low' },
+        claude: { model: 'env-claude', effort: 'low' },
+        opencode: { model: 'env-opencode', variant: 'low', options: {} }
+      }
+    }
+  };
+  writeFileSync(resolve(envDir, 'test.json'), `${JSON.stringify(envConfig, null, 2)}\n`);
+  writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'test');
+  
+  const result = run(paths, 'generate', '--platform', 'codex');
+  assert.equal(result.status, 0, result.stderr);
+  
+  const coordinatorAgent = readFileSync(agentPath(paths, 'codex', 'coordinator', 'toml'), 'utf8');
+  assert.match(coordinatorAgent, /model = "env-codex"/);
+  assert.match(coordinatorAgent, /model_reasoning_effort = "low"/);
+  
+  const fileExplorerAgent = readFileSync(agentPath(paths, 'codex', 'file-explorer', 'toml'), 'utf8');
+  const baseConfig = JSON.parse(readFileSync(configPath(paths), 'utf8'));
+  assert.match(fileExplorerAgent, new RegExp(`model = "${baseConfig.roles['file-explorer'].codex.model}"`));
+});
+
+test('env use writes marker file and env use default removes it', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  
+  const envDir = resolve(paths.config, 'ai-work-flow/environments');
+  mkdirSync(envDir, { recursive: true });
+  writeFileSync(resolve(envDir, 'dev.json'), '{"version":1,"roles":{}}\n');
+  
+  const useResult = run(paths, 'env', 'use', 'dev');
+  assert.equal(useResult.status, 0, useResult.stderr);
+  assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/.environment')));
+  assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'utf8'), 'dev');
+  
+  const defaultResult = run(paths, 'env', 'use', 'default');
+  assert.equal(defaultResult.status, 0, defaultResult.stderr);
+  assert.ok(!existsSync(resolve(paths.config, 'ai-work-flow/.environment')));
+});
+
+test('env create generates full copy of resolved config', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  
+  const createResult = run(paths, 'env', 'create', 'production');
+  assert.equal(createResult.status, 0, createResult.stderr);
+  
+  const envPath = resolve(paths.config, 'ai-work-flow/environments/production.json');
+  assert.ok(existsSync(envPath));
+  
+  const baseConfig = JSON.parse(readFileSync(configPath(paths), 'utf8'));
+  const envConfig = JSON.parse(readFileSync(envPath, 'utf8'));
+  assert.deepEqual(envConfig, baseConfig);
+});
+
+test('env delete removes environment file and clears marker if active', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  
+  const envDir = resolve(paths.config, 'ai-work-flow/environments');
+  mkdirSync(envDir, { recursive: true });
+  writeFileSync(resolve(envDir, 'staging.json'), '{"version":1,"roles":{}}\n');
+  writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'staging');
+  
+  const deleteResult = run(paths, 'env', 'delete', 'staging');
+  assert.equal(deleteResult.status, 0, deleteResult.stderr);
+  assert.ok(!existsSync(resolve(envDir, 'staging.json')));
+  assert.ok(!existsSync(resolve(paths.config, 'ai-work-flow/.environment')));
+});
+
+test('env list shows all environments with current marked', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  
+  const envDir = resolve(paths.config, 'ai-work-flow/environments');
+  mkdirSync(envDir, { recursive: true });
+  writeFileSync(resolve(envDir, 'dev.json'), '{"version":1,"roles":{}}\n');
+  writeFileSync(resolve(envDir, 'prod.json'), '{"version":1,"roles":{}}\n');
+  writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'dev');
+  
+  const listResult = run(paths, 'env');
+  assert.equal(listResult.status, 0, listResult.stderr);
+  assert.match(listResult.stdout, /Available environments:/);
+  assert.match(listResult.stdout, /\* default/);
+  assert.match(listResult.stdout, /\* dev/);
+  assert.match(listResult.stdout, /  prod/);
+});
+
+test('environment file not found gives clear error', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  
+  writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'nonexistent');
+  
+  const result = run(paths, 'validate');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Environment file not found/);
+});
 
 

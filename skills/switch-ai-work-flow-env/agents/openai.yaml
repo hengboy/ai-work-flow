@@ -1,0 +1,4 @@
+interface:
+  display_name: "切换 AI Work Flow 环境"
+  short_description: "切换环境预设并重新生成代理"
+  default_prompt: "使用 $switch-ai-work-flow-env 切换到指定环境并重新生成代理。"

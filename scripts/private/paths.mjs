@@ -10,6 +10,8 @@ export function globalPaths() {
     dir,
     config: resolve(dir, 'config.json'),
     routing: resolve(dir, 'routing.md'),
+    environments: resolve(dir, 'environments'),
+    environmentMarker: resolve(dir, '.environment'),
     codexDir: resolve(home, '.codex'),
     claudeDir: resolve(home, '.claude'),
     openCodeDir: resolve(configHome, 'opencode')

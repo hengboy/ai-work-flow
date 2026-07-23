@@ -26,3 +26,7 @@ export function write(path, contents, dryRun, changed) {
     writeFileSync(path, contents);
   }
 }
+
+export function mergeRoles(base, override) {
+  return { ...base, ...override };
+}
