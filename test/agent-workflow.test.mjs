@@ -138,6 +138,45 @@ test('coordinator routes every required discovery phase through File Explorer', 
   }
 });
 
+test('coordinator carries the retry and stop-lock policy into every generated platform', () => {
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const source = readFileSync(resolve(agentAssets, 'bodies/coordinator.md'), 'utf8');
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  const assertions = [
+    /最多重试 2 次，共 3 次/,
+    /可恢复的 429、502\/503\/504、超时、连接重置或结果未知/,
+    /硬配额或计费耗尽的 429 不可重试/,
+    /400\/401\/403\/404、参数或模型配置错误、子代理正常任务失败或测试失败、需求不清均不可重试/,
+    /`Retry-After`，否则等待 30 秒、60 秒/,
+    /网关或连接错误等待 5 秒、15 秒；单次等待不超过 120 秒/,
+    /不承诺平台未提供的原子性或精确计时/,
+    /只有确认其已终止，才能用全新子会话重试/,
+    /无法确认终止时必须停止，不得创建可能重复工作的替代会话/,
+    /OpenCode 的重试必须新建 child session；复用 `task_id` 是恢复，不得用于重试/,
+    /启动停止锁：禁止任何新委派、恢复或继续/,
+    /主代理不得继续实施或将任务汇总为成功/,
+    /等待用户明确“继续”或“重试”/,
+    /确认没有持续运行的子代理后，才为该任务重置本轮预算/,
+    /OpenCode 不得传入旧 `task_id`/
+  ];
+
+  for (const content of [routing, source]) {
+    for (const assertion of assertions) assert.match(content, assertion);
+  }
+  assert.equal(
+    readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/coordinator.md'), 'utf8'),
+    source
+  );
+  assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const generated = readFileSync(agentPath(paths, platform, 'coordinator', extension), 'utf8');
+    for (const assertion of assertions) assert.match(generated, assertion, platform);
+  }
+});
+
 test('platform generation enforces the declared workspace access where supported', () => {
   const paths = environment();
   const result = install(paths);
