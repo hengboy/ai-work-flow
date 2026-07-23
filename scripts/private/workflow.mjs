@@ -106,7 +106,7 @@ function validateConfig(config, roles) {
     const opencode = entry.opencode;
     if (isPlainObject(codex)) {
       if (typeof codex.model !== 'string' || !codex.model) errors.push(`${role.id}.codex.model must be a non-empty string.`);
-      if (!REASONING_VALUES.has(codex.reasoning)) errors.push(`${role.id}.codex.reasoning must be low, medium, or high.`);
+      if (typeof codex.reasoning !== 'string' || !codex.reasoning) errors.push(`${role.id}.codex.reasoning must be a non-empty string.`);
     }
     if (isPlainObject(claude)) {
       if (typeof claude.model !== 'string' || !claude.model) errors.push(`${role.id}.claude.model must be a non-empty string.`);

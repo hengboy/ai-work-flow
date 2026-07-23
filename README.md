@@ -79,7 +79,7 @@ node scripts/install.mjs --help
 }
 ```
 
-实际配置必须保留全部受管理角色及三端配置。Codex 的 `reasoning` 和 Claude Code 的 `effort` 只能使用 `low`、`medium` 或 `high`。OpenCode 的 `model` 可以为 `null`，表示继承主会话模型；需要明确指定时填写提供方和模型，例如 `provider/model`，并按提供方填写 `variant` 或 `options`。
+实际配置必须保留全部受管理角色及三端配置。Codex 的 `reasoning` 使用非空字符串，可配置 `low`、`medium`、`high` 或模型支持的更高档位（例如 `xhigh`）；Claude Code 的 `effort` 只能使用 `low`、`medium` 或 `high`。OpenCode 的 `model` 可以为 `null`，表示继承主会话模型；需要明确指定时填写提供方和模型，例如 `provider/model`，并按提供方填写 `variant` 或 `options`。
 
 修改配置后，调用唯一的更新入口 `$regenerate-ai-work-flow`：
 

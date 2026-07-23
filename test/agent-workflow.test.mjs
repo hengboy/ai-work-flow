@@ -328,14 +328,16 @@ test('invalid configuration and dry runs never write global files', () => {
 
   assert.equal(run(paths, 'init').status, 0);
   const config = JSON.parse(readFileSync(configPath(paths), 'utf8'));
-  config.roles.researcher.codex.reasoning = 'extreme';
+  config.roles.researcher.codex.reasoning = '';
   writeFileSync(configPath(paths), `${JSON.stringify(config)}\n`);
   const invalid = run(paths, 'validate');
   assert.equal(invalid.status, 1);
-  assert.match(invalid.stderr, /researcher\.codex\.reasoning must be low, medium, or high/);
+  assert.match(invalid.stderr, /researcher\.codex\.reasoning must be a non-empty string/);
 
-  config.roles.researcher.codex.reasoning = 'medium';
+  config.roles.researcher.codex.reasoning = 'xhigh';
   writeFileSync(configPath(paths), `${JSON.stringify(config)}\n`);
+  const extended = run(paths, 'validate');
+  assert.equal(extended.status, 0, extended.stderr);
   const dryGenerate = run(paths, 'generate', '--dry-run');
   assert.equal(dryGenerate.status, 0, dryGenerate.stderr);
   assert.ok(!existsSync(agentPath(paths, 'codex', 'coordinator', 'toml')));
