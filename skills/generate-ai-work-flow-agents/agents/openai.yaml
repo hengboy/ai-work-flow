@@ -1,4 +1,4 @@
 interface:
-  display_name: "Generate AI Work Flow Agents"
-  short_description: "Validate config and generate global agents"
-  default_prompt: "Use $generate-ai-work-flow-agents to validate my global configuration and generate agents."
+  display_name: "生成 AI Work Flow 代理"
+  short_description: "验证配置并生成全局代理"
+  default_prompt: "使用 $generate-ai-work-flow-agents 验证全局配置并生成代理。"
