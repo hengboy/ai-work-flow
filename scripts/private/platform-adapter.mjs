@@ -7,6 +7,7 @@ import { updateManagedMarker } from './managed-content.mjs';
 const OBSOLETE_PRIMARY_AGENT_ID = ['coord', 'inator'].join('');
 const REVIEWER_ROLE_IDS = new Set(['code-reviewer', 'review-standards', 'review-spec']);
 const READ_ONLY_GIT_BASH = {
+  '*': 'deny',
   'git status*': 'allow',
   'git diff*': 'allow',
   'git show*': 'allow',
@@ -15,7 +16,8 @@ const READ_ONLY_GIT_BASH = {
   'git merge-base*': 'allow',
   'git branch*': 'allow',
   'git ls-files*': 'allow',
-  '*': 'deny'
+  'node --test*': 'allow',
+  'npm test*': 'allow'
 };
 
 // --- Shared functions ---

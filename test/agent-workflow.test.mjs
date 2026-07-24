@@ -181,6 +181,59 @@ test('installation and platform generation retain the managed prompt content', (
   }
 });
 
+test('Git Committer authorized scope is preserved through installation and every platform', () => {
+  const gitCommitter = readFileSync(resolve(agentAssets, 'bodies/git-committer.md'), 'utf8');
+  const orchestrator = readFileSync(resolve(agentAssets, 'bodies/orchestrator.md'), 'utf8');
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  const committerAssertions = [
+    /git status --porcelain=v1 -z/,
+    /完整文件清单/,
+    /首次检查/,
+    /不得调用 `git add`、`git commit`/,
+    /一次性白名单/,
+    /逐项、原样文件路径/,
+    /当前完整变更集合与授权快照完全一致/,
+    /暂存前停止/,
+    /一次提交尝试后失效/,
+    /不得.*相关性.*推断/
+  ];
+  const orchestratorAssertions = [
+    /当前对话状态中保留.*完整清单/,
+    /清单展示之后/,
+    /明确指向刚才列出的全部文件/,
+    /笼统.*不能.*授权/,
+    /用户的授权原文/,
+    /逐项、原样文件路径/,
+    /当前变更集合.*差异.*暂存前停止/,
+    /完成或失败后清除.*快照/,
+    /不得推断.*相关性/
+  ];
+  const sharedAssertions = [
+    /首次阻塞清单是唯一授权对象/,
+    /授权必须发生在清单展示之后/,
+    /只能原样转交.*只能逐项校验/,
+    /当前变更集合必须与授权快照一致/,
+    /白名单一次性消费/,
+    /不得推断文件相关性/
+  ];
+
+  for (const assertion of committerAssertions) assert.match(gitCommitter, assertion);
+  for (const assertion of orchestratorAssertions) assert.match(orchestrator, assertion);
+  for (const assertion of sharedAssertions) assert.match(routing, assertion);
+  assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
+
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const generatedCommitter = readFileSync(agentPath(paths, platform, 'git-committer', extension), 'utf8');
+    const generatedOrchestrator = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
+    for (const assertion of committerAssertions) assert.match(generatedCommitter, assertion, platform);
+    for (const assertion of orchestratorAssertions) assert.match(generatedOrchestrator, assertion, platform);
+  }
+});
+
 test('managed marker updates preserve user content outside the marker byte-for-byte', () => {
   const userPrefix = '# User configuration\n\nKeep this exact.\n\n';
   const userSuffix = '\n\n## User notes\nDo not rewrite.\n';
@@ -380,9 +433,11 @@ test('code review approval satisfies the final independent review', () => {
   assert.equal(result.status, 0, result.stderr);
 
   const assertions = [
-    /\*\*Code Reviewer\*\* 的 Standards 与 Spec 双轴审查通过即为最终独立审查/,
-    /同一稳定差异不得再次委派任何审查角色/,
-    /只有代码、测试、规格或审查基准提交发生变化时，才可重新委派 \*\*Code Reviewer\*\*/,
+    /完成所需 Git 与测试命令验证的 \*\*Code Reviewer\*\* 双轴审查才是最终独立审查/,
+    /工具不可用或命令被拒绝导致的审查不算完成/,
+    /审查能力基准恢复后可重新委派一次/,
+    /同一会话中，同一稳定差异的已完成审查不得再次委派任何审查角色/,
+    /只有代码、测试、规格或审查能力基准发生变化时，才可重新委派 \*\*Code Reviewer\*\*/,
   ];
 
   for (const content of [routing, orchestrator]) {
@@ -456,7 +511,7 @@ test('platform generation enforces the declared workspace access where supported
     }
     if (reviewerRoles.has(role.id)) {
       const expectedTaskPermission = role.id === 'code-reviewer' ? 'allow' : 'deny';
-      assert.match(openCode, /"bash":\{"git status\*":"allow","git diff\*":"allow","git show\*":"allow","git log\*":"allow","git rev-parse\*":"allow","git merge-base\*":"allow","git branch\*":"allow","git ls-files\*":"allow","\*":"deny"\}/, role.id);
+      assert.match(openCode, /"bash":\{"\*":"deny","git status\*":"allow","git diff\*":"allow","git show\*":"allow","git log\*":"allow","git rev-parse\*":"allow","git merge-base\*":"allow","git branch\*":"allow","git ls-files\*":"allow","node --test\*":"allow","npm test\*":"allow"\}/, role.id);
       assert.match(openCode, new RegExp(`"task":"${expectedTaskPermission}"`), role.id);
       assert.doesNotMatch(openCode, /"bash":"allow"/, role.id);
     } else if (role.workspace === 'read') {
