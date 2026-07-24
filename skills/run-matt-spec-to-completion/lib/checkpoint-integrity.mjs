@@ -67,8 +67,11 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
     const commitWorktree = executionWorktree || worktree;
     if (!await gitSucceeds(commitWorktree, ["rev-parse", "--verify", `${commit}^{commit}`])) {
       diagnostics.push(diagnostic("ticket-commit-missing", `${ticket.id}:${commit}`));
-    } else if (!await isAncestor(commitWorktree, commit)) {
+    } else if (!await isAncestor(commitWorktree, commit, integrationRecord ? "HEAD" : checkpoint.branch)) {
       diagnostics.push(diagnostic("ticket-commit-not-ancestor", `${ticket.id}:${commit}`));
+    }
+    if (ticket.status === "done" && (ticket.start_commit === ticket.end_commit || !await isAncestor(commitWorktree, ticket.start_commit, ticket.end_commit))) {
+      diagnostics.push(diagnostic("ticket-commit-not-after-start", ticket.id));
     }
   }
   for (const ticketId of specTicketIds) {

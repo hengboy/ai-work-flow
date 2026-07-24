@@ -5,10 +5,34 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
+import { MARKER_END, MARKER_START, updateManagedMarker } from '../scripts/private/managed-content.mjs';
+
 const root = resolve(import.meta.dirname, '..');
 const installer = resolve(root, 'scripts/install.mjs');
 const agentAssets = resolve(root, 'scripts/agent-assets');
 const catalog = JSON.parse(readFileSync(resolve(agentAssets, 'roles.json'), 'utf8'));
+const managedSkillDirectories = [
+  'generate-ai-work-flow-agents',
+  'switch-ai-work-flow-env',
+  'run-matt-spec-to-completion'
+];
+const defaultSkillPrompts = new Map([
+  ['generate-ai-work-flow-agents', '使用 `$generate-ai-work-flow-agents` 验证全局配置并生成代理。'],
+  ['switch-ai-work-flow-env', '使用 `$switch-ai-work-flow-env` 切换到指定环境并重新生成代理。']
+]);
+
+function assertPromptLayout(source, name) {
+  assert.equal((source.match(/^# [^\n]+$/gm) ?? []).length, 1, `${name} needs one primary title`);
+  assert.match(source, /^## 回复格式$/m, `${name} needs a reply format`);
+  assert.match(source, /\*\*(?:状态|结论|阻塞|结果|更新|注意|完成|发现|提交结果|严重)：\*\*/, `${name} needs a bold response label`);
+  assert.doesNotMatch(source, /^#{1,3} [^\n]+\n(?!\n)/m, `${name} headings need a following blank line`);
+}
+
+function codexDeveloperInstructions(source) {
+  const encoded = source.match(/^developer_instructions = (.+)$/m)?.[1];
+  assert.ok(encoded, 'Codex agent needs developer instructions');
+  return JSON.parse(encoded).replaceAll('\\n', '\n');
+}
 
 function fixture() {
   return mkdtempSync(resolve(tmpdir(), 'agent-workflow-'));
@@ -82,6 +106,93 @@ test('every role has one shared body template without platform formatting', () =
   }
 });
 
+test('managed prompt documents use the Markdown layout', () => {
+  const entries = [
+    ['docs/prompt-format.md', readFileSync(resolve(root, 'docs/prompt-format.md'), 'utf8')],
+    ['routing.md', readFileSync(resolve(agentAssets, 'routing.md'), 'utf8')],
+    ...managedSkillDirectories.map((directory) => [
+      `skills/${directory}/SKILL.md`,
+      readFileSync(resolve(root, 'skills', directory, 'SKILL.md'), 'utf8')
+    ]),
+    ...catalog.roles.map((role) => [
+      `bodies/${role.id}.md`,
+      readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8')
+    ])
+  ];
+
+  for (const [name, source] of entries) assertPromptLayout(source, name);
+});
+
+test('role bodies derive their common structure and reply sections from the catalog', () => {
+  const replyLabels = {
+    coordinator: ['协调状态', '已委派', '已收到', '结论', '阻塞'],
+    'file-explorer': ['发现', '代码地图', '交接', '阻塞'],
+    researcher: ['发现', '来源', '交接', '阻塞'],
+    'document-maintainer': ['完成', '变更', '验证', '阻塞'],
+    'planning-writer': ['完成', '变更', '验证', '阻塞'],
+    'full-stack-coder': ['完成', '变更', '验证', '阻塞'],
+    'git-committer': ['提交结果'],
+    'code-reviewer': ['Standards', 'Spec', '结论', '测试缺口', '阻塞'],
+    'review-standards': ['结论', '严重', '测试缺口', '阻塞'],
+    'review-spec': ['结论', '严重', '测试缺口', '阻塞']
+  };
+
+  for (const role of catalog.roles) {
+    const body = readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8');
+    assert.match(body, new RegExp(`^# ${role.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), role.id);
+    assert.match(body, new RegExp(`你是 \\*\\*${role.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*。`), role.id);
+    for (const heading of ['职责', '工作边界', '回复格式']) assert.match(body, new RegExp(`^## ${heading}$`, 'm'), `${role.id}: ${heading}`);
+    for (const label of replyLabels[role.id]) assert.match(body, new RegExp(`\\*\\*${label}：\\*\\*`), `${role.id}: ${label}`);
+  }
+});
+
+test('installation and platform generation retain the managed prompt content', () => {
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  for (const platformRoot of [resolve(paths.home, '.codex'), resolve(paths.home, '.claude'), resolve(paths.config, 'opencode')]) {
+    for (const directory of managedSkillDirectories) {
+      const sourceSkill = resolve(root, 'skills', directory);
+      const installedSkill = resolve(platformRoot, 'skills', directory);
+      assert.equal(
+        readFileSync(resolve(installedSkill, 'SKILL.md'), 'utf8'),
+        readFileSync(resolve(sourceSkill, 'SKILL.md'), 'utf8'),
+        directory
+      );
+      assert.equal(readFileSync(resolve(installedSkill, 'agents/openai.yaml'), 'utf8'), readFileSync(resolve(sourceSkill, 'agents/openai.yaml'), 'utf8'), directory);
+    }
+  }
+
+  for (const [directory, prompt] of defaultSkillPrompts) {
+    const source = readFileSync(resolve(root, 'skills', directory, 'agents/openai.yaml'), 'utf8');
+    assert.ok(source.includes(`  default_prompt: ${JSON.stringify(prompt)}\n`), directory);
+  }
+  assert.doesNotMatch(readFileSync(resolve(root, 'skills/run-matt-spec-to-completion/agents/openai.yaml'), 'utf8'), /^  default_prompt:/m);
+
+  assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), readFileSync(resolve(agentAssets, 'routing.md'), 'utf8'));
+  for (const role of catalog.roles) {
+    const body = readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8').trimEnd();
+    assert.equal(codexDeveloperInstructions(readFileSync(agentPath(paths, 'codex', role.id, 'toml'), 'utf8')), body, role.id);
+    assert.ok(readFileSync(agentPath(paths, 'claude', role.id, 'md'), 'utf8').endsWith(`${body}\n`), role.id);
+    assert.ok(readFileSync(agentPath(paths, 'opencode', role.id, 'md'), 'utf8').endsWith(`${body}\n`), role.id);
+  }
+});
+
+test('managed marker updates preserve user content outside the marker byte-for-byte', () => {
+  const userPrefix = '# User configuration\n\nKeep this exact.\n\n';
+  const userSuffix = '\n\n## User notes\nDo not rewrite.\n';
+  const source = `${userPrefix}${MARKER_START}\nold managed content\n${MARKER_END}${userSuffix}`;
+  const updated = updateManagedMarker(source, '/tmp/CLAUDE.md');
+  const afterMarker = (value) => value.slice(value.indexOf(MARKER_END) + MARKER_END.length);
+
+  assert.deepEqual(Buffer.from(updated.slice(0, updated.indexOf(MARKER_START))), Buffer.from(userPrefix));
+  assert.deepEqual(Buffer.from(afterMarker(updated)), Buffer.from(userSuffix));
+  const marker = updated.slice(updated.indexOf(MARKER_START), updated.indexOf(MARKER_END) + MARKER_END.length);
+  assert.match(marker, /^## AI Work Flow 代理$/m);
+  assert.doesNotMatch(marker, /^# (?!#)/m);
+});
+
 test('root installer installs every skill globally and generates every platform agent', () => {
   const paths = environment();
   for (const destination of [
@@ -109,9 +220,9 @@ test('root installer installs every skill globally and generates every platform 
   assert.ok(!existsSync(legacyConfigPath(paths)));
   assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/routing.md')));
   assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/agent-workflow.mjs')));
-  assert.equal(readdirSync(resolve(paths.home, '.codex/agents')).filter((name) => name.endsWith('.toml')).length, 9);
-  assert.equal(readdirSync(resolve(paths.home, '.claude/agents')).filter((name) => name.endsWith('.md')).length, 9);
-  assert.equal(readdirSync(resolve(paths.config, 'opencode/agents')).filter((name) => name.endsWith('.md')).length, 9);
+  assert.equal(readdirSync(resolve(paths.home, '.codex/agents')).filter((name) => name.endsWith('.toml')).length, catalog.roles.length);
+  assert.equal(readdirSync(resolve(paths.home, '.claude/agents')).filter((name) => name.endsWith('.md')).length, catalog.roles.length);
+  assert.equal(readdirSync(resolve(paths.config, 'opencode/agents')).filter((name) => name.endsWith('.md')).length, catalog.roles.length);
   assert.match(readFileSync(agentPath(paths, 'codex', 'coordinator', 'toml'), 'utf8'), /~\/\.config\/ai-work-flow\/routing/);
 });
 
@@ -203,6 +314,28 @@ test('planning workflow persists plans and waits for user confirmation before im
   }
 });
 
+test('code review approval satisfies the final independent review', () => {
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const coordinator = readFileSync(resolve(agentAssets, 'bodies/coordinator.md'), 'utf8');
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  const assertions = [
+    /\*\*Code Reviewer\*\* 的 Standards 与 Spec 双轴审查通过即为最终独立审查/,
+    /同一稳定差异不得再次委派任何审查角色/,
+    /只有代码、测试、规格或审查基准提交发生变化时，才可重新委派 \*\*Code Reviewer\*\*/,
+  ];
+
+  for (const content of [routing, coordinator]) {
+    for (const assertion of assertions) assert.match(content, assertion);
+  }
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const generated = readFileSync(agentPath(paths, platform, 'coordinator', extension), 'utf8');
+    for (const assertion of assertions) assert.match(generated, assertion, platform);
+  }
+});
+
 test('coordinator carries the retry and stop-lock policy into every generated platform', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const source = readFileSync(resolve(agentAssets, 'bodies/coordinator.md'), 'utf8');
@@ -290,7 +423,7 @@ test('generated agent descriptions prominently use their title-cased display nam
     assert.ok(readFileSync(agentPath(paths, 'codex', role.id, 'toml'), 'utf8').includes(`description = ${JSON.stringify(description)}`));
     assert.ok(readFileSync(agentPath(paths, 'claude', role.id, 'md'), 'utf8').includes(`description: ${JSON.stringify(description)}`));
     assert.ok(readFileSync(agentPath(paths, 'opencode', role.id, 'md'), 'utf8').includes(`description: ${JSON.stringify(description)}`));
-    assert.ok(readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8').startsWith(`你是 **${displayName}**。`));
+    assert.ok(readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8').includes(`你是 **${displayName}**。`));
     assert.ok(routing.includes(`**${displayName}**`));
   }
 });

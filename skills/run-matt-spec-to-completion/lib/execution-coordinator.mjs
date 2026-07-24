@@ -52,13 +52,16 @@ async function executionRecordsHaveChanges({ mainWorktree, featureSlug, executio
   return (await changedPaths(mainWorktree)).some((path) => files.has(path));
 }
 
-async function assertResultCommits(worktree, result) {
+async function assertResultCommits(worktree, result, ticket) {
   for (const commit of result.commits) {
     if (!await gitSucceeds(worktree, ["rev-parse", "--verify", `${commit}^{commit}`])) {
       throw new Error(`Completion result commit does not exist: ${commit}`);
     }
     if (!await isAncestor(worktree, commit)) {
       throw new Error(`Completion result commit is not on the execution branch: ${commit}`);
+    }
+    if (commit === ticket.start_commit || !await isAncestor(worktree, ticket.start_commit, commit)) {
+      throw new Error(`Completion result commit must be after ticket ${ticket.id} start commit: ${commit}`);
     }
   }
 }
@@ -187,7 +190,8 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       const result = assertCompletionResult(rawResult);
       if (result.ticket_id !== ticket.id) throw new Error(`Completion result belongs to ${result.ticket_id}, expected ${ticket.id}`);
       if (result.status === "done") {
-        await assertResultCommits(worktree, result);
+        const ticketState = checkpoint.tickets.find((state) => state.id === ticket.id);
+        await assertResultCommits(worktree, result, ticketState);
         checkpoint = completeTicket(checkpoint, ticket.id, result.commits.at(-1), now());
       } else {
         checkpoint = blockTicket(checkpoint, ticket.id, result.error, now());
@@ -225,6 +229,10 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       const featureSlug = executionPlan.spec.feature_slug;
       const issueTracker = createIssueTracker({ mainWorktree, executionPlan });
       const readTicket = issueTracker.read.bind(issueTracker);
+      if (checkpoint.status === "executing" && checkpoint.tickets.every((ticket) => ticket.status === "done")) {
+        for (const ticket of checkpoint.tickets) await issueTracker.markComplete(ticket.id);
+        checkpoint = await this.startReview({ mainWorktree, featureSlug, checkpoint });
+      }
       while (checkpoint.status === "executing") {
         const result = await this.executeFrontier({ worktree, mainWorktree, featureSlug, executionPlan, checkpoint, readTicket });
         if (result.status === "blocked") return result;

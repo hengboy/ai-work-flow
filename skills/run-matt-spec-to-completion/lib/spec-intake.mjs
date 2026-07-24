@@ -43,6 +43,31 @@ function levelsFor(tickets) {
   return tickets.map((ticket) => ({ ...ticket, level: level(ticket) }));
 }
 
+export function verifyTicketDependencies(tickets) {
+  const ticketIds = new Set();
+  for (const ticket of tickets) {
+    if (ticketIds.has(ticket.id)) throw new Error(`Duplicate execution plan ticket ID: ${ticket.id}`);
+    ticketIds.add(ticket.id);
+  }
+  const byId = new Map(tickets.map((ticket) => [ticket.id, ticket]));
+  for (const ticket of tickets) {
+    if (!Array.isArray(ticket.blocked_by)) throw new Error(`Ticket ${ticket.id} must declare blocked_by`);
+    const blockers = ticket.blocked_by.map((blockerId) => {
+      const blocker = byId.get(blockerId);
+      if (!blocker) throw new Error(`Ticket ${ticket.id} references unknown blocker ${blockerId}`);
+      return blocker;
+    });
+    const expectedLevel = blockers.length === 0 ? 0 : Math.max(...blockers.map((blocker) => blocker.level)) + 1;
+    if (ticket.level !== expectedLevel) {
+      const blocker = blockers.find((candidate) => candidate.level === expectedLevel - 1);
+      throw new Error(blocker
+        ? `Ticket ${ticket.id} level must follow blocker ${blocker.id}`
+        : `Ticket ${ticket.id} without blockers must be level 0`);
+    }
+  }
+  return tickets;
+}
+
 function revisionFor(facts) {
   return createHash("sha256").update(JSON.stringify(facts)).digest("hex");
 }
@@ -156,6 +181,7 @@ export function verifyExecutionPlan(executionPlan) {
   if (executionPlan.execution_mode === "coordinator" && executionPlan.tickets.length !== 1) {
     throw new Error("Coordinator execution is only available for a single-ticket spec");
   }
+  verifyTicketDependencies(executionPlan.tickets);
   const { revision, ...facts } = executionPlan;
   if (revisionFor(facts) !== revision) throw new Error("Execution plan revision does not match its immutable facts");
   return executionPlan;
