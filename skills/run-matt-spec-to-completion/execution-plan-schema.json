@@ -14,7 +14,7 @@
     "created_at": { "$ref": "#/$defs/shanghai-date-time" },
     "execution_mode": {
       "type": "string",
-      "enum": ["coordinator", "delegated"],
+      "enum": ["orchestrator", "delegated"],
       "description": "单 Ticket Spec 的实施者。"
     },
     "spec": {

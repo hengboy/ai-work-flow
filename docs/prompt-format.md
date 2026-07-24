@@ -16,7 +16,7 @@
 
 | 类型 | 必需标签 |
 | --- | --- |
-| Coordinator | 协调状态、已委派、已收到、结论或阻塞 |
+| Orchestrator | 协调状态、已委派、已收到、结论或阻塞 |
 | File Explorer 与 Researcher | 发现、代码地图或来源、交接 |
 | 写作与实现角色 | 完成、变更、验证或阻塞 |
 | 审查角色 | 结论、按严重性分组的发现、测试缺口；Code Reviewer 分列 Standards 与 Spec |

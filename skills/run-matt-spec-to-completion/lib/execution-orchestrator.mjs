@@ -73,7 +73,7 @@ function verifiedExecutionPlan(executionPlan, integrity) {
   return integrity.executionPlan;
 }
 
-export function createExecutionCoordinator({ adapter, directExecutor, materialize = materializeSpec, now = toShanghaiTimestamp, generateCommitMessage, checkpointWriter = writeCheckpointToDisk } = {}) {
+export function createExecutionOrchestrator({ adapter, directExecutor, materialize = materializeSpec, now = toShanghaiTimestamp, generateCommitMessage, checkpointWriter = writeCheckpointToDisk } = {}) {
   const stash = createPreMergeStash({ git, gitSucceeds, gitOutput, gitSucceedsWithInput });
 
   const requireIntegrity = async ({ mainWorktree, featureSlug, executionWorktree, checkExecutionWorktree = true, allowWorktreeRelocation = false }) => {
@@ -171,17 +171,17 @@ export function createExecutionCoordinator({ adapter, directExecutor, materializ
       const selection = selectTicketFrontier({ executionPlan, checkpoint });
       if (selection.status === "blocked") return { status: "blocked", checkpoint, results: [], ...(selection.reason ? { reason: selection.reason } : {}) };
       const [ticket] = selection.tickets;
-      if (executionPlan.execution_mode === "coordinator") {
-        if (!directExecutor) throw new Error("A direct executor is required for coordinator execution");
+      if (executionPlan.execution_mode === "orchestrator") {
+        if (!directExecutor) throw new Error("A direct executor is required for orchestrator execution");
       }
       checkpoint = startTickets(checkpoint, [ticket.id], await currentHead(worktree), now());
       await persist(mainWorktree, featureSlug, checkpoint);
       let rawResult;
-      if (executionPlan.execution_mode === "coordinator") {
+      if (executionPlan.execution_mode === "orchestrator") {
         try {
           rawResult = await directExecutor({ task: ticket, worktree, executionPlan, readTicket });
         } catch (error) {
-          rawResult = { ticket_id: ticket.id, status: "blocked", commits: [], tests: [], summary: "Coordinator execution failed", error: error instanceof Error ? error.message : String(error) };
+          rawResult = { ticket_id: ticket.id, status: "blocked", commits: [], tests: [], summary: "Orchestrator execution failed", error: error instanceof Error ? error.message : String(error) };
         }
       } else {
         if (!adapter) throw new Error("Completion adapter is required to execute a ticket");

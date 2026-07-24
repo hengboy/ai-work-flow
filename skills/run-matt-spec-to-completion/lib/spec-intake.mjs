@@ -94,7 +94,7 @@ function executionModeFor(tickets) {
   const work = `${ticket.title}\n${ticket.content}`;
   if (ticket.content.length > DIRECT_EXECUTION_MAX_CONTENT_LENGTH) return "delegated";
   if (ticket.work_item_count > DIRECT_EXECUTION_MAX_WORK_ITEMS) return "delegated";
-  return COMPLEX_TICKET_PATTERN.test(work) ? "delegated" : "coordinator";
+  return COMPLEX_TICKET_PATTERN.test(work) ? "delegated" : "orchestrator";
 }
 
 function executionTicketFrom({ content, work_item_count, ...ticket }) {
@@ -178,8 +178,8 @@ export function verifyExecutionPlan(executionPlan) {
   if (executionPlan.spec.ref !== sourceSpecPath(executionPlan.spec.feature_slug)) {
     throw new Error("Execution plan reference does not match its feature_slug");
   }
-  if (executionPlan.execution_mode === "coordinator" && executionPlan.tickets.length !== 1) {
-    throw new Error("Coordinator execution is only available for a single-ticket spec");
+  if (executionPlan.execution_mode === "orchestrator" && executionPlan.tickets.length !== 1) {
+    throw new Error("Orchestrator execution is only available for a single-ticket spec");
   }
   verifyTicketDependencies(executionPlan.tickets);
   const { revision, ...facts } = executionPlan;

@@ -11,6 +11,7 @@ const ROOT = resolve(import.meta.dirname, '..', '..');
 const SKILLS_ROOT = resolve(ROOT, 'skills');
 const PLATFORMS = new Set(['codex', 'claude', 'opencode']);
 const REASONING_VALUES = new Set(['low', 'medium', 'high']);
+const OBSOLETE_PRIMARY_AGENT_ID = ['coord', 'inator'].join('');
 
 function usage() {
   return `Usage:
@@ -77,6 +78,14 @@ function installSkills(lifecycle, dryRun) {
       cpSync(source, resolve(destination, name), { recursive: true, force: true });
     }
   }
+  for (const destination of destinations) {
+    for (const path of [
+      resolve(destination, 'run-matt-spec-to-completion', 'lib', `execution-${OBSOLETE_PRIMARY_AGENT_ID}.mjs`),
+      resolve(destination, 'run-matt-spec-to-completion', 'test', `execution-${OBSOLETE_PRIMARY_AGENT_ID}.test.mjs`)
+    ]) {
+      if (existsSync(path)) unlinkSync(path);
+    }
+  }
 }
 
 function installRuntime(assets, lifecycle, dryRun) {
@@ -86,6 +95,8 @@ function installRuntime(assets, lifecycle, dryRun) {
   cpSync(resolve(lifecycle.sourceDir, lifecycle.entry), resolve(dir, 'agent-workflow.mjs'), { force: true });
   cpSync(resolve(import.meta.dirname), resolve(dir, 'private'), { recursive: true, force: true });
   cpSync(assets.root, resolve(dir, 'agent-assets'), { recursive: true, force: true });
+  const obsoleteBody = resolve(dir, 'agent-assets', 'bodies', `${OBSOLETE_PRIMARY_AGENT_ID}.md`);
+  if (existsSync(obsoleteBody)) unlinkSync(obsoleteBody);
 }
 
 function loadConfig(assets, allowDefaults = false) {

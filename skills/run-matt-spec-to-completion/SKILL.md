@@ -44,7 +44,7 @@ disable-model-invocation: true
 ### 3. 执行
 
 1. 连续执行每个可执行 Frontier，直至 blocked、需要评审输入或全部 Ticket 完成。
-2. `delegated` 使用 [Completion Adapter 协议](references/completion-protocol.md)；`coordinator` 仅直接实施自动判定的低风险单 Ticket。
+2. `delegated` 使用 [Completion Adapter 协议](references/completion-protocol.md)；`orchestrator` 仅直接实施自动判定的低风险单 Ticket。
 3. 在 main 记录每个 Ticket 的终态并更新本地 Issue 复选框；blocked 结果立即停止流程。
 
 **完成条件：** 所有 Ticket 为 `done` 时进入 `reviewing`；否则返回可恢复状态或 blocked 结果。

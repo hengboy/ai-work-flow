@@ -8,9 +8,9 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { beginReview, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, readCheckpoint, startTickets, writeCheckpoint } from "../lib/checkpoint.mjs";
-import { createExecutionCoordinator } from "../lib/execution-coordinator.mjs";
+import { createExecutionOrchestrator } from "../lib/execution-orchestrator.mjs";
 import { materializeSpec, writeExecutionPlan } from "../lib/spec-intake.mjs";
-import { assertCheckpoint } from "../lib/validation.mjs";
+import { assertCheckpoint, assertExecutionPlan } from "../lib/validation.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -19,8 +19,8 @@ async function git(cwd, ...args) {
   return stdout.trim();
 }
 
-async function coordinatorFixture() {
-  const root = await mkdtemp(join(tmpdir(), "run-plan-coordinator-"));
+async function orchestratorFixture() {
+  const root = await mkdtemp(join(tmpdir(), "run-plan-orchestrator-"));
   await git(root, "init", "-b", "main");
   await git(root, "config", "user.email", "test@example.com");
   await git(root, "config", "user.name", "Test User");
@@ -48,7 +48,7 @@ async function coordinatorFixture() {
 }
 
 async function pendingIntegrationFixture() {
-  const { root, executionPlan } = await coordinatorFixture();
+  const { root, executionPlan } = await orchestratorFixture();
   const head = await git(root, "rev-parse", "HEAD");
   let checkpoint = createCheckpoint({ executionPlan, baseline: head, branch: "feat/migrate-runtime", worktree: root });
   const executionWorktree = `${root}-execution`;
@@ -67,7 +67,7 @@ async function pendingIntegrationFixture() {
 }
 
 async function completedExecutionFixture() {
-  const { root, executionPlan } = await coordinatorFixture();
+  const { root, executionPlan } = await orchestratorFixture();
   const baseline = await git(root, "rev-parse", "HEAD");
   const executionWorktree = `${root}-execution`;
   await git(root, "worktree", "add", "-b", "feat/migrate-runtime", executionWorktree);
@@ -83,18 +83,25 @@ async function completedExecutionFixture() {
 }
 
 test("requires canonical specPath before either initialization or resume", async () => {
-  const coordinator = createExecutionCoordinator();
+  const orchestrator = createExecutionOrchestrator();
   await assert.rejects(
-    coordinator.run({ repository: "/not-used", branch: "feat/migrate-runtime" }),
+    orchestrator.run({ repository: "/not-used", branch: "feat/migrate-runtime" }),
     /canonical specPath is required to initialize or resume/,
   );
+});
+
+test("rejects the obsolete direct execution mode", async () => {
+  const { executionPlan } = await orchestratorFixture();
+  executionPlan.execution_mode = ["coord", "inator"].join("");
+
+  assert.throws(() => assertExecutionPlan(executionPlan), /Execution Plan violates schema/);
 });
 
 test("resumes a pre-integration checkpoint whose completed ticket commit exists only on the feature branch", async () => {
   const { root, executionWorktree, featureCommit } = await completedExecutionFixture();
 
   await assert.rejects(git(root, "merge-base", "--is-ancestor", featureCommit, "main"));
-  const resumed = await createExecutionCoordinator().resume({
+  const resumed = await createExecutionOrchestrator().resume({
     repository: root,
     branch: "feat/migrate-runtime",
     specPath: ".scratch/migrate-runtime/spec.md",
@@ -109,7 +116,7 @@ test("recovers an all-done execution by synchronizing issues before persisting r
   const { root, executionWorktree } = await completedExecutionFixture();
   const issuePath = join(root, ".scratch", "migrate-runtime", "issues", "01-contract.md");
   let reviewWriteFailed = false;
-  const interrupted = createExecutionCoordinator({
+  const interrupted = createExecutionOrchestrator({
     checkpointWriter: async (worktree, featureSlug, checkpoint) => {
       if (checkpoint.status === "reviewing") {
         reviewWriteFailed = true;
@@ -127,7 +134,7 @@ test("recovers an all-done execution by synchronizing issues before persisting r
   assert.equal((await readCheckpoint(root, "migrate-runtime")).status, "executing");
   assert.match(await readFile(issuePath, "utf8"), /- \[x\] Verify runtime contract/);
 
-  const recovered = await createExecutionCoordinator().run({
+  const recovered = await createExecutionOrchestrator().run({
     repository: root,
     branch: "feat/migrate-runtime",
     specPath: ".scratch/migrate-runtime/spec.md",
@@ -157,7 +164,7 @@ test("does not dispatch a revision-consistent plan whose dependency level was ta
   let dispatched = false;
 
   await assert.rejects(
-    createExecutionCoordinator({
+    createExecutionOrchestrator({
       directExecutor: async () => {
         dispatched = true;
         return { ticket_id: "01", status: "done", commits: [head], tests: [], summary: "unexpected" };
@@ -182,7 +189,7 @@ test("rejects a revision-consistent persisted plan with duplicate ticket IDs bef
   const checkpointBefore = await readFile(checkpointPath, "utf8");
   const headBefore = await git(root, "rev-parse", "HEAD");
   let writes = 0;
-  const coordinator = createExecutionCoordinator({
+  const orchestrator = createExecutionOrchestrator({
     checkpointWriter: async (...args) => {
       writes += 1;
       return writeCheckpoint(...args);
@@ -190,7 +197,7 @@ test("rejects a revision-consistent persisted plan with duplicate ticket IDs bef
   });
 
   await assert.rejects(
-    coordinator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree }),
+    orchestrator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree }),
     /Duplicate execution plan ticket ID: 01/,
   );
   assert.equal(writes, 0);
@@ -205,7 +212,7 @@ test("rejects a completion result that returns the ticket start commit without m
   const checkpoint = createCheckpoint({ executionPlan, baseline, branch: "feat/migrate-runtime", worktree: executionWorktree });
   await writeCheckpoint(root, "migrate-runtime", checkpoint);
   let writes = 0;
-  const coordinator = createExecutionCoordinator({
+  const orchestrator = createExecutionOrchestrator({
     directExecutor: async () => ({ ticket_id: "01", status: "done", commits: [startCommit], tests: [], summary: "stale commit" }),
     checkpointWriter: async (...args) => {
       writes += 1;
@@ -214,7 +221,7 @@ test("rejects a completion result that returns the ticket start commit without m
   });
 
   await assert.rejects(
-    coordinator.executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint }),
+    orchestrator.executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint }),
     /Completion result commit must be after ticket 01 start commit/,
   );
   assert.equal(writes, 1);
@@ -228,7 +235,7 @@ test("rejects a completed ticket whose persisted end commit is its start commit 
   const checkpointPath = join(root, ".scratch", "migrate-runtime", "checkpoint.json");
   const checkpointBefore = await readFile(checkpointPath, "utf8");
   let writes = 0;
-  const coordinator = createExecutionCoordinator({
+  const orchestrator = createExecutionOrchestrator({
     checkpointWriter: async (...args) => {
       writes += 1;
       return writeCheckpoint(...args);
@@ -236,7 +243,7 @@ test("rejects a completed ticket whose persisted end commit is its start commit 
   });
 
   await assert.rejects(
-    coordinator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree }),
+    orchestrator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree }),
     /ticket-commit-not-after-start/,
   );
   assert.equal(writes, 0);
@@ -244,7 +251,7 @@ test("rejects a completed ticket whose persisted end commit is its start commit 
 });
 
 test("keeps merged cleanup recoverable when final record commit fails", async () => {
-  const { root, executionPlan, checkpoint } = await coordinatorFixture();
+  const { root, executionPlan, checkpoint } = await orchestratorFixture();
   const unrelatedPath = join(root, "unrelated.txt");
   await writeFile(unrelatedPath, "preserve this change\n");
   await git(root, "stash", "push", "--include-untracked", "--message", "fixture-unrelated-change", "--", "unrelated.txt");
@@ -254,14 +261,14 @@ test("keeps merged cleanup recoverable when final record commit fails", async ()
     integration: { ...checkpoint.integration, stash_ref: stashRef },
   };
   await writeCheckpoint(root, "migrate-runtime", checkpointWithStash);
-  const failingCoordinator = createExecutionCoordinator({
+  const failingOrchestrator = createExecutionOrchestrator({
     generateCommitMessage: async () => {
       throw new Error("commit generator unavailable");
     },
   });
 
   await assert.rejects(
-    failingCoordinator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
+    failingOrchestrator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
     /commit generator unavailable/,
   );
   const recoverable = await readCheckpoint(root, "migrate-runtime");
@@ -271,8 +278,8 @@ test("keeps merged cleanup recoverable when final record commit fails", async ()
   assert.equal(recoverable.integration.stash_ref, stashRef);
   assert.equal(await readFile(unrelatedPath, "utf8"), "preserve this change\n");
 
-  const coordinator = createExecutionCoordinator({ generateCommitMessage: async () => "chore: record execution" });
-  const result = await coordinator.completeMergedCleanup({
+  const orchestrator = createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" });
+  const result = await orchestrator.completeMergedCleanup({
     repository: root,
     mainWorktree: root,
     featureSlug: "migrate-runtime",
@@ -284,7 +291,7 @@ test("keeps merged cleanup recoverable when final record commit fails", async ()
   assert.equal((await readCheckpoint(root, "migrate-runtime")).status, "complete");
   assert.equal(await git(root, "log", "-1", "--format=%s"), "chore: record execution");
 
-  const resumed = await coordinator.resume({
+  const resumed = await orchestrator.resume({
     repository: root,
     branch: "feat/migrate-runtime",
     specPath: ".scratch/migrate-runtime/spec.md",
@@ -302,9 +309,9 @@ test("reports an explicitly recorded but unavailable stash during merged cleanup
   const checkpointWithStash = markMerged(checkpoint, { executionHead: head, mainWorktree: root, mergedCommit: head, stashRef: unavailableStash });
   await writeCheckpoint(root, "migrate-runtime", checkpointWithStash);
 
-  const coordinator = createExecutionCoordinator({ generateCommitMessage: async () => "chore: record execution" });
+  const orchestrator = createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" });
   await assert.rejects(
-    coordinator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
+    orchestrator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
     new RegExp(`Checkpoint requires stash ${unavailableStash}, but that stash is unavailable`),
   );
   assert.equal((await readCheckpoint(root, "migrate-runtime")).integration.stash_ref, unavailableStash);
@@ -312,7 +319,7 @@ test("reports an explicitly recorded but unavailable stash during merged cleanup
 });
 
 test("does not commit terminal records when their checkpoint fails integrity", async () => {
-  const { root, executionPlan, checkpoint } = await coordinatorFixture();
+  const { root, executionPlan, checkpoint } = await orchestratorFixture();
   const invalidComplete = completeIntegration({
     ...checkpoint,
     integration: { ...checkpoint.integration, execution_head: "b".repeat(40) },
@@ -320,7 +327,7 @@ test("does not commit terminal records when their checkpoint fails integrity", a
   await writeCheckpoint(root, "migrate-runtime", invalidComplete);
   const headBefore = await git(root, "rev-parse", "HEAD");
   let generated = false;
-  const coordinator = createExecutionCoordinator({
+  const orchestrator = createExecutionOrchestrator({
     generateCommitMessage: async () => {
       generated = true;
       return "chore: record execution";
@@ -328,7 +335,7 @@ test("does not commit terminal records when their checkpoint fails integrity", a
   });
 
   await assert.rejects(
-    coordinator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: invalidComplete }),
+    orchestrator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: invalidComplete }),
     /Checkpoint integrity failed/,
   );
   assert.equal(generated, false);
@@ -336,7 +343,7 @@ test("does not commit terminal records when their checkpoint fails integrity", a
 });
 
 test("recovers a stash application after its restored checkpoint write fails", async () => {
-  const { root, executionPlan, checkpoint } = await coordinatorFixture();
+  const { root, executionPlan, checkpoint } = await orchestratorFixture();
   const unrelatedPath = join(root, "unrelated.txt");
   await writeFile(unrelatedPath, "preserve this change\n");
   await git(root, "stash", "push", "--include-untracked", "--message", "fixture-unrelated-change", "--", "unrelated.txt");
@@ -344,7 +351,7 @@ test("recovers a stash application after its restored checkpoint write fails", a
   const checkpointWithStash = { ...checkpoint, integration: { ...checkpoint.integration, stash_ref: stashRef } };
   await writeCheckpoint(root, "migrate-runtime", checkpointWithStash);
   let failed = false;
-  const failingCoordinator = createExecutionCoordinator({
+  const failingOrchestrator = createExecutionOrchestrator({
     checkpointWriter: async (worktree, featureSlug, next) => {
       if (!failed && next.integration.stash_restore_state === "restored") {
         failed = true;
@@ -356,7 +363,7 @@ test("recovers a stash application after its restored checkpoint write fails", a
   });
 
   await assert.rejects(
-    failingCoordinator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
+    failingOrchestrator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
     /checkpoint storage unavailable/,
   );
   const interrupted = await readCheckpoint(root, "migrate-runtime");
@@ -364,8 +371,8 @@ test("recovers a stash application after its restored checkpoint write fails", a
   assert.equal(await readFile(unrelatedPath, "utf8"), "preserve this change\n");
   assert.equal(await git(root, "rev-parse", "refs/stash"), stashRef);
 
-  const coordinator = createExecutionCoordinator({ generateCommitMessage: async () => "chore: record execution" });
-  const resumed = await coordinator.resume({
+  const orchestrator = createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" });
+  const resumed = await orchestrator.resume({
     repository: root,
     branch: "feat/migrate-runtime",
     specPath: ".scratch/migrate-runtime/spec.md",
@@ -379,13 +386,13 @@ test("recovers a stash application after its restored checkpoint write fails", a
 });
 
 test("reconciles a dropped restored stash when its cleanup checkpoint write fails", async () => {
-  const { root, executionPlan, checkpoint } = await coordinatorFixture();
+  const { root, executionPlan, checkpoint } = await orchestratorFixture();
   await writeFile(join(root, "unrelated.txt"), "preserve this change\n");
   await git(root, "stash", "push", "--include-untracked", "--message", "fixture-unrelated-change", "--", "unrelated.txt");
   const stashRef = await git(root, "rev-parse", "refs/stash");
   const checkpointWithStash = { ...checkpoint, integration: { ...checkpoint.integration, stash_ref: stashRef } };
   await writeCheckpoint(root, "migrate-runtime", checkpointWithStash);
-  const failingCoordinator = createExecutionCoordinator({
+  const failingOrchestrator = createExecutionOrchestrator({
     checkpointWriter: async (worktree, featureSlug, next) => {
       if (next.integration.stash_cleanup_state === "dropped") throw new Error("checkpoint storage unavailable");
       return writeCheckpoint(worktree, featureSlug, next);
@@ -394,7 +401,7 @@ test("reconciles a dropped restored stash when its cleanup checkpoint write fail
   });
 
   await assert.rejects(
-    failingCoordinator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
+    failingOrchestrator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
     /checkpoint storage unavailable/,
   );
   const interrupted = await readCheckpoint(root, "migrate-runtime");
@@ -402,7 +409,7 @@ test("reconciles a dropped restored stash when its cleanup checkpoint write fail
   assert.equal(interrupted.integration.stash_cleanup_state, "pending");
   assert.equal(await git(root, "stash", "list", "--format=%H"), "");
 
-  const result = await createExecutionCoordinator({ generateCommitMessage: async () => "chore: record execution" }).completeMergedCleanup({
+  const result = await createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" }).completeMergedCleanup({
     repository: root,
     mainWorktree: root,
     featureSlug: "migrate-runtime",
@@ -420,7 +427,7 @@ test("records a pre-merge stash operation before its stash reference can be pers
   await git(executionWorktree, "commit", "-m", "execution change");
   await writeFile(join(root, "unrelated.txt"), "preserve this change\n");
   const headBefore = await git(root, "rev-parse", "HEAD");
-  const failingCoordinator = createExecutionCoordinator({
+  const failingOrchestrator = createExecutionOrchestrator({
     checkpointWriter: async (worktree, featureSlug, next) => {
       if (next.integration.stash_ref) throw new Error("checkpoint storage unavailable");
       return writeCheckpoint(worktree, featureSlug, next);
@@ -429,7 +436,7 @@ test("records a pre-merge stash operation before its stash reference can be pers
   });
 
   await assert.rejects(
-    failingCoordinator.integrate({ repository: root, worktree: executionWorktree, featureSlug: "migrate-runtime", executionPlan, checkpoint }),
+    failingOrchestrator.integrate({ repository: root, worktree: executionWorktree, featureSlug: "migrate-runtime", executionPlan, checkpoint }),
     /checkpoint storage unavailable/,
   );
   const recoverable = await readCheckpoint(root, "migrate-runtime");
@@ -438,10 +445,10 @@ test("records a pre-merge stash operation before its stash reference can be pers
   assert.notEqual(await git(root, "stash", "list", "--format=%H"), "");
   assert.equal(await git(root, "rev-parse", "HEAD"), headBefore);
 
-  const coordinator = createExecutionCoordinator({ generateCommitMessage: async () => "chore: record execution" });
-  const resumed = await coordinator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree });
+  const orchestrator = createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" });
+  const resumed = await orchestrator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree });
   assert.equal(resumed.status, "resumed");
-  const completed = await coordinator.integrate({ repository: root, worktree: resumed.worktree, featureSlug: "migrate-runtime", executionPlan, checkpoint: resumed.checkpoint });
+  const completed = await orchestrator.integrate({ repository: root, worktree: resumed.worktree, featureSlug: "migrate-runtime", executionPlan, checkpoint: resumed.checkpoint });
   assert.equal(completed.status, "complete");
   assert.equal(await readFile(join(root, "unrelated.txt"), "utf8"), "preserve this change\n");
 });
@@ -456,7 +463,7 @@ test("does not stash, merge, or remove a worktree when integration integrity is 
   await writeFile(join(root, "unrelated.txt"), "preserve this change\n");
 
   await assert.rejects(
-    createExecutionCoordinator().integrate({ repository: root, worktree: executionWorktree, featureSlug: "migrate-runtime", executionPlan, checkpoint: invalid }),
+    createExecutionOrchestrator().integrate({ repository: root, worktree: executionWorktree, featureSlug: "migrate-runtime", executionPlan, checkpoint: invalid }),
     /Checkpoint integrity failed/,
   );
   assert.equal(await readFile(checkpointFile, "utf8"), before);
@@ -476,7 +483,7 @@ test("keeps undispatched tasks pending after the first serial blocked result", a
   const checkpoint = createCheckpoint({ executionPlan: twoTaskPlan, baseline: head, branch: "feat/migrate-runtime", worktree: executionWorktree });
   await writeCheckpoint(root, "migrate-runtime", checkpoint);
   const dispatched = [];
-  const coordinator = createExecutionCoordinator({
+  const orchestrator = createExecutionOrchestrator({
     adapter: {
       async executeTicket({ ticket }) {
         dispatched.push(ticket.id);
@@ -485,7 +492,7 @@ test("keeps undispatched tasks pending after the first serial blocked result", a
     },
   });
 
-  const result = await coordinator.executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan: twoTaskPlan, checkpoint });
+  const result = await orchestrator.executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan: twoTaskPlan, checkpoint });
   assert.deepEqual(dispatched, ["01"]);
   assert.equal(result.checkpoint.tickets.find((task) => task.id === "01").status, "blocked");
   assert.equal(result.checkpoint.tickets.find((task) => task.id === "02").status, "pending");
@@ -497,9 +504,9 @@ test("does not redispatch an in-progress task on recovery", async () => {
   const checkpoint = startTickets(createCheckpoint({ executionPlan, baseline: head, branch: "feat/migrate-runtime", worktree: executionWorktree }), ["01"], head);
   await writeCheckpoint(root, "migrate-runtime", checkpoint);
   let dispatched = false;
-  const coordinator = createExecutionCoordinator({ adapter: { async executeFrontier() { dispatched = true; return []; } } });
+  const orchestrator = createExecutionOrchestrator({ adapter: { async executeFrontier() { dispatched = true; return []; } } });
 
-  const result = await coordinator.executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint });
+  const result = await orchestrator.executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint });
   assert.equal(result.status, "blocked");
   assert.equal(dispatched, false);
   assert.equal((await readCheckpoint(root, "migrate-runtime")).tickets[0].status, "in_progress");
@@ -524,10 +531,10 @@ test("rejects multi-in-progress and out-of-order completed checkpoints before re
   await writeCheckpoint(root, "migrate-runtime", multiInProgress);
   const multiBefore = await readFile(checkpointFile, "utf8");
   let writes = 0;
-  const coordinator = createExecutionCoordinator({ checkpointWriter: async (...args) => { writes += 1; return writeCheckpoint(...args); } });
+  const orchestrator = createExecutionOrchestrator({ checkpointWriter: async (...args) => { writes += 1; return writeCheckpoint(...args); } });
 
   await assert.rejects(
-    coordinator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree }),
+    orchestrator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree }),
     /multiple-in-progress/,
   );
   assert.equal(writes, 0);
@@ -546,7 +553,7 @@ test("rejects multi-in-progress and out-of-order completed checkpoints before re
   const orderBefore = await readFile(checkpointFile, "utf8");
 
   await assert.rejects(
-    coordinator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree }),
+    orchestrator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree }),
     /ticket-order/,
   );
   assert.equal(writes, 0);
@@ -564,7 +571,7 @@ test("rejects a caller plan that differs from the verified persisted plan before
   const issueBefore = await readFile(issueFile, "utf8");
   let delegated = false;
   let writes = 0;
-  const coordinator = createExecutionCoordinator({
+  const orchestrator = createExecutionOrchestrator({
     directExecutor: async () => {
       delegated = true;
       return { ticket_id: "01", status: "done", commits: [head], tests: [], summary: "done" };
@@ -573,7 +580,7 @@ test("rejects a caller plan that differs from the verified persisted plan before
   });
 
   await assert.rejects(
-    coordinator.executeFrontier({
+    orchestrator.executeFrontier({
       worktree: executionWorktree,
       mainWorktree: root,
       featureSlug: "migrate-runtime",
@@ -599,7 +606,7 @@ test("recovers a pre-merge restoration after its restored checkpoint write fails
   await git(root, "commit", "-m", "main conflict");
   await writeFile(join(root, "unrelated.txt"), "preserve this change\n");
   let failed = false;
-  const failingCoordinator = createExecutionCoordinator({
+  const failingOrchestrator = createExecutionOrchestrator({
     checkpointWriter: async (worktree, featureSlug, next) => {
       if (!failed && next.integration.stash_restore_state === "restored") {
         failed = true;
@@ -610,17 +617,17 @@ test("recovers a pre-merge restoration after its restored checkpoint write fails
   });
 
   await assert.rejects(
-    failingCoordinator.integrate({ repository: root, worktree: executionWorktree, featureSlug: "migrate-runtime", executionPlan, checkpoint }),
+    failingOrchestrator.integrate({ repository: root, worktree: executionWorktree, featureSlug: "migrate-runtime", executionPlan, checkpoint }),
     /checkpoint storage unavailable/,
   );
   const interrupted = await readCheckpoint(root, "migrate-runtime");
   assert.equal(interrupted.integration.stash_restore_state, "applying");
   assert.equal(await readFile(join(root, "unrelated.txt"), "utf8"), "preserve this change\n");
 
-  const coordinator = createExecutionCoordinator();
-  const resumed = await coordinator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree });
+  const orchestrator = createExecutionOrchestrator();
+  const resumed = await orchestrator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree });
   await assert.rejects(
-    coordinator.integrate({ repository: root, worktree: resumed.worktree, featureSlug: "migrate-runtime", executionPlan, checkpoint: resumed.checkpoint }),
+    orchestrator.integrate({ repository: root, worktree: resumed.worktree, featureSlug: "migrate-runtime", executionPlan, checkpoint: resumed.checkpoint }),
     /git merge --no-edit feat\/migrate-runtime failed/,
   );
   const recovered = await readCheckpoint(root, "migrate-runtime");
@@ -631,7 +638,7 @@ test("recovers a pre-merge restoration after its restored checkpoint write fails
 });
 
 test("does not mutate an invalid checkpoint while attempting a relocated resume", async () => {
-  const { root, executionPlan } = await coordinatorFixture();
+  const { root, executionPlan } = await orchestratorFixture();
   const invalid = createCheckpoint({
     executionPlan,
     baseline: "b".repeat(40),
@@ -643,7 +650,7 @@ test("does not mutate an invalid checkpoint while attempting a relocated resume"
   const before = await readFile(checkpointFile, "utf8");
   const headBefore = await git(root, "rev-parse", "HEAD");
   let writes = 0;
-  const coordinator = createExecutionCoordinator({
+  const orchestrator = createExecutionOrchestrator({
     checkpointWriter: async (...args) => {
       writes += 1;
       return writeCheckpoint(...args);
@@ -651,7 +658,7 @@ test("does not mutate an invalid checkpoint while attempting a relocated resume"
   });
 
   await assert.rejects(
-    coordinator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: join(root, "recreated-worktree") }),
+    orchestrator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: join(root, "recreated-worktree") }),
     /Checkpoint integrity failed/,
   );
   assert.equal(writes, 0);
@@ -660,14 +667,14 @@ test("does not mutate an invalid checkpoint while attempting a relocated resume"
 });
 
 test("does not create a recovery worktree when the current checkpoint is unavailable", async () => {
-  const { root } = await coordinatorFixture();
+  const { root } = await orchestratorFixture();
   const branch = "feat/migrate-runtime";
   const worktreePath = join(root, "recovery-worktree");
   await git(root, "branch", branch);
   const worktreesBefore = await git(root, "worktree", "list", "--porcelain");
 
   await assert.rejects(
-    createExecutionCoordinator().resume({ repository: root, branch, specPath: ".scratch/migrate-runtime/spec.md", worktreePath }),
+    createExecutionOrchestrator().resume({ repository: root, branch, specPath: ".scratch/migrate-runtime/spec.md", worktreePath }),
     /Checkpoint integrity failed/,
   );
 
@@ -676,7 +683,7 @@ test("does not create a recovery worktree when the current checkpoint is unavail
 });
 
 test("rejects complete checkpoints with pending work before terminal handling", async () => {
-  const { root, checkpoint } = await coordinatorFixture();
+  const { root, checkpoint } = await orchestratorFixture();
   const invalidComplete = completeIntegration(checkpoint);
   invalidComplete.tickets[0] = { id: "01", status: "pending" };
   const checkpointFile = join(root, ".scratch", "migrate-runtime", "checkpoint.json");
@@ -685,7 +692,7 @@ test("rejects complete checkpoints with pending work before terminal handling", 
   const headBefore = await git(root, "rev-parse", "HEAD");
   let writes = 0;
   let generated = false;
-  const coordinator = createExecutionCoordinator({
+  const orchestrator = createExecutionOrchestrator({
     checkpointWriter: async (...args) => {
       writes += 1;
       return writeCheckpoint(...args);
@@ -697,7 +704,7 @@ test("rejects complete checkpoints with pending work before terminal handling", 
   });
 
   await assert.rejects(
-    coordinator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: join(root, "unused-worktree") }),
+    orchestrator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: join(root, "unused-worktree") }),
     /Checkpoint integrity failed/,
   );
   assert.equal(writes, 0);
@@ -707,7 +714,7 @@ test("rejects complete checkpoints with pending work before terminal handling", 
 });
 
 test("rejects complete checkpoints whose review is not done", async () => {
-  const { checkpoint } = await coordinatorFixture();
+  const { checkpoint } = await orchestratorFixture();
   const invalidComplete = completeIntegration(checkpoint);
   invalidComplete.review = { status: "pending" };
 

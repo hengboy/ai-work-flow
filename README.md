@@ -1,6 +1,6 @@
 # AI Work Flow
 
-为 Codex、Claude Code 和 OpenCode 生成统一专职代理工作流的配置系统。安装后，**Coordinator** 是唯一面向用户的入口，负责路由、等待和汇总；实际的发现、研究、写作、实现和评审由专职角色完成。
+为 Codex、Claude Code 和 OpenCode 生成统一专职代理工作流的配置系统。安装后，**Orchestrator** 是唯一面向用户的入口，负责路由、等待和汇总；实际的发现、研究、写作、实现和评审由专职角色完成。
 
 ## 前置条件
 
@@ -21,7 +21,7 @@ node scripts/install.mjs
 - 将自定义技能（`run-matt-spec-to-completion`、`generate-ai-work-flow-agents`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录
 - 创建并默认直接使用 `~/.config/ai-work-flow/environments/default.json` 和 `routing.md`；仓库中的 `scripts/agent-assets/default-config.json` 仅作为初始化模板
 - 生成三端的 9 个受管理 agent
-- 更新三端的路由配置，并将 OpenCode 默认 agent 设为 `coordinator`
+- 更新三端的路由配置，并将 OpenCode 默认 agent 设为 `orchestrator`
 - 保留无关的全局 Skills、agents 和工具配置
 
 默认安装会处理全部平台。只生成指定平台的 agents 时，可以使用：
@@ -66,7 +66,7 @@ node scripts/install.mjs --help
 {
   "version": 1,
   "roles": {
-    "coordinator": {
+    "orchestrator": {
       "codex": { "model": "gpt-5.6", "reasoning": "medium" },
       "claude": { "model": "sonnet", "effort": "medium" },
       "opencode": {
@@ -112,7 +112,7 @@ node scripts/install.mjs env use <name>
 
 | 角色 | 用途 |
 | --- | --- |
-| **Coordinator** | 路由、等待和汇总 |
+| **Orchestrator** | 路由、等待和汇总 |
 | **File Explorer** | 全库枚举、搜索和代码地图 |
 | **Researcher** | 外部官方资料与依赖研究 |
 | **Document Maintainer** | README、`docs` 等常规文档 |
@@ -153,7 +153,7 @@ node scripts/install.mjs env use <name>
 
 上游提供的技能（`to-spec`、`to-tickets`、`implement`、`code-review`、`ask-matt`、`setup-matt-pocock-skills` 等）作为独立依赖安装。AI Work Flow 仅提供：
 
-- **Coordinator 路由层**：`routing.md` + 9 角色 Agent 定义
+- **Orchestrator 路由层**：`routing.md` + 9 角色 Agent 定义
 - **执行引擎**：`run-matt-spec-to-completion`（适配 `to-spec`/`to-tickets` 产物）
 - **配置管理**：`generate-ai-work-flow-agents` + `agent-workflow.mjs`
 

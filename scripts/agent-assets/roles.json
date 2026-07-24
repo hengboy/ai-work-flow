@@ -2,8 +2,8 @@
   "version": 1,
   "roles": [
     {
-      "id": "coordinator",
-      "name": "Coordinator",
+      "id": "orchestrator",
+      "name": "Orchestrator",
       "description": "负责路由工作、等待受委派结果并汇总结论。",
       "kind": "primary",
       "workspace": "none",

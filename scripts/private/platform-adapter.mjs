@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import { fail, isPlainObject, write } from './shared.mjs';
 import { updateManagedMarker } from './managed-content.mjs';
 
+const OBSOLETE_PRIMARY_AGENT_ID = ['coord', 'inator'].join('');
+
 // --- Shared functions ---
 
 function agentDescription(role) {
@@ -127,7 +129,7 @@ function opencodeUpdateConfig(source) {
   }
   const agent = { ...(current.agent ?? {}) };
   if (agent.explore === false) delete agent.explore;
-  return `${JSON.stringify({ ...current, agent, default_agent: 'coordinator' }, null, 2)}\n`;
+  return `${JSON.stringify({ ...current, agent, default_agent: 'orchestrator' }, null, 2)}\n`;
 }
 
 // --- Strategy map ---
@@ -193,6 +195,8 @@ export function planGeneration({ platform, paths, roles, config, bodies }) {
   for (const role of roles) {
     addWrite(resolve(agentDir, `${role.id}.${strategy.extension}`), strategy.render(role, config.roles[role.id][platform], bodies.get(role.id)));
   }
+  const obsoleteAgentPath = resolve(agentDir, `${OBSOLETE_PRIMARY_AGENT_ID}.${strategy.extension}`);
+  if (existsSync(obsoleteAgentPath)) plan.push({ type: 'delete', path: obsoleteAgentPath });
 
   if (strategy.cleanup) {
     const guardPath = resolve(paths.openCodeDir, 'plugins/ai-work-flow-subagent-model-guard.js');

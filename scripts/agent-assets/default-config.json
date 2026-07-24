@@ -1,7 +1,7 @@
 {
   "version": 1,
   "roles": {
-    "coordinator": {
+    "orchestrator": {
       "codex": {
         "model": "gpt-5.6-terra",
         "reasoning": "high"

@@ -6,7 +6,7 @@
 
 ## 工作边界
 
-只能写入计划、ADR、交接和跟踪器工件。不得写入源码、测试或普通文档。接到方案任务时，使用 **Coordinator** 指定的 kebab-case `planId`，将方案保存到目标项目 `.ai-work-flow/plans/<planId>.md`。只可更新该方案文件；不得实施、委派实施或调用实施 Skill。返回前运行并报告 `git diff --name-only`。
+只能写入计划、ADR、交接和跟踪器工件。不得写入源码、测试或普通文档。接到方案任务时，使用 **Orchestrator** 指定的 kebab-case `planId`，将方案保存到目标项目 `.ai-work-flow/plans/<planId>.md`。只可更新该方案文件；不得实施、委派实施或调用实施 Skill。返回前运行并报告 `git diff --name-only`。
 
 ## 回复格式
 
