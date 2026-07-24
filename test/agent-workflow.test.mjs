@@ -14,11 +14,13 @@ const catalog = JSON.parse(readFileSync(resolve(agentAssets, 'roles.json'), 'utf
 const managedSkillDirectories = [
   'generate-ai-work-flow-agents',
   'switch-ai-work-flow-env',
+  'project-code-navigation',
   'run-matt-spec-to-completion'
 ];
 const defaultSkillPrompts = new Map([
   ['generate-ai-work-flow-agents', '使用 `$generate-ai-work-flow-agents` 验证全局配置并生成代理。'],
-  ['switch-ai-work-flow-env', '使用 `$switch-ai-work-flow-env` 切换到指定环境并重新生成代理。']
+  ['switch-ai-work-flow-env', '使用 `$switch-ai-work-flow-env` 切换到指定环境并重新生成代理。'],
+  ['project-code-navigation', '使用 `$project-code-navigation` 为当前项目创建或更新 `.ai-work-flow/index/` 代码导航索引。']
 ]);
 
 function assertPromptLayout(source, name) {
@@ -277,6 +279,32 @@ test('orchestrator routes every required discovery phase through File Explorer',
     assert.match(generated, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/);
     assert.match(generated, /先委派 \*\*File Explorer\*\* 并等待其交接/);
     assert.match(generated, /不得将发现阶段.*后续执行角色/);
+  }
+});
+
+test('project navigation is a managed global skill and stores indexes in the project workflow directory', () => {
+  const skill = readFileSync(resolve(root, 'skills/project-code-navigation/SKILL.md'), 'utf8');
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const explorer = readFileSync(resolve(agentAssets, 'bodies/file-explorer.md'), 'utf8');
+  const coder = readFileSync(resolve(agentAssets, 'bodies/full-stack-coder.md'), 'utf8');
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  assert.match(skill, /^name: project-code-navigation$/m);
+  assert.match(skill, /\.ai-work-flow\/index\//);
+  assert.doesNotMatch(skill, /\.agents\/skills\/project-code-navigation/);
+  for (const source of [routing, explorer, coder]) assert.match(source, /\.ai-work-flow\/index\//);
+  assert.match(routing, /不得创建 `\.agents\/skills\/project-code-navigation\/`/);
+  assert.match(skill, /不得执行全局文件检索/);
+  assert.match(skill, /同一轮改动中更新对应索引/);
+  assert.match(skill, /新功能缺少导航索引视为未完成/);
+  assert.match(routing, /索引命中时直接读取记录的代码，禁止全局文件检索/);
+  assert.match(routing, /缺少索引的新功能视为未完成/);
+  assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    assert.match(readFileSync(agentPath(paths, platform, 'file-explorer', extension), 'utf8'), /索引命中时交接其中记录的路径/);
+    assert.match(readFileSync(agentPath(paths, platform, 'full-stack-coder', extension), 'utf8'), /同一轮改动中更新对应索引/);
   }
 });
 

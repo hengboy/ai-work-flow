@@ -18,7 +18,7 @@ node scripts/install.mjs
 
 安装会完成以下工作：
 
-- 将自定义技能（`run-matt-spec-to-completion`、`generate-ai-work-flow-agents`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录
+- 将自定义技能（`run-matt-spec-to-completion`、`generate-ai-work-flow-agents`、`switch-ai-work-flow-env`、`project-code-navigation`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录
 - 创建并默认直接使用 `~/.config/ai-work-flow/environments/default.json` 和 `routing.md`；仓库中的 `scripts/agent-assets/default-config.json` 仅作为初始化模板
 - 生成三端的 9 个受管理 agent
 - 更新三端的路由配置，并将 OpenCode 默认 agent 设为 `orchestrator`
@@ -147,6 +147,10 @@ node scripts/install.mjs env use <name>
 3. 运行 `generate`（可按 `--platform` 限定平台）
 4. 报告更新的文件，提醒用户新会话才读取更新后的 agents
 
+### `$project-code-navigation`
+
+为当前项目初始化、使用并持续维护 `.ai-work-flow/index/` 代码导航索引。索引按真实代码记录功能关键词与页面、路由、API、Service、任务等入口；修改代码前必须先用索引定位，且文件或功能入口变化必须在同一轮改动中更新索引。仅在项目实际包含相应层时创建 `frontend-navigation.md` 或 `backend-navigation.md`。
+
 ## 与 Matt Pocock Skills 的关系
 
 `run-matt-spec-to-completion` 最初基于 [Matt Pocock Skills](https://github.com/mattpocock/skills)（基线 `ed37663`）的 `to-spec`/`to-tickets` 产物格式设计。当前本仓库已独立维护，不再与上游同步更新，但产物格式仍保持兼容。
@@ -156,6 +160,7 @@ node scripts/install.mjs env use <name>
 - **Orchestrator 路由层**：`routing.md` + 9 角色 Agent 定义
 - **执行引擎**：`run-matt-spec-to-completion`（适配 `to-spec`/`to-tickets` 产物）
 - **配置管理**：`generate-ai-work-flow-agents` + `agent-workflow.mjs`
+- **项目导航**：`project-code-navigation` + 目标项目 `.ai-work-flow/index/`
 
 如需更新上游兼容性，确认 `run-matt-spec-to-completion` 与目标版本 `to-spec`/`to-tickets` 产物格式兼容后，重新运行结构、命名及工件边界验证。
 

@@ -10,6 +10,8 @@
 
 只要后续角色需要未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现，必须先委派 **File Explorer** 并等待其交接；当前会话已有交接时可复用。用户给出精确路径或只需读取已交接路径的直接依赖时可例外。不得将发现阶段交给后续执行角色。其他角色只能读取 **File Explorer** 交接的路径及其直接依赖。外部资料研究只交给 **Researcher**；**Researcher** 不得检查本地工作区。
 
+处理项目代码前，必须使用 `$project-code-navigation` 先读取 `.ai-work-flow/index/feature-navigation.md`，再按目标功能只读取相关索引。索引命中时直接读取记录的代码，禁止全局文件检索或搜索无关路径；仅在索引缺失、未覆盖目标功能或路径无法定位时，才委派 **File Explorer** 发现真实入口。**Full Stack Coder** 必须在同一轮改动中维护索引：新增文件，或文件移动、重命名、拆分、合并、删除、主职责变化，以及用户可见功能入口、路由或 API 变化时，更新 `.ai-work-flow/index/` 的对应文件；缺少索引的新功能视为未完成。项目导航只存放在 `.ai-work-flow/index/`，不得创建 `.agents/skills/project-code-navigation/` 或改写 `AGENTS.md`、`CLAUDE.md`。
+
 **Code Reviewer** 只有在差异稳定后才能并行启动 **Review Standards** 和 **Review Spec**，并分别保留两者的发现。其他角色不得委派工作。审查完成后，**Orchestrator** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
 
 ### 浏览器自动化门禁
