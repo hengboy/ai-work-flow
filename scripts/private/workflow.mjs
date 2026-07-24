@@ -5,7 +5,7 @@ import process from 'node:process';
 import { loadAgentAssets } from './asset-catalog.mjs';
 import { globalPaths } from './paths.mjs';
 import { fail, isPlainObject, mergeRoles, readJson, write } from './shared.mjs';
-import { generate as generatePlatform } from './platform-adapter.mjs';
+import { applyGenerationPlan, planGeneration } from './platform-adapter.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const SKILLS_ROOT = resolve(ROOT, 'skills');
@@ -84,11 +84,11 @@ function installRuntime(assets, dryRun) {
 
 function loadConfig(assets, allowDefaults = false) {
   const paths = globalPaths();
-  if (!existsSync(paths.config)) {
+  if (!existsSync(paths.defaultEnvironment)) {
     if (allowDefaults) return { config: assets.defaults, paths };
-    fail(`Missing ${paths.config}. Run init first.`);
+    fail(`Missing ${paths.defaultEnvironment}. Run init first.`);
   }
-  const baseConfig = readJson(paths.config);
+  const baseConfig = readJson(paths.defaultEnvironment);
   return { config: resolveConfig(baseConfig, paths), paths };
 }
 
@@ -115,13 +115,13 @@ function listEnvironments() {
     : null;
   
   console.log('Available environments:');
-  console.log('  * default (no environment selected)');
+  console.log(`  ${currentEnv === null || currentEnv === 'default' ? '*' : ' '} default`);
   
   if (!existsSync(paths.environments)) {
     return;
   }
   
-  const files = readdirSync(paths.environments).filter(f => f.endsWith('.json'));
+  const files = readdirSync(paths.environments).filter((file) => file.endsWith('.json') && file !== 'default.json');
   for (const file of files) {
     const name = file.replace(/\.json$/, '');
     const marker = name === currentEnv ? '*' : ' ';
@@ -133,9 +133,12 @@ function useEnvironment(name) {
   const paths = globalPaths();
   
   if (name === 'default') {
+    if (!existsSync(paths.defaultEnvironment)) {
+      fail(`Missing ${paths.defaultEnvironment}. Run init first.`);
+    }
     if (existsSync(paths.environmentMarker)) {
       unlinkSync(paths.environmentMarker);
-      console.log('Switched to default environment (no environment selected).');
+      console.log('Switched to default environment.');
     } else {
       console.log('Already using default environment.');
     }
@@ -155,8 +158,8 @@ function useEnvironment(name) {
 function createEnvironment(name) {
   const paths = globalPaths();
   
-  if (!existsSync(paths.config)) {
-    fail(`Missing ${paths.config}. Run init first.`);
+  if (!existsSync(paths.defaultEnvironment)) {
+    fail(`Missing ${paths.defaultEnvironment}. Run init first.`);
   }
   
   const envPath = resolve(paths.environments, `${name}.json`);
@@ -164,7 +167,7 @@ function createEnvironment(name) {
     fail(`Environment already exists: ${name}`);
   }
   
-  const baseConfig = readJson(paths.config);
+  const baseConfig = readJson(paths.defaultEnvironment);
   const resolvedConfig = resolveConfig(baseConfig, paths);
   
   mkdirSync(paths.environments, { recursive: true });
@@ -175,6 +178,9 @@ function createEnvironment(name) {
 
 function deleteEnvironment(name) {
   const paths = globalPaths();
+  if (name === 'default') {
+    fail('The default environment cannot be deleted.');
+  }
   const envPath = resolve(paths.environments, `${name}.json`);
   
   if (!existsSync(envPath)) {
@@ -241,7 +247,7 @@ function validateConfig(config, roles) {
 function init(assets, dryRun) {
   const paths = globalPaths();
   const changed = [];
-  if (!existsSync(paths.config)) write(paths.config, `${JSON.stringify(assets.defaults, null, 2)}\n`, dryRun, changed);
+  if (!existsSync(paths.defaultEnvironment)) write(paths.defaultEnvironment, `${JSON.stringify(assets.defaults, null, 2)}\n`, dryRun, changed);
   write(paths.routing, assets.routing, dryRun, changed);
   return changed;
 }
@@ -250,10 +256,8 @@ function generate(platforms, dryRun, assets, config = loadConfig(assets, dryRun)
   const paths = globalPaths();
   const validation = validateConfig(config, assets.roles);
   if (validation.errors.length) fail(validation.errors.join('\n'));
-  const changed = [];
-  for (const platform of platforms) {
-    changed.push(...generatePlatform({ platform, paths, roles: assets.roles, config, bodies: assets.bodies, dryRun }));
-  }
+  const plan = platforms.flatMap((platform) => planGeneration({ platform, paths, roles: assets.roles, config, bodies: assets.bodies }));
+  const changed = applyGenerationPlan(plan, dryRun);
   return { changed, warnings: validation.warnings, paths };
 }
 

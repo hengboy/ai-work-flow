@@ -54,8 +54,12 @@ function runInstalledWorkflow(paths, ...args) {
   });
 }
 
-function configPath(paths) {
+function legacyConfigPath(paths) {
   return resolve(paths.config, 'ai-work-flow/config.json');
+}
+
+function defaultEnvironmentPath(paths) {
+  return resolve(paths.config, 'ai-work-flow/environments/default.json');
 }
 
 function agentPath(paths, platform, name, extension) {
@@ -101,13 +105,41 @@ test('root installer installs every skill globally and generates every platform 
     }
     assert.equal(readFileSync(resolve(platformRoot, 'skills/user-skill/SKILL.md'), 'utf8'), 'user skill\n');
   }
-  assert.ok(existsSync(configPath(paths)));
+  assert.ok(existsSync(defaultEnvironmentPath(paths)));
+  assert.ok(!existsSync(legacyConfigPath(paths)));
   assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/routing.md')));
   assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/agent-workflow.mjs')));
   assert.equal(readdirSync(resolve(paths.home, '.codex/agents')).filter((name) => name.endsWith('.toml')).length, 9);
   assert.equal(readdirSync(resolve(paths.home, '.claude/agents')).filter((name) => name.endsWith('.md')).length, 9);
   assert.equal(readdirSync(resolve(paths.config, 'opencode/agents')).filter((name) => name.endsWith('.md')).length, 9);
   assert.match(readFileSync(agentPath(paths, 'codex', 'coordinator', 'toml'), 'utf8'), /~\/\.config\/ai-work-flow\/routing/);
+});
+
+test('init creates the default environment without creating a legacy config', () => {
+  const paths = environment();
+
+  const result = run(paths, 'init');
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(existsSync(defaultEnvironmentPath(paths)));
+  assert.ok(!existsSync(legacyConfigPath(paths)));
+});
+
+test('init ignores a legacy config when creating the default environment', () => {
+  const paths = environment();
+  const legacyConfig = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
+  legacyConfig.roles.coordinator.codex.model = 'legacy-config-model';
+  legacyConfig.version = 0;
+  mkdirSync(resolve(paths.config, 'ai-work-flow'), { recursive: true });
+  writeFileSync(legacyConfigPath(paths), `${JSON.stringify(legacyConfig, null, 2)}\n`);
+
+  const result = run(paths, 'init');
+  assert.equal(result.status, 0, result.stderr);
+
+  const defaultConfig = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  assert.notEqual(defaultConfig.roles.coordinator.codex.model, 'legacy-config-model');
+  assert.equal(readFileSync(legacyConfigPath(paths), 'utf8'), `${JSON.stringify(legacyConfig, null, 2)}\n`);
+  const validation = run(paths, 'validate');
+  assert.equal(validation.status, 0, validation.stderr);
 });
 
 test('coordinator routes every required discovery phase through File Explorer', () => {
@@ -266,7 +298,7 @@ test('OpenCode uses subagent frontmatter for configured model constraints', () =
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
 
-  const config = JSON.parse(readFileSync(configPath(paths), 'utf8'));
+  const config = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
   const guard = resolve(paths.config, 'opencode/plugins/ai-work-flow-subagent-model-guard.js');
   assert.ok(!existsSync(guard));
 
@@ -293,13 +325,13 @@ test('OpenCode generation removes the obsolete subagent model guard', () => {
   assert.ok(!existsSync(pluginPath));
 });
 
-test('generate applies edited global configuration only to requested platforms', () => {
+test('generate applies edited default environment configuration only to requested platforms', () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
   const claudeBefore = readFileSync(agentPath(paths, 'claude', 'full-stack-coder', 'md'), 'utf8');
-  const config = JSON.parse(readFileSync(configPath(paths), 'utf8'));
+  const config = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
   config.roles['full-stack-coder'].codex = { model: 'local-codex', reasoning: 'low' };
-  writeFileSync(configPath(paths), `${JSON.stringify(config, null, 2)}\n`);
+  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config, null, 2)}\n`);
 
   const result = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
   assert.equal(result.status, 0, result.stderr);
@@ -312,22 +344,23 @@ test('invalid configuration and dry runs never write global files', () => {
   const paths = environment();
   const dryInit = run(paths, 'init', '--dry-run');
   assert.equal(dryInit.status, 0, dryInit.stderr);
-  assert.ok(!existsSync(configPath(paths)));
+  assert.ok(!existsSync(defaultEnvironmentPath(paths)));
+  assert.ok(!existsSync(legacyConfigPath(paths)));
   const dryInstall = run(paths, 'install', '--dry-run');
   assert.equal(dryInstall.status, 0, dryInstall.stderr);
   assert.ok(!existsSync(resolve(paths.home, '.codex')));
   assert.ok(!existsSync(resolve(paths.config, 'opencode')));
 
   assert.equal(run(paths, 'init').status, 0);
-  const config = JSON.parse(readFileSync(configPath(paths), 'utf8'));
+  const config = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
   config.roles.researcher.codex.reasoning = '';
-  writeFileSync(configPath(paths), `${JSON.stringify(config)}\n`);
+  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config)}\n`);
   const invalid = run(paths, 'validate');
   assert.equal(invalid.status, 1);
   assert.match(invalid.stderr, /researcher\.codex\.reasoning must be a non-empty string/);
 
   config.roles.researcher.codex.reasoning = 'xhigh';
-  writeFileSync(configPath(paths), `${JSON.stringify(config)}\n`);
+  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config)}\n`);
   const extended = run(paths, 'validate');
   assert.equal(extended.status, 0, extended.stderr);
   const dryGenerate = run(paths, 'generate', '--dry-run');
@@ -357,7 +390,7 @@ test('the installed asset catalog rejects inconsistent templates before generati
   assert.equal(readFileSync(generated, 'utf8'), 'preserved agent\n');
 });
 
-test('each platform adapter validates its own preservation work before writing its files', () => {
+test('a platform planning failure prevents writes for every requested platform', () => {
   const paths = environment();
   assert.equal(run(paths, 'init').status, 0);
   mkdirSync(resolve(paths.home, '.claude'), { recursive: true });
@@ -369,7 +402,7 @@ test('each platform adapter validates its own preservation work before writing i
   const result = run(paths, 'generate');
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Cannot safely update workflow marker/);
-  assert.ok(existsSync(agentPath(paths, 'codex', 'coordinator', 'toml')));
+  assert.ok(!existsSync(agentPath(paths, 'codex', 'coordinator', 'toml')));
   assert.ok(!existsSync(agentPath(paths, 'claude', 'coordinator', 'md')));
   assert.ok(!existsSync(agentPath(paths, 'opencode', 'coordinator', 'md')));
 });
@@ -414,11 +447,11 @@ test('environment merge overrides only specified roles from base config', () => 
   assert.match(coordinatorAgent, /model_reasoning_effort = "low"/);
   
   const fileExplorerAgent = readFileSync(agentPath(paths, 'codex', 'file-explorer', 'toml'), 'utf8');
-  const baseConfig = JSON.parse(readFileSync(configPath(paths), 'utf8'));
+  const baseConfig = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
   assert.match(fileExplorerAgent, new RegExp(`model = "${baseConfig.roles['file-explorer'].codex.model}"`));
 });
 
-test('env use writes marker file and env use default removes it', () => {
+test('env use default returns to the default environment without reading a legacy config', () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
   
@@ -430,10 +463,13 @@ test('env use writes marker file and env use default removes it', () => {
   assert.equal(useResult.status, 0, useResult.stderr);
   assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/.environment')));
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'utf8'), 'dev');
+  writeFileSync(legacyConfigPath(paths), '{"version":0}\n');
   
   const defaultResult = run(paths, 'env', 'use', 'default');
   assert.equal(defaultResult.status, 0, defaultResult.stderr);
   assert.ok(!existsSync(resolve(paths.config, 'ai-work-flow/.environment')));
+  const validation = run(paths, 'validate');
+  assert.equal(validation.status, 0, validation.stderr);
 });
 
 test('env create generates full copy of resolved config', () => {
@@ -446,7 +482,7 @@ test('env create generates full copy of resolved config', () => {
   const envPath = resolve(paths.config, 'ai-work-flow/environments/production.json');
   assert.ok(existsSync(envPath));
   
-  const baseConfig = JSON.parse(readFileSync(configPath(paths), 'utf8'));
+  const baseConfig = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
   const envConfig = JSON.parse(readFileSync(envPath, 'utf8'));
   assert.deepEqual(envConfig, baseConfig);
 });
@@ -466,6 +502,16 @@ test('env delete removes environment file and clears marker if active', () => {
   assert.ok(!existsSync(resolve(paths.config, 'ai-work-flow/.environment')));
 });
 
+test('env delete does not remove the default environment', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+
+  const deleteResult = run(paths, 'env', 'delete', 'default');
+  assert.equal(deleteResult.status, 1);
+  assert.match(deleteResult.stderr, /default environment cannot be deleted/);
+  assert.ok(existsSync(defaultEnvironmentPath(paths)));
+});
+
 test('env list shows all environments with current marked', () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
@@ -479,7 +525,8 @@ test('env list shows all environments with current marked', () => {
   const listResult = run(paths, 'env');
   assert.equal(listResult.status, 0, listResult.stderr);
   assert.match(listResult.stdout, /Available environments:/);
-  assert.match(listResult.stdout, /\* default/);
+  assert.match(listResult.stdout, /\n    default/);
+  assert.doesNotMatch(listResult.stdout, /\* default/);
   assert.match(listResult.stdout, /\* dev/);
   assert.match(listResult.stdout, /  prod/);
 });
@@ -494,5 +541,3 @@ test('environment file not found gives clear error', () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Environment file not found/);
 });
-
-
