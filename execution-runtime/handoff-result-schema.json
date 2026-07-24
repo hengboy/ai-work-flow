@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Work Flow Handoff Result",
+  "type": "object",
+  "required": ["role_id", "status", "summary", "artifacts", "checks", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "role_id": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["done", "blocked"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "artifacts": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "checks": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "error": { "type": "string", "minLength": 1 },
+    "payload": { "$ref": "#/$defs/completion-result" }
+  },
+  "$defs": {
+    "completion-result": {
+      "type": "object",
+      "required": ["ticket_id", "status", "commits", "tests", "summary"],
+      "additionalProperties": false,
+      "properties": {
+        "ticket_id": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["done", "blocked"] },
+        "commits": { "type": "array", "items": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" } },
+        "tests": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "summary": { "type": "string", "minLength": 1 },
+        "error": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        { "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] }, "then": { "properties": { "commits": { "type": "array", "minItems": 1 } }, "not": { "required": ["error"], "properties": { "error": true } } } },
+        { "if": { "properties": { "status": { "const": "blocked" } }, "required": ["status"] }, "then": { "required": ["error"], "properties": { "commits": { "type": "array", "maxItems": 0 } } } }
+      ]
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] }, "then": { "not": { "required": ["error"], "properties": { "error": true } } } },
+    { "if": { "properties": { "status": { "const": "blocked" } }, "required": ["status"] }, "then": { "required": ["error"] } }
+  ]
+}

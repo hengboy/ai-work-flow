@@ -14,6 +14,7 @@ function fieldsFrom(raw) {
 }
 
 export function normalizeCompletion({ ticketId, raw }) {
+  process.emitWarning('Text completion protocol is deprecated; return the canonical JSON handoff result instead.', { code: 'AIWF_TEXT_COMPLETION_DEPRECATED' });
   const fields = fieldsFrom(raw);
   const result = fields.get("RESULT");
   const commitsText = fields.get("COMMITS");

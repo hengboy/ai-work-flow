@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## 目标
 
-将由 `to-spec` 和 `to-tickets` 写入的 Spec 和 Ticket 执行、评审并合并到 `main`。这是唯一的执行入口；它编排现有 module，而不在此重述其实现。生命周期所有权和硬性约束见 [执行架构](references/execution-architecture.md)。
+将由 `to-spec` 和 `to-tickets` 写入的 Spec 和 Ticket 执行、评审并合并到 `main`。已安装环境通过 `$XDG_CONFIG_HOME/ai-work-flow/execution-runtime/execution-cli.mjs` 维护持久化状态；未设置 `XDG_CONFIG_HOME` 时使用 `~/.config/ai-work-flow/execution-runtime/execution-cli.mjs`。平台 Skill 只调用该受管 runtime。生命周期所有权和硬性约束见 [执行架构](references/execution-architecture.md)。
 
 ## 前置条件
 
@@ -44,7 +44,7 @@ disable-model-invocation: true
 ### 3. 执行
 
 1. 连续执行每个可执行 Frontier，直至 blocked、需要评审输入或全部 Ticket 完成。
-2. `delegated` 使用 [Completion Adapter 协议](references/completion-protocol.md)；`orchestrator` 仅直接实施自动判定的低风险单 Ticket。
+2. 新建 execution plan（包括单 Ticket）一律使用 `delegated`；旧 `orchestrator` 计划仅按兼容/迁移语义继续执行，并且仍必须经受管 runtime 的 `claim`/`record-ticket` 状态转换，不直接写入 Checkpoint。
 3. 在 main 记录每个 Ticket 的终态并更新本地 Issue 复选框；blocked 结果立即停止流程。
 
 **完成条件：** 所有 Ticket 为 `done` 时进入 `reviewing`；否则返回可恢复状态或 blocked 结果。
@@ -52,9 +52,9 @@ disable-model-invocation: true
 ### 4. 评审与整合
 
 1. 委派 **Code Reviewer** 完成 Standards 与 Spec 两轴评审（单次通过）。
-2. 将评审发现报告给用户，由用户决定是否修复以及修复哪些项。
-3. 用户确认后，委派 **Full Stack Coder** 完成用户指定的修复。
-4. 修复完成后（或用户确认无需修复），执行整合生命周期。
+2. 将评审发现报告给用户；按用户明确的状态机决策执行修复。
+3. 用户确认修复后，委派 **Full Stack Coder** 完成修复，并将 Checkpoint 置为 `fixing`；修复成功交接后直接整合，不再次委派或执行评审。
+4. 收到修复成功交接后，调用 runtime 的 `complete-review-fix` 将 Checkpoint 置为 `integrating`；用户确认无需修复时，`review-decision approve` 直接进入 `integrating`。
 5. 完成执行记录的最终提交。
 
 **完成条件：** main 包含唯一的执行记录提交；若合并后清理失败，保留 `merged` 并且下次只重试清理。

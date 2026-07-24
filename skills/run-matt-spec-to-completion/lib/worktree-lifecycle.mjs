@@ -1,5 +1,5 @@
 import { access, mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { git, gitSucceeds, repoRoot } from "./git.mjs";
 
 function parseWorktrees(output) {
@@ -28,16 +28,21 @@ export async function worktreeIsClean(worktree) {
   return (await git(worktree, ["status", "--porcelain"])) === "";
 }
 
-async function prepareNewWorktreePath(path) {
+async function prepareNewWorktreePath(repository, root, path) {
   const target = resolve(path);
+  const repositoryPath = relative(resolve(repository), target);
+  if (!repositoryPath || repositoryPath === ".." || repositoryPath.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
+    throw new Error(`Execution worktree path must be inside the repository: ${target}`);
+  }
+  const canonicalTarget = resolve(root, repositoryPath);
   try {
-    await access(target);
-    throw new Error(`Worktree path already exists: ${target}`);
+    await access(canonicalTarget);
+    throw new Error(`Worktree path already exists: ${canonicalTarget}`);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
-  await mkdir(dirname(target), { recursive: true });
-  return target;
+  await mkdir(dirname(canonicalTarget), { recursive: true });
+  return canonicalTarget;
 }
 
 export async function ensureExecutionWorktree({ repository, branch, path }) {
@@ -47,14 +52,14 @@ export async function ensureExecutionWorktree({ repository, branch, path }) {
   if (!await gitSucceeds(root, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])) {
     throw new Error(`Execution branch ${branch} does not exist`);
   }
-  const target = await prepareNewWorktreePath(path);
+  const target = await prepareNewWorktreePath(repository, root, path);
   await git(root, ["worktree", "add", target, branch]);
   return { worktree: target, created: true };
 }
 
 export async function createExecutionWorktree({ repository, branch, baseline, path }) {
   const root = await repoRoot(repository);
-  const target = await prepareNewWorktreePath(path);
+  const target = await prepareNewWorktreePath(repository, root, path);
   await git(root, ["worktree", "add", "-b", branch, target, baseline]);
   return target;
 }

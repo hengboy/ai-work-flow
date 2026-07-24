@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import test from "node:test";
 
-import { beginReview, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, readCheckpoint, startTickets, writeCheckpoint } from "../lib/checkpoint.mjs";
+import { beginReview, completeIntegration, completeReview, completeReviewFix, completeTicket, createCheckpoint, decideReview, markMerged, readCheckpoint, recordReview, startTickets, writeCheckpoint } from "../lib/checkpoint.mjs";
 import { materializeSpec, readExecutionPlan, writeExecutionPlan } from "../lib/spec-intake.mjs";
 import { deriveSpecLocation, sourceSpecPath } from "../lib/paths.mjs";
 import { assertCheckpoint, assertExecutionPlan } from "../lib/validation.mjs";
@@ -62,6 +62,33 @@ test("persists execution records beside the canonical spec with the spec/ticket 
   assert.deepEqual(await readCheckpoint(root, "migrate-runtime"), checkpoint);
 });
 
+test("persists only repository-relative worktree paths and rejects legacy absolute paths", async () => {
+  const { root, specPath } = await specFixture();
+  const executionPlan = await materializeSpec({ mainWorktree: root, specPath });
+  const worktree = join(root, "worktrees", "migrate-runtime-worktree");
+  const checkpoint = createCheckpoint({
+    executionPlan,
+    baseline: "a".repeat(40),
+    branch: "feat/migrate-runtime",
+    repository: root,
+    worktree,
+  });
+
+  assert.equal(checkpoint.worktree, relative(root, worktree));
+  await writeCheckpoint(root, "migrate-runtime", checkpoint);
+  assert.equal((await readCheckpoint(root, "migrate-runtime")).worktree, relative(root, worktree));
+  await writeFile(join(root, ".scratch", "migrate-runtime", "checkpoint.json"), `${JSON.stringify({ ...checkpoint, worktree }, null, 2)}\n`);
+  await assert.rejects(readCheckpoint(root, "migrate-runtime"), /Checkpoint violates schema|repository-relative path/);
+  assert.throws(
+    () => assertCheckpoint({ ...checkpoint, worktree: "/tmp/migrate-runtime-worktree" }),
+    /Checkpoint violates schema/,
+  );
+  await assert.rejects(
+    writeCheckpoint(root, "migrate-runtime", { ...checkpoint, worktree: "../migrate-runtime-worktree" }),
+    /Checkpoint violates schema|relative traversal segments/,
+  );
+});
+
 test("rejects legacy execution-plan and checkpoint fields", () => {
   const oldPlan = ["pl", "an"].join("");
   const oldSlug = ["plan", "id"].join("_");
@@ -82,7 +109,7 @@ test("rejects legacy execution-plan and checkpoint fields", () => {
     status: "executing",
     baseline: "a".repeat(40),
     branch: "feat/example",
-    worktree: "/tmp/example",
+    worktree: ".",
     created_at: "2026-07-23T12:00:00+08:00",
     updated_at: "2026-07-23T12:00:00+08:00",
     tickets: [],
@@ -99,7 +126,7 @@ test("rejects checkpoint ticket fields that conflict with their status", () => {
     status: "executing",
     baseline: "a".repeat(40),
     branch: "feat/example",
-    worktree: "/tmp/example",
+    worktree: ".",
     created_at: "2026-07-23T12:00:00+08:00",
     updated_at: "2026-07-23T12:00:00+08:00",
     review: { status: "pending" },
@@ -124,7 +151,7 @@ test("accepts an interrupted in-progress checkpoint in the current format", () =
     status: "executing",
     baseline: "a".repeat(40),
     branch: "feat/example",
-    worktree: "/tmp/example",
+    worktree: ".",
     created_at: "2026-07-23T12:00:00+08:00",
     updated_at: "2026-07-23T12:00:00+08:00",
     tickets: [{ id: "01", status: "in_progress", start_commit: "a".repeat(40), started_at: "2026-07-23T12:00:00+08:00" }],
@@ -180,6 +207,7 @@ test("retains a persisted stash reference when integration is marked merged", as
   });
 
   assert.equal(merged.integration.stash_ref, "b".repeat(40));
+  assert.equal(merged.integration.main_worktree, ".");
 });
 
 test("rejects terminal integration while stash restoration is applying", async () => {
@@ -202,4 +230,21 @@ test("rejects integration states before tickets and review complete", async () =
   checkpoint.status = "integrating";
   assert.throws(() => assertCheckpoint(checkpoint), /Checkpoint violates schema/);
   assert.throws(() => markMerged(checkpoint, { executionHead: "a".repeat(40), mainWorktree: root, mergedCommit: "a".repeat(40) }), /Checkpoint violates schema/);
+});
+
+test("holds user-approved review fixes outside the review loop until they are completed", async () => {
+  const { root, specPath } = await specFixture();
+  const executionPlan = await materializeSpec({ mainWorktree: root, specPath });
+  let checkpoint = createCheckpoint({ executionPlan, baseline: "a".repeat(40), branch: "feat/migrate-runtime", worktree: root });
+  checkpoint = startTickets(checkpoint, ["01"], "a".repeat(40));
+  checkpoint = completeTicket(checkpoint, "01", "b".repeat(40));
+  checkpoint = beginReview(checkpoint);
+  checkpoint = recordReview(checkpoint, "needs a user choice");
+  assert.equal(checkpoint.review.status, "awaiting_user");
+  checkpoint = decideReview(checkpoint, "fix");
+  assert.equal(checkpoint.status, "fixing");
+  assert.equal(checkpoint.review.status, "done");
+  assert.equal(checkpoint.review.decision, "fix");
+  checkpoint = completeReviewFix(checkpoint);
+  assert.equal(checkpoint.status, "integrating");
 });

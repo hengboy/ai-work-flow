@@ -84,17 +84,9 @@ async function sourceRefWithin(worktree, path) {
   return relativePathWithin(worktree, await realpath(path));
 }
 
-const DIRECT_EXECUTION_MAX_CONTENT_LENGTH = 1000;
-const DIRECT_EXECUTION_MAX_WORK_ITEMS = 2;
-const COMPLEX_TICKET_PATTERN = /\b(?:database|migration|schema|auth(?:entication|orization)?|security|payment|billing|deploy(?:ment)?|release|api|breaking|performance|concurren(?:cy|t)|parallel|integrat(?:e|ion)|distributed|cache)\b|数据库|数据迁移|迁移|鉴权|认证|授权|安全|支付|账单|部署|发布|接口|兼容|性能|并发|集成|分布式|缓存/i;
-
-function executionModeFor(tickets) {
-  if (tickets.length !== 1) return "delegated";
-  const [ticket] = tickets;
-  const work = `${ticket.title}\n${ticket.content}`;
-  if (ticket.content.length > DIRECT_EXECUTION_MAX_CONTENT_LENGTH) return "delegated";
-  if (ticket.work_item_count > DIRECT_EXECUTION_MAX_WORK_ITEMS) return "delegated";
-  return COMPLEX_TICKET_PATTERN.test(work) ? "delegated" : "orchestrator";
+function executionModeFor() {
+  // New plans always delegate. The legacy orchestrator mode remains readable for recovery.
+  return "delegated";
 }
 
 function executionTicketFrom({ content, work_item_count, ...ticket }) {
