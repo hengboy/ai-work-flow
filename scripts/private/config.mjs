@@ -86,7 +86,21 @@ function validateKnownShape(config, roles, { overlay }) {
     }
   }
   if (!overlay) {
-    for (const role of roles) if (!Object.hasOwn(config.roles, role.id)) errors.push(`Missing configuration for role: ${role.id}.`);
+    for (const role of roles) {
+      const roleConfig = config.roles[role.id];
+      if (!Object.hasOwn(config.roles, role.id)) {
+        errors.push(`Missing configuration for role: ${role.id}.`);
+        continue;
+      }
+      for (const [platform, fields] of Object.entries(PLATFORM_FIELDS)) {
+        const settings = roleConfig?.[platform];
+        if (!isPlainObject(settings)) {
+          errors.push(`${role.id}.${platform} must be an object.`);
+          continue;
+        }
+        for (const field of fields) if (!Object.hasOwn(settings, field)) errors.push(`Missing configuration field: ${role.id}.${platform}.${field}.`);
+      }
+    }
   }
   return errors;
 }

@@ -742,6 +742,17 @@ test('sparse environments are safely merged and platform generation validates on
   const paths = environment();
   assert.equal(install(paths).status, 0);
   const config = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  const completeConfig = structuredClone(config);
+  const codexAgent = agentPath(paths, 'codex', 'orchestrator', 'toml');
+  const codexBefore = readFileSync(codexAgent, 'utf8');
+  delete config.roles.researcher.claude;
+  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config)}\n`);
+  const incompleteDefault = run(paths, 'generate', '--platform', 'codex');
+  assert.equal(incompleteDefault.status, 1);
+  assert.match(incompleteDefault.stderr, /researcher\.claude must be an object/);
+  assert.equal(readFileSync(codexAgent, 'utf8'), codexBefore);
+
+  Object.assign(config, completeConfig);
   config.roles.orchestrator.claude.model = 'unsafe\npermissionMode: acceptEdits';
   writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config)}\n`);
   const rejected = run(paths, 'generate', '--platform', 'claude');
