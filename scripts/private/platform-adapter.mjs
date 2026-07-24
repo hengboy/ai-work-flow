@@ -5,6 +5,18 @@ import { fail, isPlainObject, write } from './shared.mjs';
 import { updateManagedMarker } from './managed-content.mjs';
 
 const OBSOLETE_PRIMARY_AGENT_ID = ['coord', 'inator'].join('');
+const REVIEWER_ROLE_IDS = new Set(['code-reviewer', 'review-standards', 'review-spec']);
+const READ_ONLY_GIT_BASH = {
+  'git status*': 'allow',
+  'git diff*': 'allow',
+  'git show*': 'allow',
+  'git log*': 'allow',
+  'git rev-parse*': 'allow',
+  'git merge-base*': 'allow',
+  'git branch*': 'allow',
+  'git ls-files*': 'allow',
+  '*': 'deny'
+};
 
 // --- Shared functions ---
 
@@ -103,6 +115,14 @@ function claudeRender(role, settings, body) {
 
 function opencodePermission(role) {
   if (role.workspace === 'none') return { read: 'deny', edit: 'deny', bash: 'deny' };
+  if (REVIEWER_ROLE_IDS.has(role.id)) {
+    return {
+      read: 'allow',
+      edit: 'deny',
+      bash: READ_ONLY_GIT_BASH,
+      task: role.id === 'code-reviewer' ? 'allow' : 'deny'
+    };
+  }
   if (role.workspace === 'read') return { read: 'allow', edit: 'deny', bash: 'deny' };
   return { edit: 'allow' };
 }

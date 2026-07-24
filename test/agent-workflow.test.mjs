@@ -401,6 +401,7 @@ test('platform generation enforces the declared workspace access where supported
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
+  const reviewerRoles = new Set(['code-reviewer', 'review-standards', 'review-spec']);
 
   for (const role of catalog.roles) {
     const codex = readFileSync(agentPath(paths, 'codex', role.id, 'toml'), 'utf8');
@@ -417,7 +418,12 @@ test('platform generation enforces the declared workspace access where supported
     if (role.workspace === 'none') {
       assert.match(openCode, /permission: \{"read":"deny","edit":"deny","bash":"deny"\}/, role.id);
     }
-    if (role.workspace === 'read') {
+    if (reviewerRoles.has(role.id)) {
+      const expectedTaskPermission = role.id === 'code-reviewer' ? 'allow' : 'deny';
+      assert.match(openCode, /"bash":\{"git status\*":"allow","git diff\*":"allow","git show\*":"allow","git log\*":"allow","git rev-parse\*":"allow","git merge-base\*":"allow","git branch\*":"allow","git ls-files\*":"allow","\*":"deny"\}/, role.id);
+      assert.match(openCode, new RegExp(`"task":"${expectedTaskPermission}"`), role.id);
+      assert.doesNotMatch(openCode, /"bash":"allow"/, role.id);
+    } else if (role.workspace === 'read') {
       assert.match(openCode, /permission: \{"read":"allow","edit":"deny","bash":"deny"\}/, role.id);
     }
   }
