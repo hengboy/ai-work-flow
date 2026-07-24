@@ -147,9 +147,12 @@ function opencodeUpdateConfig(source) {
   if (current.agent !== undefined && !isPlainObject(current.agent)) {
     fail(`Cannot safely merge opencode.json: agent must be an object.`);
   }
+  if (current.subagent_depth !== undefined && (!Number.isInteger(current.subagent_depth) || current.subagent_depth < 0)) {
+    fail(`Cannot safely merge opencode.json: subagent_depth must be a non-negative integer.`);
+  }
   const agent = { ...(current.agent ?? {}) };
   if (agent.explore === false) delete agent.explore;
-  return `${JSON.stringify({ ...current, agent, default_agent: 'orchestrator' }, null, 2)}\n`;
+  return `${JSON.stringify({ ...current, agent, subagent_depth: Math.max(2, current.subagent_depth ?? 0), default_agent: 'orchestrator' }, null, 2)}\n`;
 }
 
 // --- Strategy map ---

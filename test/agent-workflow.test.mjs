@@ -468,7 +468,7 @@ test('generation preserves unrelated global configuration and agents', () => {
   writeFileSync(resolve(paths.home, '.codex/AGENTS.md'), '# User instructions\n');
   writeFileSync(resolve(paths.home, '.claude/CLAUDE.md'), '# User instructions\n');
   mkdirSync(resolve(paths.config, 'opencode'), { recursive: true });
-  writeFileSync(resolve(paths.config, 'opencode/opencode.json'), '{"theme":"user","agent":{"explore":false,"custom":{}}}\n');
+  writeFileSync(resolve(paths.config, 'opencode/opencode.json'), '{"theme":"user","subagent_depth":4,"agent":{"explore":false,"custom":{}}}\n');
 
   assert.equal(run(paths, 'init').status, 0);
   const result = run(paths, 'generate');
@@ -485,6 +485,7 @@ test('generation preserves unrelated global configuration and agents', () => {
   assert.equal(opencode.theme, 'user');
   assert.equal(opencode.agent.explore, undefined);
   assert.deepEqual(opencode.agent.custom, {});
+  assert.equal(opencode.subagent_depth, 4);
   assert.equal(opencode.default_agent, 'orchestrator');
 });
 
@@ -506,6 +507,7 @@ test('OpenCode uses subagent frontmatter for configured model constraints', () =
   }
   const opencode = JSON.parse(readFileSync(resolve(paths.config, 'opencode/opencode.json'), 'utf8'));
   assert.equal(opencode.plugin, undefined);
+  assert.equal(opencode.subagent_depth, 2);
 });
 
 test('OpenCode generation removes the obsolete subagent model guard', () => {
