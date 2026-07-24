@@ -5,8 +5,9 @@ import process from 'node:process';
 import { loadAgentAssets } from './asset-catalog.mjs';
 import { assertEnvironmentName, assertSafeEnvironmentPaths, environmentPath, loadResolvedConfiguration, validateConfiguration } from './config.mjs';
 import { globalPaths } from './paths.mjs';
-import { fail, write } from './shared.mjs';
+import { fail, readJson, write } from './shared.mjs';
 import { applyGenerationPlan, planGeneration } from './platform-adapter.mjs';
+import { applyTransaction } from './transaction.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const SKILLS_ROOT = resolve(ROOT, 'skills');
@@ -20,7 +21,8 @@ function usage() {
   node scripts/install.mjs generate [--platform codex,claude,opencode] [--dry-run]
   node scripts/install.mjs validate
   node scripts/install.mjs env
-  node scripts/install.mjs env use <name>
+  node scripts/install.mjs env use <name> [--dry-run]
+  node scripts/install.mjs env status
   node scripts/install.mjs env create <name>
   node scripts/install.mjs env delete <name>`;
 }
@@ -35,6 +37,10 @@ function parseArgs(argv) {
   if (command === 'env') {
     options.envAction = rest[0];
     options.envName = rest[1];
+    for (const argument of rest.slice(2)) {
+      if (argument === '--dry-run' && options.envAction === 'use') options.dryRun = true;
+      else fail(`Unknown argument: ${argument}`);
+    }
     return options;
   }
   
@@ -136,29 +142,59 @@ function listEnvironments() {
   }
 }
 
-function useEnvironment(name) {
+function transactionOptions(paths) {
+  return {
+    transactionPath: paths.generationTransaction,
+    roots: [paths.configHome, paths.codexDir, paths.claudeDir]
+  };
+}
+
+function managedPlatforms(paths) {
+  if (!existsSync(paths.managedPlatforms)) return [...PLATFORMS];
+  const entry = lstatSync(paths.managedPlatforms);
+  if (entry.isSymbolicLink() || !entry.isFile()) fail(`Managed platforms manifest must be a regular file: ${paths.managedPlatforms}`);
+  const manifest = readJson(paths.managedPlatforms);
+  if (manifest?.version !== 1 || !Array.isArray(manifest.platforms) || !manifest.platforms.every((platform) => PLATFORMS.has(platform))) {
+    fail(`Managed platforms manifest is invalid: ${paths.managedPlatforms}`);
+  }
+  return [...new Set(manifest.platforms)].sort();
+}
+
+function managedPlatformsStep(paths, platforms) {
+  const contents = `${JSON.stringify({ version: 1, platforms: [...new Set(platforms)].sort() }, null, 2)}\n`;
+  if (existsSync(paths.managedPlatforms)) {
+    const entry = lstatSync(paths.managedPlatforms);
+    if (entry.isSymbolicLink() || !entry.isFile()) fail(`Managed platforms manifest must be a regular file: ${paths.managedPlatforms}`);
+    if (readFileSync(paths.managedPlatforms, 'utf8') === contents) return null;
+  }
+  return {
+    type: 'write',
+    path: paths.managedPlatforms,
+    contents
+  };
+}
+
+function applyGenerationTransaction(plan, paths, dryRun) {
+  if (!plan.length) return [];
+  return applyGenerationPlan(plan, dryRun, transactionOptions(paths));
+}
+
+function useEnvironment(name, dryRun) {
   const paths = globalPaths();
   assertEnvironmentName(name);
   assertSafeEnvironmentPaths(paths);
   if (!existsSync(paths.defaultEnvironment)) fail(`Missing ${paths.defaultEnvironment}. Run init first.`);
   const assets = loadAgentAssets();
-  loadResolvedConfiguration({ paths, roles: assets.roles, platforms: [...PLATFORMS], environmentName: name });
-  if (name === 'default') {
-    mkdirSync(paths.dir, { recursive: true });
-    assertSafeEnvironmentPaths(paths);
-    if (existsSync(paths.environmentMarker)) {
-      unlinkSync(paths.environmentMarker);
-      console.log('Switched to default environment.');
-    } else {
-      console.log('Already using default environment.');
-    }
-    return;
-  }
-  
-  mkdirSync(paths.dir, { recursive: true });
-  assertSafeEnvironmentPaths(paths);
-  writeFileSync(paths.environmentMarker, name, { flag: 'w' });
-  console.log(`Switched to environment: ${name}`);
+  const resolved = loadResolvedConfiguration({ paths, roles: assets.roles, platforms: [...PLATFORMS], environmentName: name });
+  const platforms = managedPlatforms(paths);
+  const generation = planGenerationFor(platforms, assets, resolved.config);
+  const marker = name === 'default'
+    ? { type: 'delete', path: paths.environmentMarker }
+    : { type: 'write', path: paths.environmentMarker, contents: name };
+  const plan = [...generation.plan, marker, managedPlatformsStep(paths, platforms)].filter(Boolean);
+  applyGenerationTransaction(plan, paths, dryRun);
+  for (const message of generation.warnings) console.warn(`WARNING ${message}`);
+  console.log(`${dryRun ? 'Would activate' : 'Activated'} environment: ${name}`);
 }
 
 function createEnvironment(name) {
@@ -213,13 +249,15 @@ function deleteEnvironment(name) {
   if (currentEnv !== null) assertEnvironmentName(currentEnv);
   
   if (name === currentEnv) {
-    unlinkSync(paths.environmentMarker);
+    applyTransaction([
+      { type: 'delete', path: paths.environmentMarker },
+      { type: 'delete', path: envPath }
+    ], transactionOptions(paths));
     console.log(`Deleted environment: ${name} (was active, switched to default)`);
   } else {
+    applyTransaction([{ type: 'delete', path: envPath }], transactionOptions(paths));
     console.log(`Deleted environment: ${name}`);
   }
-  
-  unlinkSync(envPath);
 }
 
 function init(assets, dryRun) {
@@ -231,9 +269,11 @@ function init(assets, dryRun) {
   return changed;
 }
 
-function generate(platforms, dryRun, assets, config = loadConfig(assets, dryRun, platforms).config) {
+function generate(platforms, dryRun, assets, config = loadConfig(assets, dryRun, platforms).config, previousPlatforms = managedPlatforms(globalPaths())) {
   const result = planGenerationFor(platforms, assets, config);
-  return { ...result, changed: applyGenerationPlan(result.plan, dryRun) };
+  const managed = [...new Set([...previousPlatforms, ...platforms])];
+  const plan = [...result.plan, managedPlatformsStep(result.paths, managed)].filter(Boolean);
+  return { ...result, changed: applyGenerationTransaction(plan, result.paths, dryRun) };
 }
 
 function planGenerationFor(platforms, assets, config) {
@@ -255,7 +295,15 @@ export function runCli(argv) {
     }
     if (options.envAction === 'use') {
       if (!options.envName) fail('env use requires an environment name.');
-      useEnvironment(options.envName);
+      useEnvironment(options.envName, options.dryRun);
+      return;
+    }
+    if (options.envAction === 'status') {
+      const paths = globalPaths();
+      const assets = loadAgentAssets();
+      const resolved = loadResolvedConfiguration({ paths, roles: assets.roles, platforms: [...PLATFORMS] });
+      console.log(`Environment: ${resolved.name}`);
+      console.log(`Managed platforms: ${managedPlatforms(paths).join(', ')}`);
       return;
     }
     if (options.envAction === 'create') {
@@ -282,10 +330,10 @@ export function runCli(argv) {
     console.log(`Initialized ${globalPaths().dir}`);
     for (const path of changed) console.log(`WRITE ${path}`);
     installRuntime(assets, lifecycle, options.dryRun);
-    const generated = applyGenerationPlan(generation.plan, options.dryRun);
+    const generated = generate(options.platforms, options.dryRun, assets, config, []);
     for (const message of generation.warnings) console.warn(`WARNING ${message}`);
-    console.log(`${options.dryRun ? 'Would write' : 'Generated'} ${generated.length} file(s).`);
-    for (const path of generated) console.log(`${options.dryRun ? 'WRITE' : 'WROTE'} ${path}`);
+    console.log(`${options.dryRun ? 'Would write' : 'Generated'} ${generated.changed.length} file(s).`);
+    for (const path of generated.changed) console.log(`${options.dryRun ? 'WRITE' : 'WROTE'} ${path}`);
     return;
   }
   if (options.command === 'init') {

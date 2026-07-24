@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { fail, isPlainObject, write } from './shared.mjs';
+import { fail, isPlainObject } from './shared.mjs';
+import { applyTransaction } from './transaction.mjs';
 import { updateManagedMarker } from './managed-content.mjs';
 
 const OBSOLETE_PRIMARY_AGENT_ID = ['coord', 'inator'].join('');
@@ -231,16 +232,10 @@ export function planGeneration({ platform, paths, roles, config, bodies }) {
   return plan;
 }
 
-export function applyGenerationPlan(plan, dryRun) {
-  const changed = [];
-  for (const step of plan) {
-    changed.push(step.path);
-    if (step.type === 'write') write(step.path, step.contents, dryRun, []);
-    else if (!dryRun) unlinkSync(step.path);
-  }
-  return changed;
+export function applyGenerationPlan(plan, dryRun, transaction) {
+  return applyTransaction(plan, { ...transaction, dryRun });
 }
 
 export function generate(options) {
-  return applyGenerationPlan(planGeneration(options), options.dryRun);
+  return applyGenerationPlan(planGeneration(options), options.dryRun, options.transaction);
 }

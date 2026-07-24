@@ -14,6 +14,8 @@ export function globalPaths() {
     environments,
     defaultEnvironment: resolve(environments, 'default.json'),
     environmentMarker: resolve(dir, '.environment'),
+    managedPlatforms: resolve(dir, '.managed-platforms.json'),
+    generationTransaction: resolve(dir, '.generation-transaction.json'),
     codexDir: resolve(home, '.codex'),
     claudeDir: resolve(home, '.claude'),
     openCodeDir: resolve(configHome, 'opencode')
