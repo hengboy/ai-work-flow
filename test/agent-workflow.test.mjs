@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
@@ -700,6 +700,74 @@ test('invalid configuration and dry runs never write global files', () => {
   assert.equal(opencodeOnly.status, 0, opencodeOnly.stderr);
   assert.ok(existsSync(agentPath(paths, 'opencode', 'orchestrator', 'md')));
   assert.ok(!existsSync(resolve(paths.home, '.codex')));
+});
+
+test('environment input rejects unsafe names, markers, and symbolic links before writing', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const marker = resolve(paths.config, 'ai-work-flow/.environment');
+  for (const name of ['../escape', '/absolute', 'bad\\path', '.', '..', 'line\nfeed']) {
+    const result = run(paths, 'env', 'use', name);
+    assert.equal(result.status, 1, name);
+    assert.ok(!existsSync(marker), name);
+  }
+
+  const markerTarget = resolve(paths.base, 'marker-target');
+  writeFileSync(markerTarget, 'default');
+  symlinkSync(markerTarget, marker);
+  const markerResult = run(paths, 'validate');
+  assert.equal(markerResult.status, 1);
+  assert.match(markerResult.stderr, /symbolic link/);
+  assert.equal(readFileSync(markerTarget, 'utf8'), 'default');
+  rmSync(marker);
+
+  writeFileSync(marker, 'bad\nmarker');
+  const malformedMarker = run(paths, 'env', 'use', 'default');
+  assert.equal(malformedMarker.status, 1);
+  assert.match(malformedMarker.stderr, /Environment name must be/);
+  rmSync(marker);
+
+  const environments = resolve(paths.config, 'ai-work-flow/environments');
+  const outside = resolve(paths.base, 'outside-environments');
+  mkdirSync(outside, { recursive: true });
+  rmSync(environments, { recursive: true, force: true });
+  symlinkSync(outside, environments);
+  const createResult = run(paths, 'env', 'create', 'escaped');
+  assert.equal(createResult.status, 1);
+  assert.match(createResult.stderr, /symbolic link/);
+  assert.ok(!existsSync(resolve(outside, 'escaped.json')));
+});
+
+test('sparse environments are safely merged and platform generation validates only its target', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const config = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  config.roles.orchestrator.claude.model = 'unsafe\npermissionMode: acceptEdits';
+  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config)}\n`);
+  const rejected = run(paths, 'generate', '--platform', 'claude');
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /control character/);
+
+  config.roles.orchestrator.claude.model = 'safe-claude';
+  config.roles.orchestrator.claude.effort = 'invalid';
+  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config)}\n`);
+  const codexOnly = run(paths, 'generate', '--platform', 'codex');
+  assert.equal(codexOnly.status, 0, codexOnly.stderr);
+  assert.equal(run(paths, 'validate').status, 1);
+
+  config.roles.orchestrator.claude.effort = 'medium';
+  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config)}\n`);
+  writeFileSync(resolve(paths.config, 'ai-work-flow/environments/sparse.json'), JSON.stringify({
+    version: 1,
+    roles: { orchestrator: { codex: { reasoning: 'low' }, opencode: { model: null, options: { temperature: 0 } } } }
+  }));
+  assert.equal(run(paths, 'env', 'use', 'sparse').status, 0);
+  assert.equal(run(paths, 'generate', '--platform', 'codex,opencode').status, 0);
+  const codex = readFileSync(agentPath(paths, 'codex', 'orchestrator', 'toml'), 'utf8');
+  const openCode = readFileSync(agentPath(paths, 'opencode', 'orchestrator', 'md'), 'utf8');
+  assert.match(codex, /model_reasoning_effort = "low"/);
+  assert.doesNotMatch(openCode, /^model:/m);
+  assert.match(openCode, /options: \{"temperature":0\}/);
 });
 
 test('validation and generation reject the obsolete primary role configuration', () => {

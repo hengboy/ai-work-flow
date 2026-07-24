@@ -1,16 +1,16 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import process from 'node:process';
 
 import { loadAgentAssets } from './asset-catalog.mjs';
+import { assertEnvironmentName, assertSafeEnvironmentPaths, environmentPath, loadResolvedConfiguration, validateConfiguration } from './config.mjs';
 import { globalPaths } from './paths.mjs';
-import { fail, isPlainObject, mergeRoles, readJson, write } from './shared.mjs';
+import { fail, write } from './shared.mjs';
 import { applyGenerationPlan, planGeneration } from './platform-adapter.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const SKILLS_ROOT = resolve(ROOT, 'skills');
 const PLATFORMS = new Set(['codex', 'claude', 'opencode']);
-const REASONING_VALUES = new Set(['low', 'medium', 'high']);
 const OBSOLETE_PRIMARY_AGENT_ID = ['coord', 'inator'].join('');
 
 function usage() {
@@ -99,37 +99,27 @@ function installRuntime(assets, lifecycle, dryRun) {
   if (existsSync(obsoleteBody)) unlinkSync(obsoleteBody);
 }
 
-function loadConfig(assets, allowDefaults = false) {
+function loadConfig(assets, allowDefaults = false, platforms = [...PLATFORMS]) {
   const paths = globalPaths();
+  assertSafeEnvironmentPaths(paths);
   if (!existsSync(paths.defaultEnvironment)) {
-    if (allowDefaults) return { config: assets.defaults, paths };
+    if (allowDefaults) {
+      const validation = validateConfiguration({ base: assets.defaults, roles: assets.roles, platforms });
+      if (validation.errors.length) fail(validation.errors.join('\n'));
+      return { config: validation.config, warnings: validation.warnings, paths };
+    }
     fail(`Missing ${paths.defaultEnvironment}. Run init first.`);
   }
-  const baseConfig = readJson(paths.defaultEnvironment);
-  return { config: resolveConfig(baseConfig, paths), paths };
-}
-
-function resolveConfig(baseConfig, paths) {
-  if (!existsSync(paths.environmentMarker)) {
-    return baseConfig;
-  }
-  const envName = readFileSync(paths.environmentMarker, 'utf8').trim();
-  const envPath = resolve(paths.environments, `${envName}.json`);
-  if (!existsSync(envPath)) {
-    fail(`Environment file not found: ${envPath}`);
-  }
-  const envConfig = readJson(envPath);
-  return {
-    version: baseConfig.version,
-    roles: mergeRoles(baseConfig.roles, envConfig.roles || {})
-  };
+  return { ...loadResolvedConfiguration({ paths, roles: assets.roles, platforms }), paths };
 }
 
 function listEnvironments() {
   const paths = globalPaths();
-  const currentEnv = existsSync(paths.environmentMarker) 
+  assertSafeEnvironmentPaths(paths);
+  const currentEnv = existsSync(paths.environmentMarker)
     ? readFileSync(paths.environmentMarker, 'utf8').trim() 
     : null;
+  if (currentEnv !== null) assertEnvironmentName(currentEnv);
   
   console.log('Available environments:');
   console.log(`  ${currentEnv === null || currentEnv === 'default' ? '*' : ' '} default`);
@@ -148,11 +138,14 @@ function listEnvironments() {
 
 function useEnvironment(name) {
   const paths = globalPaths();
-  
+  assertEnvironmentName(name);
+  assertSafeEnvironmentPaths(paths);
+  if (!existsSync(paths.defaultEnvironment)) fail(`Missing ${paths.defaultEnvironment}. Run init first.`);
+  const assets = loadAgentAssets();
+  loadResolvedConfiguration({ paths, roles: assets.roles, platforms: [...PLATFORMS], environmentName: name });
   if (name === 'default') {
-    if (!existsSync(paths.defaultEnvironment)) {
-      fail(`Missing ${paths.defaultEnvironment}. Run init first.`);
-    }
+    mkdirSync(paths.dir, { recursive: true });
+    assertSafeEnvironmentPaths(paths);
     if (existsSync(paths.environmentMarker)) {
       unlinkSync(paths.environmentMarker);
       console.log('Switched to default environment.');
@@ -162,33 +155,37 @@ function useEnvironment(name) {
     return;
   }
   
-  const envPath = resolve(paths.environments, `${name}.json`);
-  if (!existsSync(envPath)) {
-    fail(`Environment not found: ${name}`);
-  }
-  
   mkdirSync(paths.dir, { recursive: true });
-  writeFileSync(paths.environmentMarker, name);
+  assertSafeEnvironmentPaths(paths);
+  writeFileSync(paths.environmentMarker, name, { flag: 'w' });
   console.log(`Switched to environment: ${name}`);
 }
 
 function createEnvironment(name) {
   const paths = globalPaths();
-  
+  assertEnvironmentName(name);
+  assertSafeEnvironmentPaths(paths);
   if (!existsSync(paths.defaultEnvironment)) {
     fail(`Missing ${paths.defaultEnvironment}. Run init first.`);
   }
-  
-  const envPath = resolve(paths.environments, `${name}.json`);
-  if (existsSync(envPath)) {
+  const envPath = environmentPath(paths, name);
+  try {
+    const entry = lstatSync(envPath);
+    if (entry.isSymbolicLink()) fail(`Environment file must not be a symbolic link: ${envPath}`);
     fail(`Environment already exists: ${name}`);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
   }
-  
-  const baseConfig = readJson(paths.defaultEnvironment);
-  const resolvedConfig = resolveConfig(baseConfig, paths);
-  
+  const assets = loadAgentAssets();
+  const resolvedConfig = loadResolvedConfiguration({ paths, roles: assets.roles, platforms: [...PLATFORMS] }).config;
   mkdirSync(paths.environments, { recursive: true });
-  writeFileSync(envPath, `${JSON.stringify(resolvedConfig, null, 2)}\n`);
+  assertSafeEnvironmentPaths(paths);
+  try {
+    writeFileSync(envPath, `${JSON.stringify(resolvedConfig, null, 2)}\n`, { flag: 'wx' });
+  } catch (error) {
+    if (error.code === 'EEXIST') fail(`Environment file must not be replaced or followed: ${envPath}`);
+    throw error;
+  }
   console.log(`Created environment: ${name}`);
   console.log(`WRITE ${envPath}`);
 }
@@ -198,15 +195,22 @@ function deleteEnvironment(name) {
   if (name === 'default') {
     fail('The default environment cannot be deleted.');
   }
-  const envPath = resolve(paths.environments, `${name}.json`);
-  
-  if (!existsSync(envPath)) {
-    fail(`Environment not found: ${name}`);
+  assertEnvironmentName(name);
+  assertSafeEnvironmentPaths(paths);
+  const envPath = environmentPath(paths, name);
+  let entry;
+  try {
+    entry = lstatSync(envPath);
+  } catch (error) {
+    if (error.code === 'ENOENT') fail(`Environment not found: ${name}`);
+    throw error;
   }
-  
-  const currentEnv = existsSync(paths.environmentMarker) 
+  if (entry.isSymbolicLink()) fail(`Environment file must not be a symbolic link: ${envPath}`);
+  if (!entry.isFile()) fail(`Environment path must be a regular file: ${envPath}`);
+  const currentEnv = existsSync(paths.environmentMarker)
     ? readFileSync(paths.environmentMarker, 'utf8').trim() 
     : null;
+  if (currentEnv !== null) assertEnvironmentName(currentEnv);
   
   if (name === currentEnv) {
     unlinkSync(paths.environmentMarker);
@@ -218,65 +222,23 @@ function deleteEnvironment(name) {
   unlinkSync(envPath);
 }
 
-function validateConfig(config, roles) {
-  const errors = [];
-  const warnings = [];
-  if (!isPlainObject(config) || config.version !== 1 || !isPlainObject(config.roles)) {
-    return { errors: ['Configuration must contain version: 1 and a roles object.'], warnings };
-  }
-  const expected = new Set(roles.map((role) => role.id));
-  for (const id of Object.keys(config.roles)) {
-    if (!expected.has(id)) errors.push(`Unknown role: ${id}.`);
-  }
-  for (const role of roles) {
-    const entry = config.roles[role.id];
-    if (!isPlainObject(entry)) {
-      errors.push(`Missing configuration for role: ${role.id}.`);
-      continue;
-    }
-    for (const platform of ['codex', 'claude', 'opencode']) {
-      if (!isPlainObject(entry[platform])) errors.push(`${role.id}.${platform} must be an object.`);
-    }
-    const codex = entry.codex;
-    const claude = entry.claude;
-    const opencode = entry.opencode;
-    if (isPlainObject(codex)) {
-      if (typeof codex.model !== 'string' || !codex.model) errors.push(`${role.id}.codex.model must be a non-empty string.`);
-      if (typeof codex.reasoning !== 'string' || !codex.reasoning) errors.push(`${role.id}.codex.reasoning must be a non-empty string.`);
-    }
-    if (isPlainObject(claude)) {
-      if (typeof claude.model !== 'string' || !claude.model) errors.push(`${role.id}.claude.model must be a non-empty string.`);
-      if (!REASONING_VALUES.has(claude.effort)) errors.push(`${role.id}.claude.effort must be low, medium, or high.`);
-    }
-    if (isPlainObject(opencode)) {
-      if (opencode.model !== null && typeof opencode.model !== 'string') errors.push(`${role.id}.opencode.model must be a provider/model string or null.`);
-      if (opencode.variant !== null && typeof opencode.variant !== 'string') errors.push(`${role.id}.opencode.variant must be a string or null.`);
-      if (!isPlainObject(opencode.options)) errors.push(`${role.id}.opencode.options must be an object.`);
-      if (!opencode.model) warnings.push(`${role.id}: OpenCode inherits the primary-session model; configure roles.${role.id}.opencode.model locally for an explicit provider/model.`);
-      if (!opencode.variant && (!isPlainObject(opencode.options) || Object.keys(opencode.options).length === 0)) {
-        warnings.push(`${role.id}: OpenCode does not map generic reasoning effort. Set its native variant or options locally when needed.`);
-      }
-    }
-  }
-  return { errors, warnings };
-}
-
 function init(assets, dryRun) {
   const paths = globalPaths();
+  assertSafeEnvironmentPaths(paths);
   const changed = [];
   if (!existsSync(paths.defaultEnvironment)) write(paths.defaultEnvironment, `${JSON.stringify(assets.defaults, null, 2)}\n`, dryRun, changed);
   write(paths.routing, assets.routing, dryRun, changed);
   return changed;
 }
 
-function generate(platforms, dryRun, assets, config = loadConfig(assets, dryRun).config) {
+function generate(platforms, dryRun, assets, config = loadConfig(assets, dryRun, platforms).config) {
   const result = planGenerationFor(platforms, assets, config);
   return { ...result, changed: applyGenerationPlan(result.plan, dryRun) };
 }
 
 function planGenerationFor(platforms, assets, config) {
   const paths = globalPaths();
-  const validation = validateConfig(config, assets.roles);
+  const validation = validateConfiguration({ base: config, roles: assets.roles, platforms });
   if (validation.errors.length) fail(validation.errors.join('\n'));
   const plan = platforms.flatMap((platform) => planGeneration({ platform, paths, roles: assets.roles, config, bodies: assets.bodies }));
   return { plan, warnings: validation.warnings, paths };
@@ -313,7 +275,7 @@ export function runCli(argv) {
   const assets = loadAgentAssets();
   if (options.command === 'install') {
     const lifecycle = planInstallLifecycle();
-    const { config } = loadConfig(assets, true);
+    const { config } = loadConfig(assets, true, options.platforms);
     const generation = planGenerationFor(options.platforms, assets, config);
     installSkills(lifecycle, options.dryRun);
     const changed = init(assets, options.dryRun);
@@ -332,11 +294,12 @@ export function runCli(argv) {
     for (const path of changed) console.log(`WRITE ${path}`);
     return;
   }
-  const { config } = loadConfig(assets, options.command === 'install' && options.dryRun);
-  const validation = validateConfig(config, assets.roles);
+  const platforms = options.command === 'generate' ? options.platforms : [...PLATFORMS];
+  const { config, warnings } = loadConfig(assets, options.command === 'install' && options.dryRun, platforms);
+  const validation = validateConfiguration({ base: config, roles: assets.roles, platforms });
   if (options.command === 'validate') {
     for (const message of validation.errors) console.error(`ERROR ${message}`);
-    for (const message of validation.warnings) console.warn(`WARNING ${message}`);
+    for (const message of warnings ?? validation.warnings) console.warn(`WARNING ${message}`);
     if (validation.errors.length) process.exitCode = 1;
     else console.log('Configuration is valid.');
     return;

@@ -8,6 +8,7 @@ export function globalPaths() {
   const dir = resolve(configHome, 'ai-work-flow');
   const environments = resolve(dir, 'environments');
   return {
+    configHome,
     dir,
     routing: resolve(dir, 'routing.md'),
     environments,
