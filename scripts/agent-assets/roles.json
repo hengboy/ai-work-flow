@@ -13,6 +13,7 @@
         "document-maintainer",
         "planning-writer",
         "full-stack-coder",
+        "git-committer",
         "code-reviewer"
       ],
       "tools": []
@@ -61,6 +62,15 @@
       "workspace": "write-code",
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
+    },
+    {
+      "id": "git-committer",
+      "name": "Git Committer",
+      "description": "负责受控 Git 提交。",
+      "kind": "subagent",
+      "workspace": "write-code",
+      "delegates": [],
+      "tools": ["Read", "Bash"]
     },
     {
       "id": "code-reviewer",

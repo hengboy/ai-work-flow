@@ -2,29 +2,12 @@ import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { fail, isPlainObject, write } from './shared.mjs';
+import { updateManagedMarker } from './managed-content.mjs';
 
 // --- Shared functions ---
 
 function agentDescription(role) {
   return `**${role.name}**: ${role.description}`;
-}
-
-const MARKER_START = '<!-- ai-work-flow:agents:begin -->';
-const MARKER_END = '<!-- ai-work-flow:agents:end -->';
-
-function markerBlock() {
-  return `${MARKER_START}\n## AI Work Flow 代理\n\n仅当使用 **Coordinator** 代理时，遵循 \`~/.config/ai-work-flow/routing.md\` 进行子代理委派。其他代理模式下保持原生行为，按需调用子代理。\n${MARKER_END}\n`;
-}
-
-function updateMarker(source, path) {
-  const starts = (source.match(new RegExp(MARKER_START, 'g')) || []).length;
-  const ends = (source.match(new RegExp(MARKER_END, 'g')) || []).length;
-  if (starts !== ends || starts > 1) fail(`Cannot safely update workflow marker in ${path}. Repair the marker block manually.`);
-  if (starts === 1) {
-    const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return source.replace(new RegExp(`${escape(MARKER_START)}[\\s\\S]*?${escape(MARKER_END)}\\n?`), markerBlock());
-  }
-  return `${source.replace(/\s*$/, '')}${source.trim() ? '\n\n' : ''}${markerBlock()}`;
 }
 
 // --- Codex strategy ---
@@ -160,7 +143,7 @@ const strategies = {
     },
     marker: {
       path: (paths) => resolve(paths.codexDir, 'AGENTS.md'),
-      update: updateMarker
+      update: updateManagedMarker
     }
   },
   claude: {
@@ -169,7 +152,7 @@ const strategies = {
     render: claudeRender,
     marker: {
       path: (paths) => resolve(paths.claudeDir, 'CLAUDE.md'),
-      update: updateMarker
+      update: updateManagedMarker
     }
   },
   opencode: {
@@ -180,48 +163,55 @@ const strategies = {
       path: (paths) => resolve(paths.openCodeDir, 'opencode.json'),
       update: opencodeUpdateConfig
     },
-    cleanup: (paths, dryRun, changed) => {
-      const guardPath = resolve(paths.openCodeDir, 'plugins/ai-work-flow-subagent-model-guard.js');
-      if (!existsSync(guardPath)) return;
-      changed.push(guardPath);
-      if (!dryRun) unlinkSync(guardPath);
-    }
+    cleanup: true
   }
 };
 
 // --- Entry point ---
 
-export function generate({ platform, paths, roles, config, bodies, dryRun }) {
+export function planGeneration({ platform, paths, roles, config, bodies }) {
   const strategy = strategies[platform];
-  const changed = [];
+  const plan = [];
+  const addWrite = (path, contents) => {
+    const before = existsSync(path) ? readFileSync(path, 'utf8') : undefined;
+    if (before !== contents) plan.push({ type: 'write', path, contents });
+  };
 
   if (strategy.globalConfig) {
     const configPath = strategy.globalConfig.path(paths);
     const source = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
-    const contents = strategy.globalConfig.update(source, configPath);
-    write(configPath, contents, dryRun, changed);
+    addWrite(configPath, strategy.globalConfig.update(source, configPath));
   }
 
   if (strategy.marker) {
     const markerPath = strategy.marker.path(paths);
     const source = existsSync(markerPath) ? readFileSync(markerPath, 'utf8') : '';
-    const contents = strategy.marker.update(source, markerPath);
-    write(markerPath, contents, dryRun, changed);
+    addWrite(markerPath, strategy.marker.update(source, markerPath));
   }
 
   const agentDir = resolve(paths[strategy.agentDir], 'agents');
   for (const role of roles) {
-    write(
-      resolve(agentDir, `${role.id}.${strategy.extension}`),
-      strategy.render(role, config.roles[role.id][platform], bodies.get(role.id)),
-      dryRun,
-      changed
-    );
+    addWrite(resolve(agentDir, `${role.id}.${strategy.extension}`), strategy.render(role, config.roles[role.id][platform], bodies.get(role.id)));
   }
 
   if (strategy.cleanup) {
-    strategy.cleanup(paths, dryRun, changed);
+    const guardPath = resolve(paths.openCodeDir, 'plugins/ai-work-flow-subagent-model-guard.js');
+    if (existsSync(guardPath)) plan.push({ type: 'delete', path: guardPath });
   }
 
+  return plan;
+}
+
+export function applyGenerationPlan(plan, dryRun) {
+  const changed = [];
+  for (const step of plan) {
+    changed.push(step.path);
+    if (step.type === 'write') write(step.path, step.contents, dryRun, []);
+    else if (!dryRun) unlinkSync(step.path);
+  }
   return changed;
+}
+
+export function generate(options) {
+  return applyGenerationPlan(planGeneration(options), options.dryRun);
 }
