@@ -299,9 +299,9 @@ test("keeps undispatched tasks pending after the first serial blocked result", a
   const dispatched = [];
   const coordinator = createExecutionCoordinator({
     adapter: {
-      async executeFrontier({ tasks }) {
-        dispatched.push(...tasks.map((task) => task.id));
-        return [{ ticket_id: "01", status: "blocked", commits: [], tests: [], summary: "blocked", error: "stop" }];
+      async executeTicket({ ticket }) {
+        dispatched.push(ticket.id);
+        return { ticket_id: "01", status: "blocked", commits: [], tests: [], summary: "blocked", error: "stop" };
       },
     },
   });
@@ -324,6 +324,89 @@ test("does not redispatch an in-progress task on recovery", async () => {
   assert.equal(result.status, "blocked");
   assert.equal(dispatched, false);
   assert.equal((await readCheckpoint(root, "migrate-runtime")).tickets[0].status, "in_progress");
+});
+
+test("rejects multi-in-progress and out-of-order completed checkpoints before recovery writes", async () => {
+  const { root, executionWorktree } = await pendingIntegrationFixture();
+  const specPath = join(root, ".scratch", "migrate-runtime", "spec.md");
+  await writeFile(join(root, ".scratch", "migrate-runtime", "issues", "02-follow-up.md"), "# 02 — Follow up\n\n**Blocked by:** None — can start immediately\n");
+  const executionPlan = await materializeSpec({ mainWorktree: root, specPath });
+  await writeExecutionPlan(root, executionPlan);
+  const head = await git(root, "rev-parse", "HEAD");
+  const checkpointFile = join(root, ".scratch", "migrate-runtime", "checkpoint.json");
+
+  const multiInProgress = createCheckpoint({ executionPlan, baseline: head, branch: "feat/migrate-runtime", worktree: executionWorktree });
+  multiInProgress.tickets = executionPlan.tickets.map((ticket) => ({
+    id: ticket.id,
+    status: "in_progress",
+    start_commit: head,
+    started_at: "2026-07-23T12:00:00+08:00",
+  }));
+  await writeCheckpoint(root, "migrate-runtime", multiInProgress);
+  const multiBefore = await readFile(checkpointFile, "utf8");
+  let writes = 0;
+  const coordinator = createExecutionCoordinator({ checkpointWriter: async (...args) => { writes += 1; return writeCheckpoint(...args); } });
+
+  await assert.rejects(
+    coordinator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree }),
+    /multiple-in-progress/,
+  );
+  assert.equal(writes, 0);
+  assert.equal(await readFile(checkpointFile, "utf8"), multiBefore);
+
+  const outOfOrder = createCheckpoint({ executionPlan, baseline: head, branch: "feat/migrate-runtime", worktree: executionWorktree });
+  outOfOrder.tickets[1] = {
+    id: executionPlan.tickets[1].id,
+    status: "done",
+    start_commit: head,
+    started_at: "2026-07-23T12:00:00+08:00",
+    end_commit: head,
+    completed_at: "2026-07-23T12:00:00+08:00",
+  };
+  await writeCheckpoint(root, "migrate-runtime", outOfOrder);
+  const orderBefore = await readFile(checkpointFile, "utf8");
+
+  await assert.rejects(
+    coordinator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree }),
+    /ticket-order/,
+  );
+  assert.equal(writes, 0);
+  assert.equal(await readFile(checkpointFile, "utf8"), orderBefore);
+});
+
+test("rejects a caller plan that differs from the verified persisted plan before delegation", async () => {
+  const { root, executionPlan, executionWorktree } = await pendingIntegrationFixture();
+  const head = await git(root, "rev-parse", "HEAD");
+  const checkpoint = createCheckpoint({ executionPlan, baseline: head, branch: "feat/migrate-runtime", worktree: executionWorktree });
+  await writeCheckpoint(root, "migrate-runtime", checkpoint);
+  const checkpointFile = join(root, ".scratch", "migrate-runtime", "checkpoint.json");
+  const issueFile = join(root, ".scratch", "migrate-runtime", "issues", "01-contract.md");
+  const checkpointBefore = await readFile(checkpointFile, "utf8");
+  const issueBefore = await readFile(issueFile, "utf8");
+  let delegated = false;
+  let writes = 0;
+  const coordinator = createExecutionCoordinator({
+    directExecutor: async () => {
+      delegated = true;
+      return { ticket_id: "01", status: "done", commits: [head], tests: [], summary: "done" };
+    },
+    checkpointWriter: async (...args) => { writes += 1; return writeCheckpoint(...args); },
+  });
+
+  await assert.rejects(
+    coordinator.executeFrontier({
+      worktree: executionWorktree,
+      mainWorktree: root,
+      featureSlug: "migrate-runtime",
+      executionPlan: { ...executionPlan, revision: "b".repeat(64) },
+      checkpoint,
+    }),
+    /does not match the verified persisted execution plan/,
+  );
+  assert.equal(delegated, false);
+  assert.equal(writes, 0);
+  assert.equal(await readFile(checkpointFile, "utf8"), checkpointBefore);
+  assert.equal(await readFile(issueFile, "utf8"), issueBefore);
 });
 
 test("recovers a pre-merge restoration after its restored checkpoint write fails", async () => {
@@ -395,6 +478,22 @@ test("does not mutate an invalid checkpoint while attempting a relocated resume"
   assert.equal(writes, 0);
   assert.equal(await readFile(checkpointFile, "utf8"), before);
   assert.equal(await git(root, "rev-parse", "HEAD"), headBefore);
+});
+
+test("does not create a recovery worktree when the current checkpoint is unavailable", async () => {
+  const { root } = await coordinatorFixture();
+  const branch = "feat/migrate-runtime";
+  const worktreePath = join(root, "recovery-worktree");
+  await git(root, "branch", branch);
+  const worktreesBefore = await git(root, "worktree", "list", "--porcelain");
+
+  await assert.rejects(
+    createExecutionCoordinator().resume({ repository: root, branch, specPath: ".scratch/migrate-runtime/spec.md", worktreePath }),
+    /Checkpoint integrity failed/,
+  );
+
+  assert.equal(await git(root, "worktree", "list", "--porcelain"), worktreesBefore);
+  assert.equal(await git(root, "branch", "--show-current"), "main");
 });
 
 test("rejects complete checkpoints with pending work before terminal handling", async () => {

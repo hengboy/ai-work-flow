@@ -407,6 +407,23 @@ test('a platform planning failure prevents writes for every requested platform',
   assert.ok(!existsSync(agentPath(paths, 'opencode', 'coordinator', 'md')));
 });
 
+test('install completes lifecycle and platform planning before any global write', () => {
+  const paths = environment();
+  const claudeMarker = resolve(paths.home, '.claude/CLAUDE.md');
+  const invalidMarker = '<!-- ai-work-flow:agents:begin -->\n<!-- ai-work-flow:agents:begin -->\n';
+  mkdirSync(resolve(paths.home, '.claude'), { recursive: true });
+  writeFileSync(claudeMarker, invalidMarker);
+
+  const result = install(paths);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Cannot safely update workflow marker/);
+  assert.ok(!existsSync(resolve(paths.home, '.codex')));
+  assert.ok(!existsSync(resolve(paths.home, '.claude/skills')));
+  assert.ok(!existsSync(resolve(paths.config, 'opencode')));
+  assert.ok(!existsSync(resolve(paths.config, 'ai-work-flow')));
+  assert.equal(readFileSync(claudeMarker, 'utf8'), invalidMarker);
+});
+
 test("repeated installation is idempotent and the global workflow is independent from setup", () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);

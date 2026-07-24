@@ -6,6 +6,24 @@ import { createNativeAdapter, createUnsupportedAdapter } from "../lib/completion
 const SHA = "a".repeat(40);
 const done = (summary) => `RESULT: DONE\nCOMMITS: ${SHA}\nTESTS: none\nSUMMARY: ${summary}`;
 
+test("executes one ticket and turns a native exception into a blocked result", async () => {
+  const adapter = createNativeAdapter({
+    async spawn({ ticket }) {
+      assert.equal(ticket.id, "01");
+      throw new Error("connection reset");
+    },
+    async collect() {
+      throw new Error("unreachable");
+    },
+  });
+
+  const result = await adapter.executeTicket({ ticket: { id: "01" }, worktree: "/tmp/execution" });
+
+  assert.equal(result.ticket_id, "01");
+  assert.equal(result.status, "blocked");
+  assert.match(result.error, /connection reset/);
+});
+
 test("dispatches and collects frontier tasks serially in task ID order", async () => {
   const events = [];
   const adapter = createNativeAdapter({
