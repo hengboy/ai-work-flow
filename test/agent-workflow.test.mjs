@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
 import { MARKER_END, MARKER_START, updateManagedMarker } from '../scripts/private/managed-content.mjs';
+import { applyTransaction, recoverTransaction } from '../scripts/private/transaction.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const installer = resolve(root, 'scripts/install.mjs');
 const agentAssets = resolve(root, 'scripts/agent-assets');
 const catalog = JSON.parse(readFileSync(resolve(agentAssets, 'roles.json'), 'utf8'));
+const policies = JSON.parse(readFileSync(resolve(agentAssets, 'policies.json'), 'utf8')).policies;
 const managedSkillDirectories = [
   'generate-ai-work-flow-agents',
   'switch-ai-work-flow-env',
@@ -201,17 +203,6 @@ test('Git Committer authorized scope is preserved through installation and every
     /一次提交尝试后失效/,
     /不得.*相关性.*推断/
   ];
-  const orchestratorAssertions = [
-    /当前对话状态中保留.*完整清单/,
-    /清单展示之后/,
-    /明确指向刚才列出的全部文件/,
-    /笼统.*不能.*授权/,
-    /用户的授权原文/,
-    /逐项、原样文件路径/,
-    /当前变更集合.*差异.*暂存前停止/,
-    /完成或失败后清除.*快照/,
-    /不得推断.*相关性/
-  ];
   const sharedAssertions = [
     /首次阻塞清单是唯一授权对象/,
     /授权必须发生在清单展示之后/,
@@ -222,15 +213,15 @@ test('Git Committer authorized scope is preserved through installation and every
   ];
 
   for (const assertion of committerAssertions) assert.match(gitCommitter, assertion);
-  for (const assertion of orchestratorAssertions) assert.match(orchestrator, assertion);
   for (const assertion of sharedAssertions) assert.match(routing, assertion);
+  assert.match(orchestrator, /routing\.md/);
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
 
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generatedCommitter = readFileSync(agentPath(paths, platform, 'git-committer', extension), 'utf8');
     const generatedOrchestrator = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
     for (const assertion of committerAssertions) assert.match(generatedCommitter, assertion, platform);
-    for (const assertion of orchestratorAssertions) assert.match(generatedOrchestrator, assertion, platform);
+    assert.match(generatedOrchestrator, /routing\.md/, platform);
   }
 });
 
@@ -281,6 +272,22 @@ test('root installer installs every skill globally and generates every platform 
   assert.match(readFileSync(agentPath(paths, 'codex', 'orchestrator', 'toml'), 'utf8'), /~\/\.config\/ai-work-flow\/routing/);
 });
 
+test('installed execution CLI can resolve its managed skill dependencies', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const runtime = resolve(paths.config, 'ai-work-flow/execution-runtime/execution-cli.mjs');
+  mkdirSync(paths.project, { recursive: true });
+  const result = spawnSync(process.execPath, [runtime, 'status'], {
+    cwd: paths.project,
+    encoding: 'utf8',
+    env: env(paths)
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--repository is required/);
+  assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/skills/run-matt-spec-to-completion/lib/checkpoint.mjs')));
+});
+
 test('init creates the default environment without creating a legacy config', () => {
   const paths = environment();
 
@@ -315,7 +322,7 @@ test('orchestrator routes every required discovery phase through File Explorer',
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
 
-  for (const content of [routing, source]) {
+  for (const content of [routing]) {
     assert.match(content, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/);
     assert.match(content, /先委派 \*\*File Explorer\*\* 并等待其交接/);
     assert.match(content, /当前会话已有交接时可复用/);
@@ -329,9 +336,7 @@ test('orchestrator routes every required discovery phase through File Explorer',
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generated = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
-    assert.match(generated, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/);
-    assert.match(generated, /先委派 \*\*File Explorer\*\* 并等待其交接/);
-    assert.match(generated, /不得将发现阶段.*后续执行角色/);
+    assert.match(generated, /routing\.md/);
   }
 });
 
@@ -395,7 +400,7 @@ test('planning workflow resolves material user decisions before writing a plan a
   assert.match(planningWriter, /\.ai-work-flow\/plans\/<planId>\.md/);
   assert.match(planningWriter, /不得实施/);
   assert.match(routing, /\*\*Planning Writer\*\* 写入计划、ADR/);
-  for (const content of [orchestrator, routing]) {
+  for (const content of [routing]) {
     assert.match(content, /可通过工作区探索确认的事实委派 \*\*File Explorer\*\*/);
     assert.match(content, /会实质影响目标、范围、行为、取舍、兼容性、风险或验收标准/);
     assert.match(content, /每次只询问一个决策/);
@@ -418,10 +423,7 @@ test('planning workflow resolves material user decisions before writing a plan a
     const generatedOrchestrator = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
     assert.match(generatedPlanningWriter, /\.ai-work-flow\/plans\/<planId>\.md/, platform);
     assert.match(generatedPlanningWriter, /不得实施/, platform);
-    assert.match(generatedOrchestrator, /每次只询问一个决策/, platform);
-    assert.match(generatedOrchestrator, /所有已确认决策必须随任务交接给 \*\*Planning Writer\*\*/, platform);
-    assert.match(generatedOrchestrator, /等待用户明确确认/, platform);
-    assert.match(generatedOrchestrator, /不得自动.*实施/, platform);
+    assert.match(generatedOrchestrator, /routing\.md/, platform);
   }
 });
 
@@ -437,15 +439,56 @@ test('code review approval satisfies the final independent review', () => {
     /工具不可用或命令被拒绝导致的审查不算完成/,
     /审查能力基准恢复后可重新委派一次/,
     /同一会话中，同一稳定差异的已完成审查不得再次委派任何审查角色/,
-    /只有代码、测试、规格或审查能力基准发生变化时，才可重新委派 \*\*Code Reviewer\*\*/,
+    /用户确认的评审修复不得触发自动复审/,
+    /只有用户明确要求新的独立审查，且代码、测试、规格或审查能力基准发生变化时，才可重新委派 \*\*Code Reviewer\*\*/,
   ];
 
-  for (const content of [routing, orchestrator]) {
+  for (const content of [routing]) {
     for (const assertion of assertions) assert.match(content, assertion);
   }
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generated = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
-    for (const assertion of assertions) assert.match(generated, assertion, platform);
+    assert.match(generated, /routing\.md/, platform);
+  }
+});
+
+test('code review prefers an installed Matt skill while retaining workflow review subagents', () => {
+  const reviewer = readFileSync(resolve(agentAssets, 'bodies/code-reviewer.md'), 'utf8');
+  const standards = readFileSync(resolve(agentAssets, 'bodies/review-standards.md'), 'utf8');
+  const spec = readFileSync(resolve(agentAssets, 'bodies/review-spec.md'), 'utf8');
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  for (const content of [reviewer, routing]) {
+    assert.match(content, /Matt Pocock Skills 的 `?\$code-review`?/);
+    assert.match(content, /(?:未安装时.*AI Work Flow.*内置.*双轴|不存在时使用 AI Work Flow 内置双轴)/);
+    assert.match(content, /Review Standards.*Review Spec/);
+    assert.match(content, /不得下载、安装/);
+  }
+  assert.match(reviewer, /不得改为通用或平台原生子代理/);
+  assert.match(reviewer, /AI Work Flow 的 Policy.*优先于 matt skill/);
+  assert.match(standards, /Matt `?\$code-review` skill 的 Standards 子任务/);
+  assert.match(spec, /Matt `?\$code-review` skill 的 Spec 子任务/);
+  assert.match(routing, /^### Matt 审查子任务契约$/m);
+  assert.match(routing, /Standards 映射为 \*\*Review Standards\*\*，Spec 映射为 \*\*Review Spec\*\*/);
+  assert.match(routing, /用户未提供固定点时先询问/);
+  assert.match(routing, /`git diff <fixed-point>\.\.\.HEAD` 命令非空；同时记录 `git log <fixed-point>\.\.HEAD --oneline` 提交清单/);
+  assert.match(routing, /提交信息的 issue 引用、用户提供的路径、与分支或功能匹配的 `docs\/`、`specs\/` 或 `\.scratch\/` 文件/);
+  assert.match(routing, /用户确认没有规格才跳过 \*\*Review Spec\*\*/);
+  assert.match(routing, /完整的 Fowler 异味基准/);
+  assert.match(routing, /不得派发通用子代理、内置 Spec 任务或虚构规格/);
+  assert.match(routing, /所有违反已文档化标准的地方/);
+  assert.match(routing, /规格要求但缺失或不完整的内容/);
+  assert.match(routing, /优先级从高到低为：AI Work Flow 的 Policy 与角色工作边界/);
+  assert.match(routing, /`## Standards` 和 `## Spec` 下/);
+  assert.match(routing, /不得合并、重排或跨轴比较结论/);
+
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const generated = readFileSync(agentPath(paths, platform, 'code-reviewer', extension), 'utf8');
+    assert.match(generated, /Matt Pocock Skills/);
+    assert.match(generated, /Review Standards.*Review Spec/);
   }
 });
 
@@ -474,7 +517,7 @@ test('orchestrator carries the retry and stop-lock policy into every generated p
     /OpenCode 不得传入旧 `task_id`/
   ];
 
-  for (const content of [routing, source]) {
+  for (const content of [routing]) {
     for (const assertion of assertions) assert.match(content, assertion);
   }
   assert.equal(
@@ -484,7 +527,7 @@ test('orchestrator carries the retry and stop-lock policy into every generated p
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generated = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
-    for (const assertion of assertions) assert.match(generated, assertion, platform);
+    assert.match(generated, /routing\.md/, platform);
   }
 });
 
@@ -498,15 +541,16 @@ test('platform generation enforces the declared workspace access where supported
     const codex = readFileSync(agentPath(paths, 'codex', role.id, 'toml'), 'utf8');
     const claude = readFileSync(agentPath(paths, 'claude', role.id, 'md'), 'utf8');
     const openCode = readFileSync(agentPath(paths, 'opencode', role.id, 'md'), 'utf8');
-    if (role.workspace === 'none' || role.workspace === 'read') {
+    const policy = policies[role.policy];
+    if (policy.filesystem === 'none' || policy.filesystem === 'read') {
       assert.match(codex, /sandbox_mode = "read-only"/, role.id);
-      assert.match(claude, /permissionMode: plan/, role.id);
+      assert.match(claude, /permissionMode: "plan"/, role.id);
     } else {
       assert.match(codex, /sandbox_mode = "workspace-write"/, role.id);
-      assert.match(claude, /permissionMode: acceptEdits/, role.id);
+      assert.match(claude, /permissionMode: "acceptEdits"/, role.id);
       assert.match(openCode, /permission: \{"edit":"allow"\}/, role.id);
     }
-    if (role.workspace === 'none') {
+    if (policy.filesystem === 'none') {
       assert.match(openCode, /permission: \{"read":"deny","edit":"deny","bash":"deny"\}/, role.id);
     }
     if (reviewerRoles.has(role.id)) {
@@ -514,10 +558,37 @@ test('platform generation enforces the declared workspace access where supported
       assert.match(openCode, /"bash":\{"\*":"deny","git status\*":"allow","git diff\*":"allow","git show\*":"allow","git log\*":"allow","git rev-parse\*":"allow","git merge-base\*":"allow","git branch\*":"allow","git ls-files\*":"allow","node --test\*":"allow","npm test\*":"allow"\}/, role.id);
       assert.match(openCode, new RegExp(`"task":"${expectedTaskPermission}"`), role.id);
       assert.doesNotMatch(openCode, /"bash":"allow"/, role.id);
-    } else if (role.workspace === 'read') {
+    } else if (policy.filesystem === 'read') {
       assert.match(openCode, /permission: \{"read":"allow","edit":"deny","bash":"deny"\}/, role.id);
     }
   }
+});
+
+test('generate and status report every declared capability level', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const platforms = ['codex', 'claude', 'opencode'];
+  const generated = run(paths, 'generate');
+  assert.equal(generated.status, 0, generated.stderr);
+
+  for (const platform of platforms) {
+    assert.match(generated.stdout, new RegExp(`Generation digest ${platform}: [a-f0-9]{64}`));
+    for (const role of catalog.roles) {
+      const line = generated.stdout.split('\n').find((candidate) => candidate.startsWith(`CAPABILITY ${platform}/${role.id}: `));
+      assert.ok(line, `${platform}/${role.id}`);
+      for (const capability of Object.keys(policies[role.policy])) {
+        assert.match(line, new RegExp(`${capability}=(?:enforced|instruction-only|unsupported)`), `${platform}/${role.id}/${capability}`);
+      }
+    }
+  }
+  assert.match(generated.stdout, /CAPABILITY codex\/orchestrator: .*filesystem=unsupported/);
+  assert.match(generated.stdout, /CAPABILITY codex\/full-stack-coder: .*filesystem=enforced/);
+
+  const status = run(paths, 'env', 'status');
+  assert.equal(status.status, 0, status.stderr);
+  for (const platform of platforms) assert.match(status.stdout, new RegExp(`Generation digest ${platform}: [a-f0-9]{64}`));
+  assert.match(status.stdout, /CAPABILITY codex\/orchestrator: .*filesystem=unsupported/);
+  assert.match(status.stdout, /CAPABILITY codex\/full-stack-coder: .*filesystem=enforced/);
 });
 
 test('only writer bodies require git diff reporting', () => {
@@ -592,7 +663,7 @@ test('OpenCode uses subagent frontmatter for configured model constraints', () =
   for (const role of catalog.roles) {
     const settings = config.roles[role.id].opencode;
     const agent = readFileSync(agentPath(paths, 'opencode', role.id, 'md'), 'utf8');
-    if (settings.model) assert.ok(agent.includes(`model: ${settings.model}\n`), role.id);
+    if (settings.model) assert.ok(agent.includes(`model: ${JSON.stringify(settings.model)}\n`), role.id);
     if (settings.variant) assert.ok(agent.includes(`variant: ${JSON.stringify(settings.variant)}\n`), role.id);
     assert.doesNotMatch(agent, /^formatter:/m, role.id);
   }
@@ -816,6 +887,35 @@ test('environment merge overrides only specified roles from base config', () => 
   assert.match(fileExplorerAgent, new RegExp(`model = "${baseConfig.roles['file-explorer'].codex.model}"`));
 });
 
+test('a local generate retains installed platforms for the next environment activation', () => {
+  const paths = environment();
+  const installed = run(paths, '--platform', 'codex');
+  assert.equal(installed.status, 0, installed.stderr);
+
+  const generated = run(paths, 'generate', '--platform', 'claude');
+  assert.equal(generated.status, 0, generated.stderr);
+  assert.deepEqual(
+    JSON.parse(readFileSync(resolve(paths.config, 'ai-work-flow/.managed-platforms.json'), 'utf8')).platforms,
+    ['claude', 'codex']
+  );
+
+  const envDir = resolve(paths.config, 'ai-work-flow/environments');
+  writeFileSync(resolve(envDir, 'staging.json'), JSON.stringify({
+    version: 1,
+    roles: {
+      orchestrator: {
+        codex: { model: 'staging-codex' },
+        claude: { model: 'staging-claude' }
+      }
+    }
+  }));
+
+  const activated = run(paths, 'env', 'use', 'staging');
+  assert.equal(activated.status, 0, activated.stderr);
+  assert.match(readFileSync(agentPath(paths, 'codex', 'orchestrator', 'toml'), 'utf8'), /model = "staging-codex"/);
+  assert.match(readFileSync(agentPath(paths, 'claude', 'orchestrator', 'md'), 'utf8'), /model: "staging-claude"/);
+});
+
 test('env use default returns to the default environment without reading a legacy config', () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
@@ -850,6 +950,70 @@ test('env create generates full copy of resolved config', () => {
   const baseConfig = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
   const envConfig = JSON.parse(readFileSync(envPath, 'utf8'));
   assert.deepEqual(envConfig, baseConfig);
+});
+
+test('env create rejects dangling symbolic links without creating their targets', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const destination = resolve(paths.base, 'outside-environment.json');
+  const environmentFile = resolve(paths.config, 'ai-work-flow/environments/trapped.json');
+  symlinkSync(destination, environmentFile);
+
+  const result = run(paths, 'env', 'create', 'trapped');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /symbolic link/);
+  assert.ok(!existsSync(destination));
+});
+
+test('env create rejects a symbolic environment directory without writing outside it', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const environmentDirectory = resolve(paths.config, 'ai-work-flow/environments');
+  const destination = resolve(paths.base, 'outside-environments');
+  mkdirSync(destination, { recursive: true });
+  writeFileSync(resolve(destination, 'default.json'), readFileSync(defaultEnvironmentPath(paths)));
+  rmSync(environmentDirectory, { recursive: true, force: true });
+  symlinkSync(destination, environmentDirectory);
+
+  const result = run(paths, 'env', 'create', 'escaped');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /symbolic link/);
+  assert.ok(!existsSync(resolve(destination, 'escaped.json')));
+});
+
+test('environment commands reject symbolic parents before following external configuration', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const workflowDirectory = resolve(paths.config, 'ai-work-flow');
+  const destination = resolve(paths.base, 'outside-workflow');
+  mkdirSync(destination, { recursive: true });
+  rmSync(workflowDirectory, { recursive: true, force: true });
+  symlinkSync(destination, workflowDirectory);
+
+  for (const args of [['env', 'use', 'default'], ['env', 'status'], ['env', 'delete', 'staging'], ['env', 'create', 'staging']]) {
+    const result = run(paths, ...args);
+    assert.equal(result.status, 1, args.join(' '));
+    assert.match(result.stderr, /symbolic link/);
+  }
+  assert.deepEqual(readdirSync(destination), []);
+});
+
+test('environment commands reject symbolic environment files without touching their targets', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const target = resolve(paths.base, 'outside-environment.json');
+  writeFileSync(target, '{"version":1,"roles":{}}\n');
+  const environmentFile = resolve(paths.config, 'ai-work-flow/environments/escaped.json');
+  symlinkSync(target, environmentFile);
+  writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'escaped');
+
+  for (const args of [['env', 'use', 'escaped'], ['env', 'status'], ['env', 'delete', 'escaped']]) {
+    const result = run(paths, ...args);
+    assert.equal(result.status, 1, args.join(' '));
+    assert.match(result.stderr, /symbolic link/);
+  }
+  assert.equal(readFileSync(target, 'utf8'), '{"version":1,"roles":{}}\n');
+  assert.ok(existsSync(environmentFile));
 });
 
 test('env delete removes environment file and clears marker if active', () => {
@@ -905,4 +1069,170 @@ test('environment file not found gives clear error', () => {
   const result = run(paths, 'validate');
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Environment file not found/);
+});
+
+test('environment names, markers, sparse overrides, and injected frontmatter are rejected safely', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  for (const name of ['../escape', '/absolute', 'bad\\path', '.', '..', 'line\nfeed']) {
+    const result = run(paths, 'env', 'use', name);
+    assert.equal(result.status, 1, name);
+    assert.ok(!existsSync(resolve(paths.config, 'ai-work-flow/.environment')), name);
+  }
+
+  writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'dev\nmodel: injected');
+  const markerResult = run(paths, 'validate');
+  assert.equal(markerResult.status, 1);
+  assert.match(markerResult.stderr, /Environment name must be/);
+  writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'default');
+  const config = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  config.roles.orchestrator.claude.model = 'safe\npermissionMode: acceptEdits';
+  writeFileSync(defaultEnvironmentPath(paths), JSON.stringify(config));
+  const injected = run(paths, 'generate', '--platform', 'claude');
+  assert.equal(injected.status, 1);
+  assert.match(injected.stderr, /control character/);
+});
+
+test('sparse environment overlays merge fields, replace OpenCode options, and env use activates agents', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const envDir = resolve(paths.config, 'ai-work-flow/environments');
+  const overlay = {
+    version: 1,
+    roles: {
+      orchestrator: {
+        codex: { reasoning: 'low' },
+        opencode: { model: null, options: { temperature: 0 } }
+      }
+    }
+  };
+  writeFileSync(resolve(envDir, 'sparse.json'), `${JSON.stringify(overlay)}\n`);
+  const result = run(paths, 'env', 'use', 'sparse');
+  assert.equal(result.status, 0, result.stderr);
+  const codex = readFileSync(agentPath(paths, 'codex', 'orchestrator', 'toml'), 'utf8');
+  assert.match(codex, /model_reasoning_effort = "low"/);
+  const openCode = readFileSync(agentPath(paths, 'opencode', 'orchestrator', 'md'), 'utf8');
+  assert.doesNotMatch(openCode, /^model:/m);
+  assert.match(openCode, /options: \{"temperature":0\}/);
+  const status = run(paths, 'env', 'status');
+  assert.equal(status.status, 0, status.stderr);
+  assert.match(status.stdout, /Environment: sparse/);
+  assert.match(status.stdout, /Resolved config digest:/);
+});
+
+test('generation transaction rolls back a partially applied write', () => {
+  const directory = fixture();
+  const first = resolve(directory, 'first.txt');
+  const second = resolve(directory, 'second.txt');
+  const transaction = resolve(directory, 'transaction.json');
+  writeFileSync(first, 'before\n');
+  assert.throws(() => applyTransaction([
+    { type: 'write', path: first, contents: 'after\n' },
+    { type: 'write', path: second, contents: 'new\n' }
+  ], { transactionPath: transaction, failAfterStep: 1 }), /Injected transaction failure/);
+  assert.equal(readFileSync(first, 'utf8'), 'before\n');
+  assert.ok(!existsSync(second));
+  assert.ok(!existsSync(transaction));
+});
+
+test('generation transaction restores every pre-existing file in one directory after a multi-file failure', () => {
+  const directory = fixture();
+  const first = resolve(directory, 'first.txt');
+  const second = resolve(directory, 'second.txt');
+  const transaction = resolve(directory, 'transaction.json');
+  writeFileSync(first, 'first before\n');
+  writeFileSync(second, 'second before\n');
+
+  assert.throws(() => applyTransaction([
+    { type: 'write', path: first, contents: 'first after\n' },
+    { type: 'write', path: second, contents: 'second after\n' }
+  ], { transactionPath: transaction, failAfterStep: 2 }), /Injected transaction failure/);
+
+  assert.equal(readFileSync(first, 'utf8'), 'first before\n');
+  assert.equal(readFileSync(second, 'utf8'), 'second before\n');
+  assert.ok(!existsSync(transaction));
+});
+
+test('generation transaction recovers after interruption before and after commit persistence', () => {
+  const directory = fixture();
+  const path = resolve(directory, 'generated.txt');
+  const transaction = resolve(directory, 'transaction.json');
+  writeFileSync(path, 'before\n');
+
+  assert.throws(() => applyTransaction([
+    { type: 'write', path, contents: 'after\n' }
+  ], { transactionPath: transaction, interruptAfterRecord: 1 }), /Injected transaction interruption/);
+  assert.equal(readFileSync(path, 'utf8'), 'before\n');
+  assert.ok(existsSync(transaction));
+  assert.equal(recoverTransaction(transaction), true);
+  assert.equal(readFileSync(path, 'utf8'), 'before\n');
+
+  assert.throws(() => applyTransaction([
+    { type: 'write', path, contents: 'after\n' }
+  ], { transactionPath: transaction, interruptAfterCommit: true }), /Injected transaction interruption/);
+  assert.equal(readFileSync(path, 'utf8'), 'after\n');
+  assert.ok(existsSync(transaction));
+  assert.equal(recoverTransaction(transaction), true);
+  assert.equal(readFileSync(path, 'utf8'), 'after\n');
+});
+
+test('environment deletion transaction recovers every interrupted marker and environment removal', () => {
+  for (const interruption of ['interruptAfterRecord', 'interruptAfterBackup', 'interruptAfterStep']) {
+    for (const step of [1, 2]) {
+      const directory = fixture();
+      const marker = resolve(directory, '.environment');
+      const environmentFile = resolve(directory, 'environments/staging.json');
+      const transaction = resolve(directory, 'transaction.json');
+      mkdirSync(resolve(directory, 'environments'), { recursive: true });
+      writeFileSync(marker, 'staging');
+      writeFileSync(environmentFile, '{"version":1,"roles":{}}\n');
+
+      assert.throws(() => applyTransaction([
+        { type: 'delete', path: marker },
+        { type: 'delete', path: environmentFile }
+      ], { transactionPath: transaction, [interruption]: step }), /Injected transaction interruption/);
+      assert.equal(recoverTransaction(transaction), true);
+      assert.equal(readFileSync(marker, 'utf8'), 'staging');
+      assert.equal(readFileSync(environmentFile, 'utf8'), '{"version":1,"roles":{}}\n');
+    }
+  }
+
+  const directory = fixture();
+  const marker = resolve(directory, '.environment');
+  const environmentFile = resolve(directory, 'environments/staging.json');
+  const transaction = resolve(directory, 'transaction.json');
+  mkdirSync(resolve(directory, 'environments'), { recursive: true });
+  writeFileSync(marker, 'staging');
+  writeFileSync(environmentFile, '{"version":1,"roles":{}}\n');
+  assert.throws(() => applyTransaction([
+    { type: 'delete', path: marker },
+    { type: 'delete', path: environmentFile }
+  ], { transactionPath: transaction, interruptAfterCommit: true }), /Injected transaction interruption/);
+  assert.equal(recoverTransaction(transaction), true);
+  assert.ok(!existsSync(marker));
+  assert.ok(!existsSync(environmentFile));
+});
+
+test('run-matt runtime documentation follows the XDG configuration path contract', () => {
+  const skill = readFileSync(resolve(root, 'skills/run-matt-spec-to-completion/SKILL.md'), 'utf8');
+  assert.match(skill, /\$XDG_CONFIG_HOME\/ai-work-flow\/execution-runtime\/execution-cli\.mjs/);
+  assert.doesNotMatch(skill, /通过 `~\/\.config\/ai-work-flow\/execution-runtime\/execution-cli\.mjs`/);
+});
+
+test('unknown policy capabilities and values prevent generation writes', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const generated = agentPath(paths, 'codex', 'orchestrator', 'toml');
+  writeFileSync(generated, 'preserved agent\n');
+  const policyPath = resolve(paths.config, 'ai-work-flow/agent-assets/policies.json');
+  const invalidPolicy = JSON.parse(readFileSync(policyPath, 'utf8'));
+  invalidPolicy.policies.orchestrate.unknown_capability = 'none';
+  invalidPolicy.policies['write-code'].filesystem = 'outside';
+  writeFileSync(policyPath, `${JSON.stringify(invalidPolicy, null, 2)}\n`);
+
+  const result = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /unknown capability: unknown_capability/);
+  assert.match(result.stderr, /filesystem must be one of: none, read, write/);
+  assert.equal(readFileSync(generated, 'utf8'), 'preserved agent\n');
 });

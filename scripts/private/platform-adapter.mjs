@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { fail, isPlainObject, write } from './shared.mjs';
+import { fail, isPlainObject } from './shared.mjs';
+import { applyTransaction } from './transaction.mjs';
 import { updateManagedMarker } from './managed-content.mjs';
 
 const OBSOLETE_PRIMARY_AGENT_ID = ['coord', 'inator'].join('');
@@ -32,17 +33,17 @@ function tomlString(value) {
   return JSON.stringify(String(value));
 }
 
-function codexSandbox(role) {
-  return role.workspace === 'none' || role.workspace === 'read' ? 'read-only' : 'workspace-write';
+function codexSandbox(policy) {
+  return policy.filesystem === 'none' || policy.filesystem === 'read' ? 'read-only' : 'workspace-write';
 }
 
-function codexRender(role, settings, body) {
+function codexRender(role, settings, body, policy) {
   return [
     `name = ${tomlString(role.id)}`,
     `description = ${tomlString(agentDescription(role))}`,
     `model = ${tomlString(settings.model)}`,
     `model_reasoning_effort = ${tomlString(settings.reasoning)}`,
-    `sandbox_mode = ${tomlString(codexSandbox(role))}`,
+    `sandbox_mode = ${tomlString(codexSandbox(policy))}`,
     `developer_instructions = ${tomlString(body.replaceAll('\n', '\\n'))}`,
     ''
   ].join('\n');
@@ -93,19 +94,19 @@ function codexUpdateConfig(source, path) {
 
 // --- Claude strategy ---
 
-function claudePermission(role) {
-  return role.workspace === 'none' || role.workspace === 'read' ? 'plan' : 'acceptEdits';
+function claudePermission(policy) {
+  return policy.filesystem === 'none' || policy.filesystem === 'read' ? 'plan' : 'acceptEdits';
 }
 
-function claudeRender(role, settings, body) {
+function claudeRender(role, settings, body, policy) {
   return [
     '---',
-    `name: ${role.id}`,
+    `name: ${JSON.stringify(role.id)}`,
     `description: ${JSON.stringify(agentDescription(role))}`,
-    `model: ${settings.model}`,
-    `effort: ${settings.effort}`,
-    `tools: ${role.tools.join(', ') || 'Task'}`,
-    `permissionMode: ${claudePermission(role)}`,
+    `model: ${JSON.stringify(settings.model)}`,
+    `effort: ${JSON.stringify(settings.effort)}`,
+    `tools: ${JSON.stringify(role.tools.join(', ') || 'Task')}`,
+    `permissionMode: ${JSON.stringify(claudePermission(policy))}`,
     '---',
     '',
     body,
@@ -115,8 +116,8 @@ function claudeRender(role, settings, body) {
 
 // --- OpenCode strategy ---
 
-function opencodePermission(role) {
-  if (role.workspace === 'none') return { read: 'deny', edit: 'deny', bash: 'deny' };
+function opencodePermission(role, policy) {
+  if (policy.filesystem === 'none') return { read: 'deny', edit: 'deny', bash: 'deny' };
   if (REVIEWER_ROLE_IDS.has(role.id)) {
     return {
       read: 'allow',
@@ -125,18 +126,18 @@ function opencodePermission(role) {
       task: role.id === 'code-reviewer' ? 'allow' : 'deny'
     };
   }
-  if (role.workspace === 'read') return { read: 'allow', edit: 'deny', bash: 'deny' };
+  if (policy.filesystem === 'read') return { read: 'allow', edit: 'deny', bash: 'deny' };
   return { edit: 'allow' };
 }
 
-function opencodeRender(role, settings, body) {
+function opencodeRender(role, settings, body, policy) {
   const frontmatter = [
     '---',
     `description: ${JSON.stringify(agentDescription(role))}`,
     `mode: ${role.kind === 'primary' ? 'primary' : 'subagent'}`,
-    `permission: ${JSON.stringify(opencodePermission(role))}`
+    `permission: ${JSON.stringify(opencodePermission(role, policy))}`
   ];
-  if (settings.model) frontmatter.splice(3, 0, `model: ${settings.model}`);
+  if (settings.model) frontmatter.splice(3, 0, `model: ${JSON.stringify(settings.model)}`);
   if (settings.variant) frontmatter.push(`variant: ${JSON.stringify(settings.variant)}`);
   if (isPlainObject(settings.options) && Object.keys(settings.options).length) frontmatter.push(`options: ${JSON.stringify(settings.options)}`);
   frontmatter.push('---', '', body, '');
@@ -194,9 +195,26 @@ const strategies = {
   }
 };
 
+const CAPABILITY_LEVELS = {
+  codex: { filesystem: 'enforced', shell: 'instruction-only', network: 'unsupported', browser: 'unsupported', git: 'instruction-only', write_scope: 'instruction-only', delegation: 'enforced' },
+  claude: { filesystem: 'instruction-only', shell: 'instruction-only', network: 'unsupported', browser: 'unsupported', git: 'instruction-only', write_scope: 'instruction-only', delegation: 'instruction-only' },
+  opencode: { filesystem: 'enforced', shell: 'instruction-only', network: 'unsupported', browser: 'unsupported', git: 'instruction-only', write_scope: 'instruction-only', delegation: 'enforced' }
+};
+
+export function capabilityMatrix(platform, policy) {
+  const levels = CAPABILITY_LEVELS[platform];
+  if (!levels) fail(`Unknown platform: ${platform}`);
+  return Object.fromEntries(Object.keys(policy).map((capability) => {
+    const level = platform === 'codex' && capability === 'filesystem' && policy.filesystem === 'none'
+      ? 'unsupported'
+      : levels[capability] ?? 'unsupported';
+    return [capability, level];
+  }));
+}
+
 // --- Entry point ---
 
-export function planGeneration({ platform, paths, roles, config, bodies }) {
+export function planGeneration({ platform, paths, roles, policies, config, bodies }) {
   const strategy = strategies[platform];
   const plan = [];
   const addWrite = (path, contents) => {
@@ -218,7 +236,9 @@ export function planGeneration({ platform, paths, roles, config, bodies }) {
 
   const agentDir = resolve(paths[strategy.agentDir], 'agents');
   for (const role of roles) {
-    addWrite(resolve(agentDir, `${role.id}.${strategy.extension}`), strategy.render(role, config.roles[role.id][platform], bodies.get(role.id)));
+    const policy = policies?.[role.policy];
+    if (!policy) fail(`Missing policy for role: ${role.id}`);
+    addWrite(resolve(agentDir, `${role.id}.${strategy.extension}`), strategy.render(role, config.roles[role.id][platform], bodies.get(role.id), policy));
   }
   const obsoleteAgentPath = resolve(agentDir, `${OBSOLETE_PRIMARY_AGENT_ID}.${strategy.extension}`);
   if (existsSync(obsoleteAgentPath)) plan.push({ type: 'delete', path: obsoleteAgentPath });
@@ -231,14 +251,8 @@ export function planGeneration({ platform, paths, roles, config, bodies }) {
   return plan;
 }
 
-export function applyGenerationPlan(plan, dryRun) {
-  const changed = [];
-  for (const step of plan) {
-    changed.push(step.path);
-    if (step.type === 'write') write(step.path, step.contents, dryRun, []);
-    else if (!dryRun) unlinkSync(step.path);
-  }
-  return changed;
+export function applyGenerationPlan(plan, dryRun, transactionPath) {
+  return applyTransaction(plan, { transactionPath, dryRun });
 }
 
 export function generate(options) {
