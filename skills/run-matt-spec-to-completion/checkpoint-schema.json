@@ -42,9 +42,10 @@
           "completed_at": { "$ref": "#/$defs/shanghai-date-time" }
         },
         "allOf": [
-          { "if": { "properties": { "status": { "const": "in_progress" } }, "required": ["status"] }, "then": { "required": ["start_commit", "started_at"], "properties": { "start_commit": true, "started_at": true } } },
-          { "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] }, "then": { "required": ["end_commit", "completed_at"], "properties": { "end_commit": true, "completed_at": true } } },
-          { "if": { "properties": { "status": { "const": "blocked" } }, "required": ["status"] }, "then": { "required": ["error"], "properties": { "error": true, "end_commit": true, "completed_at": true }, "not": { "anyOf": [{ "required": ["end_commit"] }, { "required": ["completed_at"] }] } } }
+          { "if": { "properties": { "status": { "const": "pending" } }, "required": ["status"] }, "then": { "not": { "anyOf": [{ "properties": { "start_commit": true }, "required": ["start_commit"] }, { "properties": { "started_at": true }, "required": ["started_at"] }, { "properties": { "end_commit": true }, "required": ["end_commit"] }, { "properties": { "completed_at": true }, "required": ["completed_at"] }, { "properties": { "error": true }, "required": ["error"] }] } } },
+          { "if": { "properties": { "status": { "const": "in_progress" } }, "required": ["status"] }, "then": { "required": ["start_commit", "started_at"], "properties": { "start_commit": true, "started_at": true }, "not": { "anyOf": [{ "properties": { "end_commit": true }, "required": ["end_commit"] }, { "properties": { "completed_at": true }, "required": ["completed_at"] }, { "properties": { "error": true }, "required": ["error"] }] } } },
+          { "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] }, "then": { "required": ["start_commit", "started_at", "end_commit", "completed_at"], "properties": { "start_commit": true, "started_at": true, "end_commit": true, "completed_at": true }, "not": { "properties": { "error": true }, "required": ["error"] } } },
+          { "if": { "properties": { "status": { "const": "blocked" } }, "required": ["status"] }, "then": { "required": ["start_commit", "started_at", "error"], "properties": { "start_commit": true, "started_at": true, "error": true }, "not": { "anyOf": [{ "properties": { "end_commit": true }, "required": ["end_commit"] }, { "properties": { "completed_at": true }, "required": ["completed_at"] }] } } }
         ]
       }
     },
@@ -70,7 +71,9 @@
     "history": { "type": "array", "items": { "type": "object", "required": ["event", "detail", "at"], "additionalProperties": false, "properties": { "event": { "type": "string", "minLength": 1 }, "detail": { "type": "string", "minLength": 1 }, "at": { "$ref": "#/$defs/shanghai-date-time" } } } }
   },
   "allOf": [
-    { "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] }, "then": { "properties": { "integration": { "type": "object", "properties": { "status": { "const": "done" } }, "required": ["status"] } } } },
-    { "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] }, "then": { "properties": { "review": { "type": "object", "properties": { "status": { "const": "done" } }, "required": ["status"] } } } }
+    { "if": { "properties": { "status": { "const": "executing" } }, "required": ["status"] }, "then": { "properties": { "review": { "type": "object", "properties": { "status": { "const": "pending" } }, "required": ["status"] }, "integration": { "type": "object", "properties": { "status": { "const": "pending" } }, "required": ["status"] } } } },
+    { "if": { "properties": { "status": { "const": "reviewing" } }, "required": ["status"] }, "then": { "properties": { "review": { "type": "object", "properties": { "status": { "const": "in_progress" } }, "required": ["status"] }, "integration": { "type": "object", "properties": { "status": { "const": "pending" } }, "required": ["status"] } }, "not": { "properties": { "tickets": { "type": "array", "contains": { "type": "object", "properties": { "status": { "not": { "const": "done" } } }, "required": ["status"] } } } } } },
+    { "if": { "properties": { "status": { "const": "integrating" } }, "required": ["status"] }, "then": { "properties": { "review": { "type": "object", "properties": { "status": { "const": "done" } }, "required": ["status"] } }, "not": { "properties": { "tickets": { "type": "array", "contains": { "type": "object", "properties": { "status": { "not": { "const": "done" } } }, "required": ["status"] } } } } } },
+    { "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] }, "then": { "properties": { "integration": { "type": "object", "properties": { "status": { "const": "done" } }, "required": ["status"] }, "review": { "type": "object", "properties": { "status": { "const": "done" } }, "required": ["status"] } }, "not": { "properties": { "tickets": { "type": "array", "contains": { "type": "object", "properties": { "status": { "not": { "const": "done" } } }, "required": ["status"] } } } } } }
   ]
 }

@@ -43,7 +43,7 @@ export function createPreMergeStash({ git, gitSucceeds, gitOutput, gitSucceedsWi
     async reconcile(worktree, reference) {
       const listed = (await git(worktree, ["stash", "list", "--format=%H"])).split("\n").includes(reference);
       const patch = await gitOutput(worktree, ["stash", "show", "--include-untracked", "--patch", reference]);
-      const applied = patch !== "" && gitSucceedsWithInput(worktree, ["apply", "--reverse", "--check"], patch);
+      const applied = patch !== "" && await gitSucceedsWithInput(worktree, ["apply", "--reverse", "--check"], patch);
       return { listed, applied };
     },
 

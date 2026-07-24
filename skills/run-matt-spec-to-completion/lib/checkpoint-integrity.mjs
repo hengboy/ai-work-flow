@@ -74,6 +74,30 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
   for (const ticketId of specTicketIds) {
     if (!checkpointTicketIds.has(ticketId)) diagnostics.push(diagnostic("spec-ticket-missing", ticketId));
   }
+  const checkpointTicketsById = new Map(checkpoint.tickets.map((ticket) => [ticket.id, ticket]));
+  const orderedTickets = [...executionPlan.tickets].sort((left, right) => left.level - right.level || left.id.localeCompare(right.id));
+  let frontierOpened = false;
+  let inProgressCount = 0;
+  for (const ticket of orderedTickets) {
+    const state = checkpointTicketsById.get(ticket.id);
+    if (!state) continue;
+    const dependenciesComplete = ticket.blocked_by.every((ticketId) => checkpointTicketsById.get(ticketId)?.status === "done");
+    if (["done", "in_progress", "blocked"].includes(state.status) && !dependenciesComplete) {
+      diagnostics.push(diagnostic("ticket-dependency", ticket.id));
+    }
+    if (state.status === "done") {
+      if (frontierOpened) diagnostics.push(diagnostic("ticket-order", ticket.id));
+      continue;
+    }
+    if (state.status === "in_progress") {
+      inProgressCount += 1;
+      if (frontierOpened) diagnostics.push(diagnostic("ticket-order", ticket.id));
+    } else if (state.status === "blocked" && frontierOpened) {
+      diagnostics.push(diagnostic("ticket-order", ticket.id));
+    }
+    frontierOpened = true;
+  }
+  if (inProgressCount > 1) diagnostics.push(diagnostic("multiple-in-progress", String(inProgressCount)));
   if (checkpoint.status === "complete") {
     if (checkpoint.integration.status !== "done") diagnostics.push(diagnostic("complete-integration", checkpoint.integration.status));
     if (checkpoint.review.status !== "done") diagnostics.push(diagnostic("complete-review", checkpoint.review.status));
@@ -84,4 +108,12 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
   return diagnostics.length === 0
     ? { status: "valid", executionPlan, checkpoint, diagnostics: [] }
     : { status: "invalid", executionPlan, checkpoint, diagnostics };
+}
+
+export async function requireCheckpointIntegrity(options) {
+  const integrity = await verifyCheckpointIntegrity(options);
+  if (integrity.status !== "valid") {
+    throw new Error(`Checkpoint integrity failed: ${JSON.stringify(integrity.diagnostics)}`);
+  }
+  return integrity;
 }

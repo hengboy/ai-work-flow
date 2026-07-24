@@ -6,7 +6,7 @@ import { assertCheckpoint } from "./validation.mjs";
 
 export function createCheckpoint({ executionPlan, baseline, branch, worktree, now = new Date() }) {
   now = toShanghaiTimestamp(now);
-  return {
+  return assertCheckpoint({
     version: 1,
     spec: { path: sourceSpecPath(executionPlan.spec.feature_slug), revision: executionPlan.revision },
     status: "executing",
@@ -19,7 +19,7 @@ export function createCheckpoint({ executionPlan, baseline, branch, worktree, no
     review: { status: "pending" },
     integration: { status: "pending", target_branch: "main" },
     history: [{ event: "initialized", detail: "Execution plan materialized", at: now }],
-  };
+  });
 }
 
 export async function writeCheckpoint(worktree, featureSlug, checkpoint) {
@@ -39,24 +39,32 @@ export function verifyCheckpointShape(checkpoint) {
 }
 
 function revise(checkpoint, event, detail, now) {
+  assertCheckpoint(checkpoint);
   const next = structuredClone(checkpoint);
   next.updated_at = now;
   next.history.push({ event, detail, at: now });
-  return next;
+  return completeTransition(next);
+}
+
+function completeTransition(checkpoint) {
+  return assertCheckpoint(checkpoint);
 }
 
 export function startTickets(checkpoint, ticketIds, startCommit, now = new Date()) {
   now = toShanghaiTimestamp(now);
-  const next = revise(checkpoint, "dispatched", ticketIds.join(", "), now);
-  for (const ticket of next.tickets) {
-    if (ticketIds.includes(ticket.id)) {
-      if (ticket.status !== "pending") throw new Error(`Ticket ${ticket.id} is not pending`);
-      ticket.status = "in_progress";
-      ticket.start_commit = startCommit;
-      ticket.started_at = now;
-    }
+  if (ticketIds.length !== 1) throw new Error("Exactly one pending ticket can be started at a time");
+  const [ticketId] = ticketIds;
+  if (checkpoint.tickets.some((ticket) => ticket.status === "in_progress")) {
+    throw new Error("Cannot start a ticket while another ticket is in progress");
   }
-  return next;
+  const ticket = checkpoint.tickets.find((candidate) => candidate.id === ticketId);
+  if (!ticket || ticket.status !== "pending") throw new Error(`Ticket ${ticketId} is not pending`);
+  const next = revise(checkpoint, "dispatched", ticketIds.join(", "), now);
+  const nextTicket = next.tickets.find((candidate) => candidate.id === ticketId);
+  nextTicket.status = "in_progress";
+  nextTicket.start_commit = startCommit;
+  nextTicket.started_at = now;
+  return completeTransition(next);
 }
 
 export function completeTicket(checkpoint, ticketId, endCommit, now = new Date()) {
@@ -68,7 +76,7 @@ export function completeTicket(checkpoint, ticketId, endCommit, now = new Date()
   ticket.end_commit = endCommit;
   ticket.completed_at = now;
   delete ticket.error;
-  return next;
+  return completeTransition(next);
 }
 
 export function blockTicket(checkpoint, ticketId, error, now = new Date()) {
@@ -78,14 +86,14 @@ export function blockTicket(checkpoint, ticketId, error, now = new Date()) {
   if (!ticket || ticket.status !== "in_progress") throw new Error(`Ticket ${ticketId} is not in progress`);
   ticket.status = "blocked";
   ticket.error = error;
-  return next;
+  return completeTransition(next);
 }
 
 export function relocateCheckpoint(checkpoint, worktree, now = new Date()) {
   now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "worktree-relocated", worktree, now);
   next.worktree = worktree;
-  return next;
+  return completeTransition(next);
 }
 
 export function beginReview(checkpoint, now = new Date()) {
@@ -96,7 +104,7 @@ export function beginReview(checkpoint, now = new Date()) {
   const next = revise(checkpoint, "reviewing", "final review started", now);
   next.status = "reviewing";
   next.review = { status: "in_progress", started_at: now };
-  return next;
+  return completeTransition(next);
 }
 
 export function completeReview(checkpoint, findingsSummary, now = new Date()) {
@@ -105,7 +113,7 @@ export function completeReview(checkpoint, findingsSummary, now = new Date()) {
   if (next.review.status !== "in_progress") throw new Error("Review is not in progress");
   next.review = { ...next.review, status: "done", findings_summary: findingsSummary, completed_at: now };
   next.status = "integrating";
-  return next;
+  return completeTransition(next);
 }
 
 export function markMerged(checkpoint, { executionHead, mainWorktree, mergedCommit, stashRef }, now = new Date()) {
@@ -126,7 +134,7 @@ export function markMerged(checkpoint, { executionHead, mainWorktree, mergedComm
     ...(next.integration.stash_restored ? { stash_restored: true } : {}),
     ...(next.integration.stash_cleanup_state ? { stash_cleanup_state: next.integration.stash_cleanup_state } : {}),
   };
-  return next;
+  return completeTransition(next);
 }
 
 export function beginStashOperation(checkpoint, operationId, now = new Date()) {
@@ -139,7 +147,7 @@ export function beginStashOperation(checkpoint, operationId, now = new Date()) {
     throw new Error("A stash operation is already recorded");
   }
   next.integration = { ...next.integration, stash_operation_id: operationId };
-  return next;
+  return completeTransition(next);
 }
 
 export function recordStashReference(checkpoint, stashRef, now = new Date()) {
@@ -150,7 +158,7 @@ export function recordStashReference(checkpoint, stashRef, now = new Date()) {
   }
   if (next.integration.stash_ref) throw new Error("A stash reference is already recorded");
   next.integration = { ...next.integration, stash_ref: stashRef };
-  return next;
+  return completeTransition(next);
 }
 
 export function beginStashRestoration(checkpoint, now = new Date()) {
@@ -160,7 +168,7 @@ export function beginStashRestoration(checkpoint, now = new Date()) {
   if (next.integration.stash_restore_state === "applying") throw new Error("Stash restoration is already in progress");
   if (next.integration.stash_restore_state === "restored") throw new Error("Stash has already been restored");
   next.integration = { ...next.integration, stash_restore_state: "applying" };
-  return next;
+  return completeTransition(next);
 }
 
 export function markStashRestored(checkpoint, now = new Date()) {
@@ -170,7 +178,7 @@ export function markStashRestored(checkpoint, now = new Date()) {
     throw new Error("A started stash restoration is required");
   }
   next.integration = { ...next.integration, stash_restore_state: "restored", stash_restored: true, stash_cleanup_state: "pending" };
-  return next;
+  return completeTransition(next);
 }
 
 export function markRestoredStashDropped(checkpoint, now = new Date()) {
@@ -180,7 +188,7 @@ export function markRestoredStashDropped(checkpoint, now = new Date()) {
     throw new Error("A restored stash pending cleanup is required");
   }
   next.integration = { ...next.integration, stash_cleanup_state: "dropped" };
-  return next;
+  return completeTransition(next);
 }
 
 export function clearRestoredStashReference(checkpoint, now = new Date()) {
@@ -192,7 +200,7 @@ export function clearRestoredStashReference(checkpoint, now = new Date()) {
   const { stash_ref, stash_operation_id, stash_restore_state, stash_restored, stash_cleanup_state, ...integration } = next.integration;
   if (!stash_ref) throw new Error("No stash reference is available to clear");
   next.integration = integration;
-  return next;
+  return completeTransition(next);
 }
 
 export function completeIntegration(checkpoint, now = new Date()) {
@@ -205,5 +213,5 @@ export function completeIntegration(checkpoint, now = new Date()) {
   }
   next.integration = { ...next.integration, status: "done", cleaned_up_at: now };
   next.status = "complete";
-  return next;
+  return completeTransition(next);
 }
