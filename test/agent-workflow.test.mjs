@@ -302,7 +302,7 @@ test('workflow browser automation requires an explicit user request', () => {
   }
 });
 
-test('planning workflow persists plans and waits for user confirmation before implementation', () => {
+test('planning workflow resolves material user decisions before writing a plan and waits for implementation confirmation', () => {
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -315,6 +315,12 @@ test('planning workflow persists plans and waits for user confirmation before im
   assert.match(planningWriter, /不得实施/);
   assert.match(routing, /\*\*Planning Writer\*\* 写入计划、ADR/);
   for (const content of [orchestrator, routing]) {
+    assert.match(content, /可通过工作区探索确认的事实委派 \*\*File Explorer\*\*/);
+    assert.match(content, /会实质影响目标、范围、行为、取舍、兼容性、风险或验收标准/);
+    assert.match(content, /每次只询问一个决策/);
+    assert.match(content, /等待用户的明确回答/);
+    assert.match(content, /所有已确认决策必须随任务交接给 \*\*Planning Writer\*\*/);
+    assert.match(content, /没有此类未决决策时无需提问/);
     assert.match(content, /kebab-case `planId`/);
     assert.match(content, /\.ai-work-flow\/plans\/<planId>\.md/);
     assert.match(content, /等待用户明确确认/);
@@ -331,6 +337,8 @@ test('planning workflow persists plans and waits for user confirmation before im
     const generatedOrchestrator = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
     assert.match(generatedPlanningWriter, /\.ai-work-flow\/plans\/<planId>\.md/, platform);
     assert.match(generatedPlanningWriter, /不得实施/, platform);
+    assert.match(generatedOrchestrator, /每次只询问一个决策/, platform);
+    assert.match(generatedOrchestrator, /所有已确认决策必须随任务交接给 \*\*Planning Writer\*\*/, platform);
     assert.match(generatedOrchestrator, /等待用户明确确认/, platform);
     assert.match(generatedOrchestrator, /不得自动.*实施/, platform);
   }

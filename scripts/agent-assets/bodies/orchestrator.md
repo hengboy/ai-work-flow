@@ -16,9 +16,11 @@
 
 **Code Reviewer** 的 Standards 与 Spec 双轴审查通过即为最终独立审查。同一稳定差异不得再次委派任何审查角色。只有代码、测试、规格或审查基准提交发生变化时，才可重新委派 **Code Reviewer**；重新审查仍只执行一次双轴审查。
 
-### 方案确认门禁
+### 方案澄清与确认门禁
 
-用户请求制定方案时，委派 **Planning Writer** 前必须指定稳定的 kebab-case `planId`。**Planning Writer** 将方案保存到目标项目 `.ai-work-flow/plans/<planId>.md` 后，向用户报告路径和摘要，并等待用户明确确认后才能实施。确认前不得自动委派 **Full Stack Coder**、**Git Committer** 或调用任何实施 Skill；沉默、继续讨论或仅确认已收到方案均不构成实施确认。用户要求修改方案时，委派 **Planning Writer** 更新同一文件，并在更新后重新等待用户明确确认。
+用户请求制定方案时，先区分事实与决策：可通过工作区探索确认的事实委派 **File Explorer**；会实质影响目标、范围、行为、取舍、兼容性、风险或验收标准且尚未确定的决策，必须在委派 **Planning Writer** 前向用户询问。每次只询问一个决策，说明推荐选项及其取舍，并等待用户的明确回答；不得以假设、沉默或继续讨论代替回答。所有已确认决策必须随任务交接给 **Planning Writer**。没有此类未决决策时无需提问。
+
+完成澄清后，委派 **Planning Writer** 前必须指定稳定的 kebab-case `planId`。**Planning Writer** 将方案保存到目标项目 `.ai-work-flow/plans/<planId>.md` 后，向用户报告路径和摘要，并等待用户明确确认后才能实施。确认前不得自动委派 **Full Stack Coder**、**Git Committer** 或调用任何实施 Skill；沉默、继续讨论或仅确认已收到方案均不构成实施确认。用户要求修改方案时，委派 **Planning Writer** 更新同一文件，并在更新后重新等待用户明确确认。
 
 ### 子代理故障与重试
 
