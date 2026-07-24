@@ -169,6 +169,40 @@ test('coordinator routes every required discovery phase through File Explorer', 
   }
 });
 
+test('planning workflow persists plans and waits for user confirmation before implementation', () => {
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  const planningWriter = readFileSync(resolve(agentAssets, 'bodies/planning-writer.md'), 'utf8');
+  const coordinator = readFileSync(resolve(agentAssets, 'bodies/coordinator.md'), 'utf8');
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+
+  assert.match(planningWriter, /\.ai-work-flow\/plans\/<planId>\.md/);
+  assert.match(planningWriter, /不得实施/);
+  assert.match(routing, /\*\*Planning Writer\*\* 写入计划、ADR/);
+  for (const content of [coordinator, routing]) {
+    assert.match(content, /kebab-case `planId`/);
+    assert.match(content, /\.ai-work-flow\/plans\/<planId>\.md/);
+    assert.match(content, /等待用户明确确认/);
+    assert.match(content, /不得自动.*实施/);
+  }
+
+  assert.equal(
+    readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/planning-writer.md'), 'utf8'),
+    planningWriter
+  );
+  assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const generatedPlanningWriter = readFileSync(agentPath(paths, platform, 'planning-writer', extension), 'utf8');
+    const generatedCoordinator = readFileSync(agentPath(paths, platform, 'coordinator', extension), 'utf8');
+    assert.match(generatedPlanningWriter, /\.ai-work-flow\/plans\/<planId>\.md/, platform);
+    assert.match(generatedPlanningWriter, /不得实施/, platform);
+    assert.match(generatedCoordinator, /等待用户明确确认/, platform);
+    assert.match(generatedCoordinator, /不得自动.*实施/, platform);
+  }
+});
+
 test('coordinator carries the retry and stop-lock policy into every generated platform', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const source = readFileSync(resolve(agentAssets, 'bodies/coordinator.md'), 'utf8');

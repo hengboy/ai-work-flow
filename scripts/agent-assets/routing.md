@@ -14,6 +14,10 @@
 
 只要后续角色需要未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现，必须先委派 **File Explorer** 并等待其交接；当前会话已有交接时可复用。用户给出精确路径或只需读取已交接路径的直接依赖时可例外。不得将发现阶段交给后续执行角色。其他角色只能读取 **File Explorer** 交接的路径及其直接依赖。外部资料研究只交给 **Researcher**；**Researcher** 不得检查本地工作区。
 
-可写角色必须串行执行。**Document Maintainer** 写入 README、`docs/` 等普通文档。**Planning Writer** 写入 ADR、交接和跟踪器工件。**Full Stack Coder** 写入源码、测试、必要配置并提交。每个写入者完成后都要报告 `git diff --name-only`。
+可写角色必须串行执行。**Document Maintainer** 写入 README、`docs/` 等普通文档。**Planning Writer** 写入计划、ADR、交接和跟踪器工件。**Full Stack Coder** 写入源码、测试、必要配置并提交。每个写入者完成后都要报告 `git diff --name-only`。
+
+### 方案确认门禁
+
+用户请求制定方案时，**Coordinator** 委派 **Planning Writer** 前必须指定稳定的 kebab-case `planId`。**Planning Writer** 将方案保存到目标项目 `.ai-work-flow/plans/<planId>.md` 后，**Coordinator** 向用户报告路径和摘要，并等待用户明确确认后才能实施。确认前不得自动委派 **Full Stack Coder**、**Git Committer** 或调用任何实施 Skill；沉默、继续讨论或仅确认已收到方案均不构成实施确认。用户要求修改方案时，委派 **Planning Writer** 更新同一文件，并在更新后重新等待用户明确确认。
 
 **Code Reviewer** 只有在差异稳定后才能并行启动 **Review Standards** 和 **Review Spec**，并分别保留两者的发现。其他角色不得委派工作。审查完成后，**Coordinator** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
