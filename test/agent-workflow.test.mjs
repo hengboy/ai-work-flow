@@ -12,6 +12,7 @@ const root = resolve(import.meta.dirname, '..');
 const installer = resolve(root, 'scripts/install.mjs');
 const agentAssets = resolve(root, 'scripts/agent-assets');
 const catalog = JSON.parse(readFileSync(resolve(agentAssets, 'roles.json'), 'utf8'));
+const policies = JSON.parse(readFileSync(resolve(agentAssets, 'policies.json'), 'utf8')).policies;
 const managedSkillDirectories = [
   'generate-ai-work-flow-agents',
   'switch-ai-work-flow-env',
@@ -499,7 +500,8 @@ test('platform generation enforces the declared workspace access where supported
     const codex = readFileSync(agentPath(paths, 'codex', role.id, 'toml'), 'utf8');
     const claude = readFileSync(agentPath(paths, 'claude', role.id, 'md'), 'utf8');
     const openCode = readFileSync(agentPath(paths, 'opencode', role.id, 'md'), 'utf8');
-    if (role.workspace === 'none' || role.workspace === 'read') {
+    const policy = policies[role.policy];
+    if (policy.filesystem === 'none' || policy.filesystem === 'read') {
       assert.match(codex, /sandbox_mode = "read-only"/, role.id);
       assert.match(claude, /permissionMode: plan/, role.id);
     } else {
@@ -507,7 +509,7 @@ test('platform generation enforces the declared workspace access where supported
       assert.match(claude, /permissionMode: acceptEdits/, role.id);
       assert.match(openCode, /permission: \{"edit":"allow"\}/, role.id);
     }
-    if (role.workspace === 'none') {
+    if (policy.filesystem === 'none') {
       assert.match(openCode, /permission: \{"read":"deny","edit":"deny","bash":"deny"\}/, role.id);
     }
     if (reviewerRoles.has(role.id)) {
@@ -515,10 +517,32 @@ test('platform generation enforces the declared workspace access where supported
       assert.match(openCode, /"bash":\{"\*":"deny","git status\*":"allow","git diff\*":"allow","git show\*":"allow","git log\*":"allow","git rev-parse\*":"allow","git merge-base\*":"allow","git branch\*":"allow","git ls-files\*":"allow","node --test\*":"allow","npm test\*":"allow"\}/, role.id);
       assert.match(openCode, new RegExp(`"task":"${expectedTaskPermission}"`), role.id);
       assert.doesNotMatch(openCode, /"bash":"allow"/, role.id);
-    } else if (role.workspace === 'read') {
+    } else if (policy.filesystem === 'read') {
       assert.match(openCode, /permission: \{"read":"allow","edit":"deny","bash":"deny"\}/, role.id);
     }
   }
+});
+
+test('capability reporting reflects adapter limits and rejects invalid policy catalogs before writing', () => {
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /CAPABILITY codex\/orchestrator:.*filesystem=unsupported.*delegation=instruction-only/);
+  assert.match(result.stderr, /WARNING codex\/orchestrator:.*delegation=instruction-only/);
+  const status = run(paths, 'env', 'status');
+  assert.equal(status.status, 0, status.stderr);
+  assert.match(status.stdout, /CAPABILITY opencode\/full-stack-coder:.*filesystem=enforced/);
+
+  const generated = agentPath(paths, 'codex', 'orchestrator', 'toml');
+  const before = readFileSync(generated, 'utf8');
+  const policyPath = resolve(paths.config, 'ai-work-flow/agent-assets/policies.json');
+  const invalid = JSON.parse(readFileSync(policyPath, 'utf8'));
+  invalid.policies.orchestrate.unknown_capability = 'none';
+  writeFileSync(policyPath, JSON.stringify(invalid));
+  const failed = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /unknown capability/);
+  assert.equal(readFileSync(generated, 'utf8'), before);
 });
 
 test('only writer bodies require git diff reporting', () => {

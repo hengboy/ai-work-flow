@@ -1,4 +1,5 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import process from 'node:process';
 
@@ -6,7 +7,7 @@ import { loadAgentAssets } from './asset-catalog.mjs';
 import { assertEnvironmentName, assertSafeEnvironmentPaths, environmentPath, loadResolvedConfiguration, validateConfiguration } from './config.mjs';
 import { globalPaths } from './paths.mjs';
 import { fail, readJson, write } from './shared.mjs';
-import { applyGenerationPlan, planGeneration } from './platform-adapter.mjs';
+import { applyGenerationPlan, capabilityMatrix, planGeneration } from './platform-adapter.mjs';
 import { applyTransaction, recoverTransaction } from './transaction.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -283,8 +284,26 @@ function planGenerationFor(platforms, assets, config) {
   const paths = globalPaths();
   const validation = validateConfiguration({ base: config, roles: assets.roles, platforms });
   if (validation.errors.length) fail(validation.errors.join('\n'));
-  const plan = platforms.flatMap((platform) => planGeneration({ platform, paths, roles: assets.roles, config, bodies: assets.bodies }));
+  const plan = platforms.flatMap((platform) => planGeneration({ platform, paths, roles: assets.roles, policies: assets.policies, config, bodies: assets.bodies }));
   return { plan, warnings: validation.warnings, paths };
+}
+
+function reportCapabilities(platforms, assets, config) {
+  for (const platform of platforms) {
+    const digest = createHash('sha256').update(JSON.stringify(assets.roles.map((role) => ({
+      id: role.id,
+      policy: assets.policies[role.policy],
+      settings: config.roles[role.id][platform]
+    })))).digest('hex');
+    console.log(`Generation digest ${platform}: ${digest}`);
+    for (const role of assets.roles) {
+      const matrix = capabilityMatrix(platform, assets.policies[role.policy]);
+      const report = Object.entries(matrix).map(([capability, level]) => `${capability}=${level}`).join(', ');
+      console.log(`CAPABILITY ${platform}/${role.id}: ${report}`);
+      const warnings = Object.entries(matrix).filter(([, level]) => level !== 'enforced').map(([capability, level]) => `${capability}=${level}`);
+      if (warnings.length) console.warn(`WARNING ${platform}/${role.id}: ${warnings.join(', ')}`);
+    }
+  }
 }
 
 export function runCli(argv) {
@@ -307,6 +326,7 @@ export function runCli(argv) {
       const resolved = loadResolvedConfiguration({ paths, roles: assets.roles, platforms: [...PLATFORMS] });
       console.log(`Environment: ${resolved.name}`);
       console.log(`Managed platforms: ${managedPlatforms(paths).join(', ')}`);
+      reportCapabilities(managedPlatforms(paths), assets, resolved.config);
       return;
     }
     if (options.envAction === 'create') {
@@ -335,6 +355,7 @@ export function runCli(argv) {
     installRuntime(assets, lifecycle, options.dryRun);
     const generated = generate(options.platforms, options.dryRun, assets, config, []);
     for (const message of generation.warnings) console.warn(`WARNING ${message}`);
+    reportCapabilities(options.platforms, assets, config);
     console.log(`${options.dryRun ? 'Would write' : 'Generated'} ${generated.changed.length} file(s).`);
     for (const path of generated.changed) console.log(`${options.dryRun ? 'WRITE' : 'WROTE'} ${path}`);
     return;
@@ -358,6 +379,7 @@ export function runCli(argv) {
   if (validation.errors.length) fail(validation.errors.join('\n'));
   const result = generate(options.platforms, options.dryRun, assets, config);
   for (const message of result.warnings) console.warn(`WARNING ${message}`);
+  reportCapabilities(options.platforms, assets, config);
   console.log(`${options.dryRun ? 'Would write' : 'Generated'} ${result.changed.length} file(s).`);
   for (const path of result.changed) console.log(`${options.dryRun ? 'WRITE' : 'WROTE'} ${path}`);
 }
