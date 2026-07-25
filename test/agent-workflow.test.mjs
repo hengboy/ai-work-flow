@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import test from 'node:test';
 
 import { MARKER_END, MARKER_START, updateManagedMarker } from '../scripts/private/managed-content.mjs';
+import { capabilityMatrix } from '../scripts/private/platform-adapter.mjs';
 import { applyTransaction, recoverTransaction } from '../scripts/private/transaction.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -533,6 +534,20 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
   assert.equal(status.status, 0, status.stderr);
   assert.match(status.stdout, /CAPABILITY opencode\/full-stack-coder:.*filesystem=enforced/);
 
+  for (const platform of ['codex', 'claude', 'opencode']) {
+    for (const role of catalog.roles) {
+      const matrix = capabilityMatrix(platform, role, policies[role.policy]);
+      assert.deepEqual(Object.keys(matrix).sort(), ['browser', 'delegation', 'filesystem', 'git', 'network', 'shell', 'write_scope']);
+      for (const [capability, level] of Object.entries(matrix)) {
+        assert.ok(['enforced', 'instruction-only', 'unsupported'].includes(level), `${platform}/${role.id}/${capability}`);
+        if (level !== 'enforced') assert.match(result.stderr, new RegExp(`WARNING ${platform}/${role.id}:[^\\n]*${capability}=${level}`));
+      }
+    }
+  }
+  assert.equal(capabilityMatrix('codex', catalog.roles[0], policies.orchestrate).delegation, 'instruction-only');
+  assert.equal(capabilityMatrix('codex', catalog.roles[0], policies.orchestrate).filesystem, 'unsupported');
+  assert.equal(capabilityMatrix('opencode', catalog.roles.find((role) => role.id === 'review-standards'), policies.review).shell, 'enforced');
+
   const generated = agentPath(paths, 'codex', 'orchestrator', 'toml');
   const before = readFileSync(generated, 'utf8');
   const policyPath = resolve(paths.config, 'ai-work-flow/agent-assets/policies.json');
@@ -542,6 +557,15 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
   const failed = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
   assert.equal(failed.status, 1);
   assert.match(failed.stderr, /unknown capability/);
+  assert.equal(readFileSync(generated, 'utf8'), before);
+
+  writeFileSync(policyPath, JSON.stringify({ version: 1, policies }));
+  const invalidRoles = JSON.parse(readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/roles.json'), 'utf8'));
+  invalidRoles.roles[0].delegates.push('missing-role');
+  writeFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/roles.json'), JSON.stringify(invalidRoles));
+  const invalidDelegate = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
+  assert.equal(invalidDelegate.status, 1);
+  assert.match(invalidDelegate.stderr, /delegates to an unknown role/);
   assert.equal(readFileSync(generated, 'utf8'), before);
 });
 

@@ -26,6 +26,9 @@ function validateRole(role, errors) {
   for (const property of ['name', 'description', 'kind', 'policy']) {
     if (typeof role[property] !== 'string' || !role[property]) errors.push(`Role ${role.id} must have a non-empty ${property}.`);
   }
+  for (const property of Object.keys(role)) {
+    if (!['id', 'name', 'description', 'kind', 'policy', 'delegates', 'tools'].includes(property)) errors.push(`Role ${role.id} has unknown field: ${property}.`);
+  }
   if (!Array.isArray(role.delegates)) errors.push(`Role ${role.id}.delegates must be an array.`);
   if (!Array.isArray(role.tools)) errors.push(`Role ${role.id}.tools must be an array.`);
 }
@@ -60,6 +63,11 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
   }
   const ids = roles.map((role) => role?.id).filter(Boolean);
   if (!unique(ids)) errors.push('roles.json contains duplicate role ids.');
+  for (const role of roles) {
+    for (const delegate of role.delegates ?? []) {
+      if (typeof delegate !== 'string' || !ids.includes(delegate)) errors.push(`Role ${role.id} delegates to an unknown role: ${delegate}.`);
+    }
+  }
 
   if (!isPlainObject(defaults) || defaults.version !== 1 || !isPlainObject(defaults.roles)) {
     errors.push('default-config.json must contain version: 1 and a roles object.');

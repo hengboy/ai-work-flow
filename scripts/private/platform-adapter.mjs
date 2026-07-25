@@ -195,19 +195,20 @@ const strategies = {
   }
 };
 
-function capabilityLevel(platform, capability, requested) {
+function capabilityLevel(platform, role, capability, requested) {
   if (capability === 'filesystem') {
     if (platform === 'codex') return requested === 'none' ? 'unsupported' : 'enforced';
     if (platform === 'opencode') return 'enforced';
     return 'instruction-only';
   }
   if (capability === 'network' || capability === 'browser') return 'unsupported';
+  if (platform === 'opencode' && REVIEWER_ROLE_IDS.has(role.id) && (capability === 'shell' || capability === 'git') && requested === 'read') return 'enforced';
   return 'instruction-only';
 }
 
-export function capabilityMatrix(platform, policy) {
+export function capabilityMatrix(platform, role, policy) {
   if (!strategies[platform]) fail(`Unknown platform: ${platform}`);
-  return Object.fromEntries(Object.entries(policy).map(([capability, requested]) => [capability, capabilityLevel(platform, capability, requested)]));
+  return Object.fromEntries(Object.entries(policy).map(([capability, requested]) => [capability, capabilityLevel(platform, role, capability, requested)]));
 }
 
 // --- Entry point ---

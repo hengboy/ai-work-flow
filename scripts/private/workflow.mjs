@@ -291,13 +291,14 @@ function planGenerationFor(platforms, assets, config) {
 function reportCapabilities(platforms, assets, config) {
   for (const platform of platforms) {
     const digest = createHash('sha256').update(JSON.stringify(assets.roles.map((role) => ({
-      id: role.id,
+      role,
       policy: assets.policies[role.policy],
-      settings: config.roles[role.id][platform]
+      settings: config.roles[role.id][platform],
+      body: assets.bodies.get(role.id)
     })))).digest('hex');
     console.log(`Generation digest ${platform}: ${digest}`);
     for (const role of assets.roles) {
-      const matrix = capabilityMatrix(platform, assets.policies[role.policy]);
+      const matrix = capabilityMatrix(platform, role, assets.policies[role.policy]);
       const report = Object.entries(matrix).map(([capability, level]) => `${capability}=${level}`).join(', ');
       console.log(`CAPABILITY ${platform}/${role.id}: ${report}`);
       const warnings = Object.entries(matrix).filter(([, level]) => level !== 'enforced').map(([capability, level]) => `${capability}=${level}`);
