@@ -992,7 +992,7 @@ test('generation transaction rolls back failures and recovers interrupted writes
 
   assert.throws(() => applyTransaction([
     { type: 'write', path: first, contents: 'after\n' }
-  ], { transactionPath: transaction, roots: [directory], interruptAfterStep: 1 }), /Injected transaction interruption/);
+  ], { transactionPath: transaction, roots: [directory], interruptAfterRecord: 1 }), /Injected transaction interruption/);
   assert.equal(recoverTransaction(transaction, { roots: [directory] }), true);
   assert.equal(readFileSync(first, 'utf8'), 'before\n');
 });
@@ -1015,6 +1015,32 @@ test('a forged transaction journal cannot write outside its trusted root', () =>
   rmSync(outside);
 });
 
+test('transaction recovery rejects malformed backups and non-file targets without mutation', () => {
+  const directory = fixture();
+  const target = resolve(directory, 'target.txt');
+  const transaction = resolve(directory, 'transaction.json');
+  writeFileSync(target, 'preserve\n');
+  writeFileSync(transaction, JSON.stringify({
+    version: 1,
+    id: '123e4567-e89b-42d3-a456-426614174000',
+    phase: 'applying',
+    ignored: true,
+    steps: [{ type: 'write', path: target, backup: resolve(directory, 'forged-backup'), existed: true }]
+  }));
+  assert.throws(() => recoverTransaction(transaction, { roots: [directory] }), /invalid identity|invalid backup/);
+  assert.equal(readFileSync(target, 'utf8'), 'preserve\n');
+  assert.ok(existsSync(transaction));
+
+  rmSync(transaction);
+  const directoryTarget = resolve(directory, 'directory-target');
+  mkdirSync(directoryTarget);
+  assert.throws(() => applyTransaction([
+    { type: 'write', path: directoryTarget, contents: 'refuse\n' }
+  ], { transactionPath: transaction, roots: [directory] }), /regular file/);
+  assert.ok(existsSync(directoryTarget));
+  assert.ok(!existsSync(transaction));
+});
+
 test('environment activation commits generated agents, marker, and managed platform manifest together', () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
@@ -1028,6 +1054,27 @@ test('environment activation commits generated agents, marker, and managed platf
   assert.deepEqual(JSON.parse(readFileSync(resolve(paths.config, 'ai-work-flow/.managed-platforms.json'), 'utf8')).platforms, ['claude', 'codex', 'opencode']);
   assert.match(readFileSync(agentPath(paths, 'codex', 'orchestrator', 'toml'), 'utf8'), /model_reasoning_effort = "low"/);
   assert.ok(!existsSync(resolve(paths.config, 'ai-work-flow/.generation-transaction.json')));
+});
+
+test('an already synchronized generation clears a committed transaction journal', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const transaction = resolve(paths.config, 'ai-work-flow/.generation-transaction.json');
+  const target = resolve(paths.config, 'ai-work-flow/.managed-platforms.json');
+  const id = '123e4567-e89b-42d3-a456-426614174000';
+  const backup = resolve(paths.config, 'ai-work-flow', `.${id}.0.ai-work-flow-backup`);
+  writeFileSync(backup, 'old manifest\n');
+  writeFileSync(transaction, JSON.stringify({
+    version: 1,
+    id,
+    phase: 'committed',
+    steps: [{ type: 'write', path: target, backup, existed: true }]
+  }));
+
+  const result = run(paths, 'generate');
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(!existsSync(transaction));
+  assert.ok(!existsSync(backup));
 });
 
 test('environment file not found gives clear error', () => {

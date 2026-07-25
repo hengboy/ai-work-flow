@@ -58,6 +58,17 @@ function assertTrustedPath(path, roots) {
   return resolved;
 }
 
+function assertRegularFileIfPresent(path, label) {
+  try {
+    const entry = lstatSync(path);
+    if (entry.isSymbolicLink() || !entry.isFile()) fail(`${label} must be a regular file: ${path}`);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
 function backupPath(path, id, index) {
   return resolve(dirname(path), `.${id}.${index}.ai-work-flow-backup`);
 }
@@ -77,6 +88,7 @@ function validateSteps(steps, roots) {
     if (!step || typeof step !== 'object' || !['write', 'delete'].includes(step.type)) fail(`Invalid transaction step at index ${index}.`);
     if (step.type === 'write' && typeof step.contents !== 'string') fail(`Transaction write step ${index} must have string contents.`);
     const path = assertTrustedPath(step.path, roots);
+    assertRegularFileIfPresent(path, 'Transaction target');
     if (targets.has(path)) fail(`Transaction contains duplicate target: ${path}`);
     targets.add(path);
     return { type: step.type, path, contents: step.contents };
@@ -84,18 +96,21 @@ function validateSteps(steps, roots) {
 }
 
 function validateJournal(value, roots) {
-  if (!value || typeof value !== 'object' || value.version !== TRANSACTION_VERSION || !ID_PATTERN.test(value.id) || !['applying', 'committed'].includes(value.phase)) {
+  if (!value || typeof value !== 'object' || Object.keys(value).some((key) => !['version', 'id', 'phase', 'steps'].includes(key)) || value.version !== TRANSACTION_VERSION || !ID_PATTERN.test(value.id) || !['applying', 'committed'].includes(value.phase)) {
     fail('Transaction journal has an invalid identity or phase.');
   }
-  if (!Array.isArray(value.steps) || !value.steps.length) fail('Transaction journal must contain steps.');
+  if (!Array.isArray(value.steps) || !value.steps.length) fail('Transaction journal must contain a complete plan.');
   const targets = new Set();
   const steps = value.steps.map((step, index) => {
-    if (!step || typeof step !== 'object' || !['write', 'delete'].includes(step.type) || typeof step.existed !== 'boolean') fail(`Transaction journal step ${index} is invalid.`);
+    if (!step || typeof step !== 'object' || Object.keys(step).some((key) => !['type', 'path', 'backup', 'existed'].includes(key)) || !['write', 'delete'].includes(step.type) || typeof step.existed !== 'boolean') fail(`Transaction journal step ${index} is invalid.`);
     const path = assertTrustedPath(step.path, roots);
+    assertRegularFileIfPresent(path, 'Transaction target');
     if (targets.has(path)) fail(`Transaction journal contains duplicate target: ${path}`);
     targets.add(path);
     const backup = backupPath(path, value.id, index);
+    if (step.backup !== backup) fail(`Transaction journal step ${index} has an invalid backup path.`);
     assertTrustedPath(backup, roots);
+    assertRegularFileIfPresent(backup, 'Transaction backup');
     return { ...step, path, backup };
   });
   return { ...value, steps };
@@ -121,6 +136,7 @@ function acquireLock(transactionPath, roots) {
     writeFileSync(path, `${JSON.stringify({ version: TRANSACTION_VERSION, pid: process.pid })}\n`, { flag: 'wx' });
   } catch (error) {
     if (error.code !== 'EEXIST') throw error;
+    assertRegularFileIfPresent(path, 'Transaction lock');
     const owner = readJson(path, 'transaction lock');
     if (!Number.isInteger(owner?.pid) || processIsAlive(owner.pid)) fail(`Generation transaction is already owned by process ${owner?.pid ?? 'unknown'}.`);
     unlinkSync(path);
@@ -136,6 +152,7 @@ function releaseLock(path) {
 function recoverJournal(transactionPath, roots) {
   if (!existsSync(transactionPath)) return false;
   assertTrustedPath(transactionPath, roots);
+  assertRegularFileIfPresent(transactionPath, 'Transaction journal');
   const journal = validateJournal(readJson(transactionPath, 'transaction journal'), roots);
   if (journal.phase === 'committed') {
     for (const step of journal.steps) {
@@ -162,6 +179,7 @@ export function recoverTransaction(transactionPath, { roots } = {}) {
   if (!transactionPath) fail('Transaction path is required.');
   const trusted = trustedRoots(transactionPath, roots);
   assertTrustedPath(transactionPath, trusted);
+  assertRegularFileIfPresent(transactionPath, 'Transaction journal');
   const lock = acquireLock(transactionPath, trusted);
   try {
     return recoverJournal(transactionPath, trusted);
@@ -174,27 +192,35 @@ export function applyTransaction(steps, { transactionPath, roots, dryRun = false
   if (!transactionPath) fail('Transaction path is required.');
   const trusted = trustedRoots(transactionPath, roots);
   assertTrustedPath(transactionPath, trusted);
+  assertRegularFileIfPresent(transactionPath, 'Transaction journal');
   const validatedSteps = validateSteps(steps, trusted);
   if (dryRun) return validatedSteps.map((step) => step.path);
   const lock = acquireLock(transactionPath, trusted);
   try {
     recoverJournal(transactionPath, trusted);
     const id = randomUUID();
-    const transaction = { version: TRANSACTION_VERSION, id, phase: 'applying', steps: [] };
+    const transaction = {
+      version: TRANSACTION_VERSION,
+      id,
+      phase: 'applying',
+      steps: validatedSteps.map((step, index) => ({
+        type: step.type,
+        path: step.path,
+        backup: backupPath(step.path, id, index),
+        existed: existsSync(step.path)
+      }))
+    };
     writeAtomic(transactionPath, `${JSON.stringify(transaction)}\n`);
     for (const [index, step] of validatedSteps.entries()) {
-      const existed = existsSync(step.path);
-      const record = { type: step.type, path: step.path, existed };
-      transaction.steps.push(record);
       writeAtomic(transactionPath, `${JSON.stringify(transaction)}\n`);
       if (interruptAfterRecord === index + 1) {
         const error = new Error(`Injected transaction interruption after record ${index + 1}`);
         error.transactionInterrupted = true;
         throw error;
       }
-      const backup = backupPath(step.path, id, index);
+      const backup = transaction.steps[index].backup;
       assertTrustedPath(backup, trusted);
-      if (existed) renameSync(step.path, backup);
+      if (transaction.steps[index].existed) renameSync(step.path, backup);
       if (interruptAfterBackup === index + 1) {
         const error = new Error(`Injected transaction interruption after backup ${index + 1}`);
         error.transactionInterrupted = true;

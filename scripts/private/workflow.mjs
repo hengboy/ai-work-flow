@@ -7,7 +7,7 @@ import { assertEnvironmentName, assertSafeEnvironmentPaths, environmentPath, loa
 import { globalPaths } from './paths.mjs';
 import { fail, readJson, write } from './shared.mjs';
 import { applyGenerationPlan, planGeneration } from './platform-adapter.mjs';
-import { applyTransaction } from './transaction.mjs';
+import { applyTransaction, recoverTransaction } from './transaction.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const SKILLS_ROOT = resolve(ROOT, 'skills');
@@ -175,7 +175,10 @@ function managedPlatformsStep(paths, platforms) {
 }
 
 function applyGenerationTransaction(plan, paths, dryRun) {
-  if (!plan.length) return [];
+  if (!plan.length) {
+    if (!dryRun) recoverTransaction(paths.generationTransaction, transactionOptions(paths));
+    return [];
+  }
   return applyGenerationPlan(plan, dryRun, transactionOptions(paths));
 }
 
