@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import process from "node:process";
 import { createExecutionOrchestrator } from "../skills/run-matt-spec-to-completion/lib/execution-orchestrator.mjs";
+import { deriveSpecLocation } from "../skills/run-matt-spec-to-completion/lib/paths.mjs";
+import { findMainWorktree } from "../skills/run-matt-spec-to-completion/lib/worktree-lifecycle.mjs";
 import { blockTicket, beginReview, completeReviewFix, completeTicket, decideReview, recordReview, startTickets } from "../skills/run-matt-spec-to-completion/lib/checkpoint.mjs";
 import { currentHead, gitSucceeds, isAncestor } from "../skills/run-matt-spec-to-completion/lib/git.mjs";
 import { selectTicketFrontier } from "../skills/run-matt-spec-to-completion/lib/ticket-frontier.mjs";
@@ -55,9 +57,12 @@ async function run(options) {
   if (options.command === "prepare") {
     const args = { repository, branch: requireOption(options, "branch"), specPath: requireOption(options, "spec"), worktreePath: requireOption(options, "worktree") };
     const orchestrator = createExecutionOrchestrator();
-    const result = await gitSucceeds(repository, ["show-ref", "--verify", "--quiet", `refs/heads/${args.branch}`])
-      ? await orchestrator.resume(args)
-      : await orchestrator.initialize(args);
+    const { featureSlug } = deriveSpecLocation(repository, args.specPath);
+    const result = await withFeatureLock(repository, featureSlug, async () => (
+      await gitSucceeds(repository, ["show-ref", "--verify", "--quiet", `refs/heads/${args.branch}`])
+        ? orchestrator.resume(args)
+        : orchestrator.initialize(args)
+    ));
     return { command: "prepare", status: result.status ?? "initialized", feature_slug: result.executionPlan?.spec.feature_slug, checkpoint: result.checkpoint };
   }
   const featureSlug = requireOption(options, "feature");
@@ -115,6 +120,16 @@ async function run(options) {
       const orchestrator = createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" });
       const integrated = await orchestrator.integrate({ repository, worktree, featureSlug, executionPlan: integrity.executionPlan, checkpoint: integrity.checkpoint });
       return { command: "integrate", status: integrated.status, checkpoint: integrated.checkpoint };
+    });
+  }
+  if (options.command === "cleanup") {
+    return withFeatureLock(repository, featureSlug, async () => {
+      const mainWorktree = await findMainWorktree(repository);
+      if (!mainWorktree) throw new Error("Main worktree is unavailable");
+      const integrity = await stateStore.integrity({ repository: mainWorktree, featureSlug, checkExecutionWorktree: false });
+      const orchestrator = createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" });
+      const cleaned = await orchestrator.completeMergedCleanup({ repository, mainWorktree, featureSlug, executionPlan: integrity.executionPlan, checkpoint: integrity.checkpoint });
+      return { command: "cleanup", status: cleaned.status, checkpoint: cleaned.checkpoint };
     });
   }
   throw new Error(`Unknown command: ${options.command ?? ""}`);

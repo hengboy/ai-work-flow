@@ -13,7 +13,7 @@ import { createExecutionWorktree, ensureExecutionWorktree, findExecutionWorktree
 import { createPreMergeStash } from "./pre-merge-stash.mjs";
 import { createIntegrationLifecycle } from "./integration-lifecycle.mjs";
 import { selectTicketFrontier } from "./ticket-frontier.mjs";
-import { createRuntimeStateStore } from "../../../execution-runtime/state-store.mjs";
+import { createRuntimeStateStore, withFeatureLock } from "../../../execution-runtime/state-store.mjs";
 
 const executionCli = fileURLToPath(new URL("../../../execution-runtime/execution-cli.mjs", import.meta.url));
 
@@ -110,7 +110,12 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
 
   const persist = async (worktree, featureSlug, checkpoint, { verify = true } = {}) => {
     if (!verify) return stateStore.initialize({ repository: worktree, featureSlug, checkpoint });
-    return stateStore.persist({ repository: worktree, featureSlug, checkpoint, checkExecutionWorktree: false });
+    return (await stateStore.transition({
+      repository: worktree,
+      featureSlug,
+      checkExecutionWorktree: false,
+      apply: () => checkpoint,
+    })).checkpoint;
   };
 
   const integrationLifecycle = createIntegrationLifecycle({
@@ -134,11 +139,14 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
   });
 
   return {
-    async initialize({ repository, branch, baseline, worktreePath, specPath }) {
+    async initialize({ repository, branch, baseline, worktreePath, specPath, _locked = false }) {
       baseline ??= await currentHead(repository);
       const mainWorktree = await findMainWorktree(repository);
       if (!mainWorktree) throw new Error("Main worktree is unavailable");
-      deriveSpecLocation(mainWorktree, specPath);
+      const { featureSlug } = deriveSpecLocation(mainWorktree, specPath);
+      if (!_locked) {
+        return withFeatureLock(mainWorktree, featureSlug, () => this.initialize({ repository, branch, baseline, worktreePath, specPath, _locked: true }));
+      }
       const executionPlan = await materialize({ mainWorktree, specPath });
       verifyExecutionPlan(executionPlan);
       await assertSpecArtifactsInMainWorktree({ mainWorktree, executionPlan });
@@ -150,10 +158,13 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
       return { worktree, mainWorktree, executionPlan, checkpoint };
     },
 
-    async resume({ repository, branch, specPath, worktreePath }) {
+    async resume({ repository, branch, specPath, worktreePath, _locked = false }) {
       const mainWorktree = await findMainWorktree(repository);
       if (!mainWorktree) throw new Error("Main worktree is unavailable");
       const { featureSlug } = deriveSpecLocation(mainWorktree, specPath);
+      if (!_locked) {
+        return withFeatureLock(mainWorktree, featureSlug, () => this.resume({ repository, branch, specPath, worktreePath, _locked: true }));
+      }
       const preflight = await requireIntegrity({ mainWorktree, featureSlug, checkExecutionWorktree: false });
       const mainCheckpoint = preflight.checkpoint;
       if (mainCheckpoint.integration.status === "done") {
@@ -267,11 +278,11 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
     },
 
     async integrate(args) {
-      return integrationLifecycle.integrate(args);
+      return withFeatureLock(args.repository, args.featureSlug, () => integrationLifecycle.integrate(args));
     },
 
     async completeMergedCleanup(args) {
-      return integrationLifecycle.completeMergedCleanup(args);
+      return withFeatureLock(args.repository, args.featureSlug, () => integrationLifecycle.completeMergedCleanup(args));
     },
   };
 }

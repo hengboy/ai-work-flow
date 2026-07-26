@@ -86,13 +86,6 @@ export function createRuntimeStateStore() {
         return checkpoint;
       });
     },
-    async persist({ repository, featureSlug, checkpoint, executionWorktree, checkExecutionWorktree = false, allowWorktreeRelocation = false }) {
-      return withFeatureLock(repository, featureSlug, async () => {
-        await integrity({ repository, featureSlug, executionWorktree, checkExecutionWorktree, allowWorktreeRelocation });
-        await writeCheckpoint(repository, featureSlug, checkpoint);
-        return checkpoint;
-      });
-    },
     async transition({ repository, featureSlug, executionWorktree, checkExecutionWorktree = true, apply }) {
       return withFeatureLock(repository, featureSlug, async () => {
         const current = await integrity({ repository, featureSlug, executionWorktree, checkExecutionWorktree });

@@ -58,6 +58,16 @@ test("execution CLI claims once and records only a JSON Handoff envelope", async
   );
 });
 
+test("execution CLI recovers a stale lock but preserves a live lock", async () => {
+  const paths = await fixture();
+  await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
+  const lock = join(paths.root, ".scratch", "cli-flow", "checkpoint.json.runtime.lock");
+  await writeFile(lock, JSON.stringify({ pid: 99999999 }));
+  assert.equal((await invoke(paths, "claim", ["--feature", "cli-flow", "--worktree", paths.worktree])).ticket.id, "01");
+  await writeFile(lock, JSON.stringify({ pid: process.pid }));
+  await assert.rejects(invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "blocked by lock" })), /runtime mutation is already in progress/);
+});
+
 test("execution CLI rejects an absolute legacy worktree without rewriting it", async () => {
   const paths = await fixture();
   await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
@@ -85,6 +95,22 @@ test("execution CLI completes review and integration through the same feature lo
   assert.equal(integrated.status, "complete");
 });
 
+test("review fixes advance directly to integration without another review", async () => {
+  const paths = await fixture();
+  await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
+  await invoke(paths, "claim", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  await writeFile(join(paths.worktree, "fixed.txt"), "fixed\n");
+  await git(paths.worktree, "add", "fixed.txt");
+  await git(paths.worktree, "commit", "-m", "complete ticket");
+  const commit = await git(paths.worktree, "rev-parse", "HEAD");
+  const handoff = { role_id: "full-stack-coder", status: "done", summary: "completed", artifacts: [], checks: [], payload: { ticket_id: "01", status: "done", commits: [commit], tests: [], summary: "completed" } };
+  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff));
+  await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "requires a fix" }));
+  assert.equal((await invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "fix" }))).status, "fixing");
+  assert.equal((await invoke(paths, "complete-review-fix", ["--feature", "cli-flow"])).status, "integrating");
+  await assert.rejects(invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "automatic re-review" })), /Review is not in progress/);
+});
+
 test("prepare rejects a symbolic-link worktree parent before creating a worktree", async () => {
   const paths = await fixture();
   const outside = await mkdtemp(join(tmpdir(), "execution-cli-outside-"));
@@ -95,6 +121,44 @@ test("prepare rejects a symbolic-link worktree parent before creating a worktree
     /symbolic-link parent/,
   );
   assert.equal((await git(paths.root, "worktree", "list", "--porcelain")).split("\n").filter((line) => line.startsWith("worktree ")).length, 1);
+});
+
+test("prepare rejects dangling symbolic links and pre-existing worktree targets", async () => {
+  const paths = await fixture();
+  const dangling = join(paths.root, "dangling-worktrees");
+  await symlink(join(paths.root, "missing-target"), dangling);
+  await assert.rejects(
+    invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", join(dangling, "execution")]),
+    /symbolic-link parent/,
+  );
+  await mkdir(paths.worktree, { recursive: true });
+  await assert.rejects(
+    invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]),
+    /Worktree path already exists/,
+  );
+});
+
+test("prepare rejects an external worktree even when its branch name matches", async () => {
+  const paths = await fixture();
+  const external = await mkdtemp(join(tmpdir(), "execution-cli-external-"));
+  await git(external, "init", "-b", "feat/cli-flow");
+  await git(external, "config", "user.email", "test@example.com");
+  await git(external, "config", "user.name", "Test User");
+  await writeFile(join(external, "README.md"), "external\n");
+  await git(external, "add", ".");
+  await git(external, "commit", "-m", "external fixture");
+  await assert.rejects(
+    invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", external]),
+    /must be inside the repository/,
+  );
+});
+
+test("concurrent prepare calls share one feature lock", async () => {
+  const paths = await fixture();
+  const results = await Promise.allSettled(Array.from({ length: 2 }, () => invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree])));
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.match(results.find((result) => result.status === "rejected").reason.message, /runtime mutation is already in progress/);
+  assert.equal((await git(paths.root, "worktree", "list", "--porcelain")).split("\n").filter((line) => line.startsWith("worktree ")).length, 2);
 });
 
 test("only the runtime state store imports the checkpoint writer", async () => {
