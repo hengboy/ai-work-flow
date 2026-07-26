@@ -19,10 +19,10 @@
         "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
-    "status": { "type": "string", "enum": ["executing", "reviewing", "integrating", "complete"] },
+    "status": { "type": "string", "enum": ["executing", "reviewing", "fixing", "integrating", "complete"] },
     "baseline": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
     "branch": { "type": "string", "minLength": 1 },
-    "worktree": { "type": "string", "pattern": "^(?:/|[A-Za-z]:[\\\\/])" },
+    "worktree": { "type": "string", "pattern": "^(?!/)(?![A-Za-z]:[\\\\/])(?!.*[\\\\\\u0000-\\u001F\\u007F])(?!\\.\\.?/)(?!.*(?:/\\.\\.?/|/\\.\\.?$)).+$" },
     "created_at": { "$ref": "#/$defs/shanghai-date-time" },
     "updated_at": { "$ref": "#/$defs/shanghai-date-time" },
     "tickets": {
@@ -53,7 +53,7 @@
       "type": "object",
       "required": ["status"],
       "additionalProperties": false,
-      "properties": { "status": { "type": "string", "enum": ["pending", "in_progress", "done"] }, "findings_summary": { "type": "string", "minLength": 1 }, "started_at": { "$ref": "#/$defs/shanghai-date-time" }, "completed_at": { "$ref": "#/$defs/shanghai-date-time" } },
+      "properties": { "status": { "type": "string", "enum": ["pending", "in_progress", "awaiting_user", "done"] }, "findings_summary": { "type": "string", "minLength": 1 }, "decision": { "type": "string", "enum": ["approve", "fix"] }, "started_at": { "$ref": "#/$defs/shanghai-date-time" }, "completed_at": { "$ref": "#/$defs/shanghai-date-time" } },
       "allOf": [
         { "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] }, "then": { "required": ["findings_summary", "completed_at"], "properties": { "findings_summary": true, "completed_at": true } } }
       ]
@@ -62,7 +62,7 @@
       "type": "object",
       "required": ["status", "target_branch"],
       "additionalProperties": false,
-      "properties": { "status": { "type": "string", "enum": ["pending", "merged", "done"] }, "target_branch": { "const": "main" }, "execution_head": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }, "main_worktree": { "type": "string" }, "merged_commit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }, "merged_at": { "$ref": "#/$defs/shanghai-date-time" }, "cleaned_up_at": { "$ref": "#/$defs/shanghai-date-time" }, "stash_operation_id": { "type": "string", "minLength": 1 }, "stash_ref": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }, "stash_restore_state": { "type": "string", "enum": ["applying", "restored"] }, "stash_restored": { "type": "boolean", "const": true }, "stash_cleanup_state": { "type": "string", "enum": ["pending", "dropped"] } },
+      "properties": { "status": { "type": "string", "enum": ["pending", "merged", "done"] }, "target_branch": { "const": "main" }, "execution_head": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }, "main_worktree": { "type": "string", "pattern": "^(?!/)(?![A-Za-z]:[\\\\/])(?!.*[\\\\\\u0000-\\u001F\\u007F])(?!\\.\\.?/)(?!.*(?:/\\.\\.?/|/\\.\\.?$)).+$" }, "merged_commit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }, "merged_at": { "$ref": "#/$defs/shanghai-date-time" }, "cleaned_up_at": { "$ref": "#/$defs/shanghai-date-time" }, "stash_operation_id": { "type": "string", "minLength": 1 }, "stash_ref": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }, "stash_restore_state": { "type": "string", "enum": ["applying", "restored"] }, "stash_restored": { "type": "boolean", "const": true }, "stash_cleanup_state": { "type": "string", "enum": ["pending", "dropped"] } },
       "allOf": [
         { "if": { "properties": { "status": { "const": "merged" } }, "required": ["status"] }, "then": { "required": ["execution_head", "main_worktree", "merged_commit", "merged_at"], "properties": { "execution_head": true, "main_worktree": true, "merged_commit": true, "merged_at": true } } },
         { "if": { "properties": { "status": { "const": "done" } }, "required": ["status"] }, "then": { "required": ["execution_head", "main_worktree", "merged_commit", "merged_at", "cleaned_up_at"], "properties": { "execution_head": true, "main_worktree": true, "merged_commit": true, "merged_at": true, "cleaned_up_at": true } } }
@@ -72,7 +72,8 @@
   },
   "allOf": [
     { "if": { "properties": { "status": { "const": "executing" } }, "required": ["status"] }, "then": { "properties": { "review": { "type": "object", "properties": { "status": { "const": "pending" } }, "required": ["status"] }, "integration": { "type": "object", "properties": { "status": { "const": "pending" } }, "required": ["status"] } } } },
-    { "if": { "properties": { "status": { "const": "reviewing" } }, "required": ["status"] }, "then": { "properties": { "review": { "type": "object", "properties": { "status": { "const": "in_progress" } }, "required": ["status"] }, "integration": { "type": "object", "properties": { "status": { "const": "pending" } }, "required": ["status"] } }, "not": { "properties": { "tickets": { "type": "array", "contains": { "type": "object", "properties": { "status": { "not": { "const": "done" } } }, "required": ["status"] } } } } } },
+    { "if": { "properties": { "status": { "const": "reviewing" } }, "required": ["status"] }, "then": { "properties": { "review": { "type": "object", "properties": { "status": { "enum": ["in_progress", "awaiting_user"] } }, "required": ["status"] }, "integration": { "type": "object", "properties": { "status": { "const": "pending" } }, "required": ["status"] } }, "not": { "properties": { "tickets": { "type": "array", "contains": { "type": "object", "properties": { "status": { "not": { "const": "done" } } }, "required": ["status"] } } } } } },
+    { "if": { "properties": { "status": { "const": "fixing" } }, "required": ["status"] }, "then": { "properties": { "review": { "type": "object", "properties": { "status": { "const": "done" }, "decision": { "const": "fix" } }, "required": ["status", "decision"] }, "integration": { "type": "object", "properties": { "status": { "const": "pending" } }, "required": ["status"] } }, "not": { "properties": { "tickets": { "type": "array", "contains": { "type": "object", "properties": { "status": { "not": { "const": "done" } } }, "required": ["status"] } } } } } },
     { "if": { "properties": { "status": { "const": "integrating" } }, "required": ["status"] }, "then": { "properties": { "review": { "type": "object", "properties": { "status": { "const": "done" } }, "required": ["status"] } }, "not": { "properties": { "tickets": { "type": "array", "contains": { "type": "object", "properties": { "status": { "not": { "const": "done" } } }, "required": ["status"] } } } } } },
     { "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] }, "then": { "properties": { "integration": { "type": "object", "properties": { "status": { "const": "done" } }, "required": ["status"] }, "review": { "type": "object", "properties": { "status": { "const": "done" } }, "required": ["status"] } }, "not": { "properties": { "tickets": { "type": "array", "contains": { "type": "object", "properties": { "status": { "not": { "const": "done" } } }, "required": ["status"] } } } } } }
   ]

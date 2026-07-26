@@ -1,10 +1,38 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { checkpointPath, sourceSpecPath } from "./paths.mjs";
 import { toShanghaiTimestamp } from "./time.mjs";
 import { assertCheckpoint } from "./validation.mjs";
 
-export function createCheckpoint({ executionPlan, baseline, branch, worktree, now = new Date() }) {
+const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:[\\/]/;
+
+function assertRelativeRepositoryPath(path, field) {
+  if (typeof path !== "string" || path.length === 0 || /[\\\u0000-\u001f\u007f]/.test(path) || isAbsolute(path) || WINDOWS_ABSOLUTE_PATH.test(path)) {
+    throw new Error(`${field} must be a non-empty repository-relative path`);
+  }
+  if (path !== "." && path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new Error(`${field} must not contain relative traversal segments`);
+  }
+  return path;
+}
+
+export function repositoryRelativePath(repository, path) {
+  if (typeof path !== "string" || path.length === 0 || /[\u0000-\u001f\u007f]/.test(path)) {
+    throw new Error("Checkpoint path must be a non-empty path without control characters");
+  }
+  if (WINDOWS_ABSOLUTE_PATH.test(path) && !isAbsolute(path)) {
+    throw new Error("Checkpoint paths must use the host platform path format");
+  }
+  const root = resolve(repository);
+  const target = isAbsolute(path) ? resolve(path) : resolve(root, path);
+  return assertRelativeRepositoryPath(relative(root, target).split(sep).join("/") || ".", "Checkpoint path");
+}
+
+export function resolveRepositoryPath(repository, path) {
+  return resolve(resolve(repository), repositoryRelativePath(repository, path));
+}
+
+export function createCheckpoint({ executionPlan, baseline, branch, worktree, repository = worktree, now = new Date() }) {
   now = toShanghaiTimestamp(now);
   return assertCheckpoint({
     version: 1,
@@ -12,7 +40,7 @@ export function createCheckpoint({ executionPlan, baseline, branch, worktree, no
     status: "executing",
     baseline,
     branch,
-    worktree,
+    worktree: repositoryRelativePath(repository, worktree),
     created_at: now,
     updated_at: now,
     tickets: executionPlan.tickets.map((ticket) => ({ id: ticket.id, status: "pending" })),
@@ -26,7 +54,9 @@ export async function writeCheckpoint(worktree, featureSlug, checkpoint) {
   verifyCheckpointShape(checkpoint);
   const path = join(worktree, checkpointPath(featureSlug));
   await mkdir(join(worktree, ".scratch", featureSlug), { recursive: true });
-  await writeFile(path, `${JSON.stringify(checkpoint, null, 2)}\n`);
+  const temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(temporaryPath, `${JSON.stringify(checkpoint, null, 2)}\n`);
+  await rename(temporaryPath, path);
   return path;
 }
 
@@ -35,7 +65,10 @@ export async function readCheckpoint(worktree, featureSlug) {
 }
 
 export function verifyCheckpointShape(checkpoint) {
-  return assertCheckpoint(checkpoint);
+  assertCheckpoint(checkpoint);
+  assertRelativeRepositoryPath(checkpoint.worktree, "Checkpoint worktree");
+  if (checkpoint.integration?.main_worktree) assertRelativeRepositoryPath(checkpoint.integration.main_worktree, "Checkpoint main worktree");
+  return checkpoint;
 }
 
 function revise(checkpoint, event, detail, now) {
@@ -89,10 +122,11 @@ export function blockTicket(checkpoint, ticketId, error, now = new Date()) {
   return completeTransition(next);
 }
 
-export function relocateCheckpoint(checkpoint, worktree, now = new Date()) {
+export function relocateCheckpoint(checkpoint, worktree, now = new Date(), repository = worktree) {
   now = toShanghaiTimestamp(now);
-  const next = revise(checkpoint, "worktree-relocated", worktree, now);
-  next.worktree = worktree;
+  const relativeWorktree = repositoryRelativePath(repository, worktree);
+  const next = revise(checkpoint, "worktree-relocated", relativeWorktree, now);
+  next.worktree = relativeWorktree;
   return completeTransition(next);
 }
 
@@ -116,7 +150,35 @@ export function completeReview(checkpoint, findingsSummary, now = new Date()) {
   return completeTransition(next);
 }
 
-export function markMerged(checkpoint, { executionHead, mainWorktree, mergedCommit, stashRef }, now = new Date()) {
+export function recordReview(checkpoint, findingsSummary, now = new Date()) {
+  now = toShanghaiTimestamp(now);
+  const next = revise(checkpoint, "review-recorded", findingsSummary, now);
+  if (!['in_progress', 'awaiting_user'].includes(next.review.status)) throw new Error("Review is not in progress");
+  next.review = { ...next.review, status: "awaiting_user", findings_summary: findingsSummary, completed_at: now };
+  return completeTransition(next);
+}
+
+export function decideReview(checkpoint, decision, now = new Date()) {
+  now = toShanghaiTimestamp(now);
+  if (!["approve", "fix"].includes(decision)) throw new Error("Review decision must be approve or fix");
+  const next = revise(checkpoint, "review-decision", decision, now);
+  if (next.review.status !== "awaiting_user") throw new Error("Review is not awaiting a user decision");
+  next.review = { ...next.review, status: "done", decision };
+  next.status = decision === "approve" ? "integrating" : "fixing";
+  return completeTransition(next);
+}
+
+export function completeReviewFix(checkpoint, now = new Date()) {
+  now = toShanghaiTimestamp(now);
+  const next = revise(checkpoint, "review-fix-completed", "user-approved review fixes completed", now);
+  if (next.status !== "fixing" || next.review.status !== "done" || next.review.decision !== "fix") {
+    throw new Error("A user-approved review fix is required before integration");
+  }
+  next.status = "integrating";
+  return completeTransition(next);
+}
+
+export function markMerged(checkpoint, { executionHead, mainWorktree, mergedCommit, stashRef, repository = mainWorktree }, now = new Date()) {
   now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "merged", mergedCommit, now);
   if (next.status !== "integrating") throw new Error("Checkpoint is not integrating");
@@ -125,7 +187,7 @@ export function markMerged(checkpoint, { executionHead, mainWorktree, mergedComm
     status: "merged",
     target_branch: "main",
     execution_head: executionHead,
-    main_worktree: mainWorktree,
+    main_worktree: repositoryRelativePath(repository, mainWorktree),
     merged_commit: mergedCommit,
     merged_at: now,
     ...(next.integration.stash_operation_id ? { stash_operation_id: next.integration.stash_operation_id } : {}),

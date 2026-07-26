@@ -1,5 +1,5 @@
 import { readExecutionPlan, verifyExecutionPlan } from "./spec-intake.mjs";
-import { readCheckpoint, verifyCheckpointShape } from "./checkpoint.mjs";
+import { readCheckpoint, resolveRepositoryPath, verifyCheckpointShape } from "./checkpoint.mjs";
 import { git, gitSucceeds, isAncestor } from "./git.mjs";
 import { sourceSpecPath } from "./paths.mjs";
 import { resolve } from "node:path";
@@ -8,10 +8,22 @@ function diagnostic(code, detail) {
   return { code, detail };
 }
 
+async function worktreeIdentity(worktree) {
+  const root = resolve(await git(worktree, ["rev-parse", "--show-toplevel"]));
+  const commonDir = resolve(root, await git(worktree, ["rev-parse", "--git-common-dir"]));
+  return { root, commonDir };
+}
+
 export async function verifyCheckpointIntegrity({ worktree, executionWorktree, featureSlug, checkExecutionWorktree = true, allowWorktreeRelocation = false }) {
   const diagnostics = [];
   let executionPlan;
   let checkpoint;
+  let mainWorktree;
+  try {
+    mainWorktree = await worktreeIdentity(worktree);
+  } catch (error) {
+    return { status: "invalid", diagnostics: [diagnostic("repository", error.message)] };
+  }
   try {
     executionPlan = verifyExecutionPlan(await readExecutionPlan(worktree, featureSlug));
   } catch (error) {
@@ -43,10 +55,21 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
     }
   } else if (checkExecutionWorktree) {
     if (!executionWorktree) diagnostics.push(diagnostic("execution-worktree", "required before integration"));
-    else if (!allowWorktreeRelocation && checkpoint.worktree !== resolve(executionWorktree)) diagnostics.push(diagnostic("worktree-path", checkpoint.worktree));
-    if (executionWorktree && await git(executionWorktree, ["branch", "--show-current"]) !== checkpoint.branch) {
-      diagnostics.push(diagnostic("execution-branch", checkpoint.branch));
+    else {
+      try {
+        const execution = await worktreeIdentity(executionWorktree);
+        if (execution.commonDir !== mainWorktree.commonDir) diagnostics.push(diagnostic("execution-worktree-repository", execution.root));
+        if (!allowWorktreeRelocation && resolveRepositoryPath(mainWorktree.root, checkpoint.worktree) !== execution.root) {
+          diagnostics.push(diagnostic("worktree-path", checkpoint.worktree));
+        }
+        if (await git(executionWorktree, ["branch", "--show-current"]) !== checkpoint.branch) diagnostics.push(diagnostic("execution-branch", checkpoint.branch));
+      } catch (error) {
+        diagnostics.push(diagnostic("execution-worktree", error.message));
+      }
     }
+  }
+  if (integrationRecord && resolveRepositoryPath(mainWorktree.root, checkpoint.integration.main_worktree) !== mainWorktree.root) {
+    diagnostics.push(diagnostic("main-worktree-path", checkpoint.integration.main_worktree));
   }
   if (!await gitSucceeds(worktree, ["rev-parse", "--verify", `${checkpoint.baseline}^{commit}`])) {
     diagnostics.push(diagnostic("baseline-missing", checkpoint.baseline));
