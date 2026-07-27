@@ -1,48 +1,50 @@
 ---
 name: git-commit
-description: Generate standard Gitmoji + Conventional Commit messages and create one scoped local Git commit after implementation validation.
+description: 生成符合 Conventional Commits 1.0.0 的标准提交信息，并在实现验证后创建一个受控的本地 Git 提交。
 ---
 
-# Scoped Local Commit
+# 受控本地提交
 
-Generate a standard Gitmoji + Conventional Commit message, then create one local commit only for the exact paths supplied in the implementation handoff. This skill permits the narrow required Git operation while rejecting destructive or remote-affecting operations.
+生成符合 Conventional Commits 1.0.0 的标准提交信息，然后仅对实现交接中的精确路径创建一个本地提交。本技能只允许必要且范围受控的 Git 操作，并禁止破坏性或影响远程仓库的操作。
 
-## Required input
+## 必要输入
 
-- A confirmed implementation scope.
-- `base_commit`, initial `git status --short`, and exact `changed_paths` from Full Stack Coder.
-- Successful validation results.
+- 已确认的实现范围。
+- Full Stack Coder 提供的 `base_commit`、初始 `git status --short` 和精确 `changed_paths`。
+- 已成功执行的验证结果。
 
-## Procedure
+## 执行步骤
 
-1. Confirm the current `HEAD` exactly equals `base_commit` and the initial status was empty.
-2. Derive the current changed-path set from the de-duplicated union of `git diff --name-only <base_commit>` and `git ls-files --others --exclude-standard`. Confirm it exactly matches `changed_paths`; stop on an empty list or an unlisted change.
-3. Generate the commit message using the required format below.
-4. Stage only the declared paths with `git add -- <changed_paths>`. Verify `git diff --cached --name-only` exactly equals the declared list and that the staged diff is non-empty.
-5. Create one local commit and report its full SHA plus `git status --short`.
+1. 确认当前 `HEAD` 精确等于 `base_commit`，且初始状态为空。
+2. 使用 `git diff --name-only <base_commit>` 与 `git ls-files --others --exclude-standard` 的去重并集生成当前变更路径集。确认它与 `changed_paths` 完全一致；清单为空或存在未声明路径时停止。
+3. 按以下格式生成提交信息。
+4. 只能通过 `git add -- <changed_paths>` 暂存声明的路径。确认 `git diff --cached --name-only` 与声明清单完全一致，且暂存差异非空。
+5. 创建一个本地提交，并报告完整 SHA 与 `git status --short`。
 
-## Commit Message Format
+## 提交信息格式
 
-Use this structure:
+使用 Conventional Commits 1.0.0 结构：
 
 ```text
-:emoji: 中文动词描述
+<type>[optional scope][optional !]: <description>
 
-可选正文
+[optional body]
 
-可选页脚
+[optional footer(s)]
 ```
 
-- The subject must begin with exactly one ASCII Gitmoji code and a space, use Chinese and an action verb, be no longer than 50 characters, and not end with a period. An optional scope may precede the action, for example `:bug: [api] 修复超时重试`.
-- Use `:sparkles:` for features, `:bug:` for fixes, `:memo:` for documentation, `:art:` for style, `:recycle:` for refactors, `:zap:` for performance, `:white_check_mark:` for tests, `:package:` for build or dependencies, `:construction_worker:` for CI, `:wrench:` for chores, and `:rewind:` for reverts.
-- Add a body only when it explains motivation or a behavior change. Add `BREAKING CHANGE:` for incompatible changes and `Closes #<issue>` or `Fixes #<issue>` when applicable.
-- Never add tool attribution such as `Co-Authored-By`.
+- 每个提交必须以类型开头，随后可选范围、可选 `!`、英文半角冒号和一个空格。使用 `feat` 表示新增功能，使用 `fix` 表示修复 bug。
+- 需要时使用 `build`、`chore`、`ci`、`docs`、`style`、`refactor`、`perf` 或 `test` 等类型。范围必须是圆括号包围的代码区域名，例如 `feat(parser): 支持数组解析`。
+- 描述必须紧跟 `: `，简要概括改动，并使用仓库既有语言。正文可选，必须与描述之间空一行，用于说明上下文或行为变化。
+- 页脚可选，必须在正文后空一行。每行页脚使用 trailer 格式：`Token: value` 或 `Token #value`。例如 `Refs: #123`。
+- 破坏性变更必须使用类型/范围后的 `!`，或在页脚使用大写 `BREAKING CHANGE: <description>`。使用 `!` 时，描述应说明破坏性变更。
+- 不得添加 `Co-Authored-By` 等工具归属信息。
 
-## Guardrails
+## 安全边界
 
-- Never run `git push`, `git reset --hard`, `git clean`, `git branch -D`, `git checkout .`, `git restore .`, `git stash`, or `git commit --amend`.
-- Never use `git add .`, `git add -A`, or a wildcard to expand the scope.
-- Do not request another user authorization for a confirmed implementation scope. Stop only when the declared scope cannot be verified safely.
+- 不得运行 `git push`、`git reset --hard`、`git clean`、`git branch -D`、`git checkout .`、`git restore .`、`git stash` 或 `git commit --amend`。
+- 不得使用 `git add .`、`git add -A` 或通配符扩大范围。
+- 已确认的实现范围不得再次请求用户授权；只有无法安全验证声明范围时才停止。
 
 ## 回复格式
 

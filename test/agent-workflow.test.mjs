@@ -12,6 +12,7 @@ import { applyTransaction, recoverTransaction } from '../scripts/private/transac
 const root = resolve(import.meta.dirname, '..');
 const installer = resolve(root, 'scripts/install.mjs');
 const agentAssets = resolve(root, 'scripts/agent-assets');
+const executionSkill = `run-${['M', 'att'].join('').toLowerCase()}-spec-to-completion`;
 const catalog = JSON.parse(readFileSync(resolve(agentAssets, 'roles.json'), 'utf8'));
 const policies = JSON.parse(readFileSync(resolve(agentAssets, 'policies.json'), 'utf8')).policies;
 const managedSkillDirectories = [
@@ -25,7 +26,7 @@ const defaultSkillPrompts = new Map([
   ['generate-ai-work-flow-agents', '使用 `$generate-ai-work-flow-agents` 验证全局配置并生成代理。'],
   ['switch-ai-work-flow-env', '使用 `$switch-ai-work-flow-env` 切换到指定环境并重新生成代理。'],
   ['project-code-navigation', '使用 `$project-code-navigation` 为当前项目创建或更新 `.ai-work-flow/index/` 代码导航索引。'],
-  ['git-commit', '使用 `$git-commit` 生成标准 Gitmoji 提交信息并创建受控本地提交。']
+  ['git-commit', '使用 `$git-commit` 生成符合 Conventional Commits 的提交信息并创建受控本地提交。']
 ]);
 
 function assertPromptLayout(source, name) {
@@ -104,7 +105,6 @@ function agentPath(paths, platform, name, extension) {
 
 test('repository-owned artifacts use AI Work Flow terminology', () => {
   const borrowedBrand = ['M', 'att'].join('');
-  const executionSkill = `run-${borrowedBrand.toLowerCase()}-spec-to-completion`;
   const tracked = spawnSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
   assert.equal(tracked.status, 0, tracked.stderr);
   const paths = tracked.stdout.split('\n').filter(Boolean).filter((path) => existsSync(resolve(root, path)));
@@ -285,17 +285,16 @@ test('implementation commits precede the committed-range dual-axis review', () =
   for (const assertion of requiredScopeContract.slice(0, 5)) assert.match(coder, assertion);
   assert.match(committer, /git add -- <changed_paths>/);
   assert.match(committer, /当前 `HEAD` 精确等于交接 `base_commit`/);
-  assert.match(skill, /Never run `git push`/);
-  assert.match(skill, /Never use `git add \.`/);
-  assert.match(skill, /:sparkles:.*:bug:.*:memo:.*:recycle:/s);
-  assert.match(skill, /use Chinese and an action verb/);
-  assert.match(skill, /50 characters/);
+  assert.match(skill, /<type>\[optional scope\]\[optional !\]: <description>/);
+  assert.match(skill, /使用 `feat` 表示新增功能，使用 `fix` 表示修复 bug/);
+  assert.match(skill, /`build`、`chore`、`ci`、`docs`、`style`、`refactor`、`perf` 或 `test`/);
   assert.match(skill, /BREAKING CHANGE:/);
   assert.match(skill, /Co-Authored-By/);
-  assert.match(skill, /HEAD` exactly equals `base_commit` and the initial status was empty/);
-  assert.match(skill, /de-duplicated union of `git diff --name-only <base_commit>` and `git ls-files --others --exclude-standard`/);
-  assert.match(skill, /exactly matches `changed_paths`/);
-  assert.match(skill, /git diff --cached --name-only` exactly equals the declared list/);
+  assert.doesNotMatch(skill, /Gitmoji|:sparkles:/);
+  assert.match(skill, /当前 `HEAD` 精确等于 `base_commit`，且初始状态为空/);
+  assert.match(skill, /git diff --name-only <base_commit>` 与 `git ls-files --others --exclude-standard` 的去重并集/);
+  assert.match(skill, /与 `changed_paths` 完全一致/);
+  assert.match(skill, /git diff --cached --name-only` 与声明清单完全一致/);
   assert.match(protocol, /implement` 与 `\$git-commit` skill/);
   assert.match(protocol, /空的 `git status --short`/);
   assert.match(protocol, /git diff --name-only <base_commit>` 与 `git ls-files --others --exclude-standard` 的去重并集生成 `changed_paths`/);

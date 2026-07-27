@@ -6,7 +6,7 @@ Canonical runtime 在主仓库的 `main` 维护执行记录：canonical `.scratc
 
 执行计划保存 canonical Spec 和 Ticket 的仓库相对引用、派生依赖与 revision；正文始终留在 Git 中的 `spec.md` 和 Issue 文件。Checkpoint 引用 canonical Spec 路径和执行计划 revision，worktree 与 main worktree 只保存仓库相对路径。旧绝对路径或遍历格式明确拒绝且不迁移。schema 是持久化格式的权威，每次读写都必须验证。
 
-所有 Ticket完成、最终评审通过、合并、worktree 清理和 stash 恢复成功后，Full Stack Coder 才调用 `git-commit` 生成非空 Gitmoji + Conventional Commit message，并将执行记录作为一次汇总提交。`generateCommitMessage({ mainWorktree, featureSlug, executionPlan, files })` 缺失或返回空消息时拒绝提交。若提交在 terminal Checkpoint 写入后中断，恢复会只补做该执行记录提交，绝不把未提交记录视为完成。
+所有 Ticket完成、最终评审通过、合并、worktree 清理和 stash 恢复成功后，Full Stack Coder 才调用 `git-commit` 生成非空 Conventional Commits 1.0.0 提交信息，并将执行记录作为一次汇总提交。`generateCommitMessage({ mainWorktree, featureSlug, executionPlan, files })` 缺失或返回空消息时拒绝提交。若提交在 terminal Checkpoint 写入后中断，恢复会只补做该执行记录提交，绝不把未提交记录视为完成。
 
 ## Module 边界
 

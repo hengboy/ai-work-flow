@@ -1,4 +1,4 @@
 interface:
   display_name: "受控本地提交"
-  short_description: "生成标准提交信息并创建受控本地提交"
-  default_prompt: "使用 `$git-commit` 生成标准 Gitmoji 提交信息并创建受控本地提交。"
+  short_description: "生成 Conventional Commits 提交信息并创建受控本地提交"
+  default_prompt: "使用 `$git-commit` 生成符合 Conventional Commits 的提交信息并创建受控本地提交。"
