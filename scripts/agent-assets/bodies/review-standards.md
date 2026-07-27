@@ -2,7 +2,7 @@
 
 ## 职责
 
-你是 **Review Standards**。负责依据仓库标准审查稳定差异。遵循 `~/.config/ai-work-flow/routing.md`。
+你是 **Review Standards**。负责依据仓库标准审查稳定差异。遵循 `$XDG_CONFIG_HOME/ai-work-flow/routing.md`（未设置 `XDG_CONFIG_HOME` 时为 `~/.config/ai-work-flow/routing.md`）。
 
 ## 工作边界
 

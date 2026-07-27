@@ -12,19 +12,7 @@
 
 处理项目代码前，必须使用 `$project-code-navigation` 先读取 `.ai-work-flow/index/feature-navigation.md`，再按目标功能只读取相关索引。索引命中时直接读取记录的代码，禁止全局文件检索或搜索无关路径；仅在索引缺失、未覆盖目标功能或路径无法定位时，才委派 **File Explorer** 发现真实入口。**Full Stack Coder** 必须在同一轮改动中维护索引：新增文件，或文件移动、重命名、拆分、合并、删除、主职责变化，以及用户可见功能入口、路由或 API 变化时，更新 `.ai-work-flow/index/` 的对应文件；缺少索引的新功能视为未完成。项目导航只存放在 `.ai-work-flow/index/`，不得创建 `.agents/skills/project-code-navigation/` 或改写 `AGENTS.md`、`CLAUDE.md`。
 
-**Code Reviewer** 只有在差异稳定后才能并行启动 **Review Standards** 和 **Review Spec**，并分别保留两者的发现。开始前，它检查当前平台是否已安装 Matt Pocock Skills 的 `$code-review`：存在时按该 skill 的双轴审查流程向这两个 AI Work Flow 角色下发任务；不存在时使用 AI Work Flow 内置双轴提示词。两种路径都不得调用通用或平台原生子代理，也不得下载、安装 matt skills。其他角色不得委派工作。审查完成后，**Orchestrator** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
-
-### Matt 审查子任务契约
-
-已安装的 Matt `$code-review` 只能通过以下 AI Work Flow 子任务映射执行：Standards 映射为 **Review Standards**，Spec 映射为 **Review Spec**。Matt skill 提供双轴流程和审查上下文，不能指定或替换子代理身份、工具、权限、委派层级或回复格式。
-
-派发前完全遵循 Matt 的预处理顺序：用户未提供固定点时先询问；用 `git rev-parse <fixed-point>` 验证基准，并确认唯一的 `git diff <fixed-point>...HEAD` 命令非空；同时记录 `git log <fixed-point>..HEAD --oneline` 提交清单。规格按以下顺序寻找：提交信息的 issue 引用、用户提供的路径、与分支或功能匹配的 `docs/`、`specs/` 或 `.scratch/` 文件。仍找不到时先询问用户；用户确认没有规格才跳过 **Review Spec**，在最终报告写明“no spec available”，不得派发通用子代理、内置 Spec 任务或虚构规格。
-
-存在规格时，两个角色必须在同一条派发消息中并行启动。每个派发任务必须包含审查轴、完整 diff 命令和提交清单。**Review Standards** 还必须收到已发现的标准来源文件、完整的 Fowler 异味基准，以及以下审查 brief：“请按相关文件或代码块报告：(a) 所有违反已文档化标准的地方，引用标准的文件和规则；(b) 发现的任何基线异味，命名并引用对应代码块。区分硬性违规和判断性意见：违反文档化标准可以是硬性问题，但基线异味始终是判断性意见，且文档化的仓库标准优先于基线。忽略已由工具强制执行的内容。不超过 400 字。”
-
-**Review Spec** 还必须收到规格来源路径或已获取的完整规格内容，以及以下审查 brief：“请报告：(a) 规格要求但缺失或不完整的内容；(b) diff 中未被要求的行为（范围蔓延）；(c) 看似实现但实现错误的要求。每项发现均引用相应的规格行。不超过 400 字。”
-
-优先级从高到低为：AI Work Flow 的 Policy 与角色工作边界（包括只读、禁止再委派和回复格式）、Matt skill 的双轴流程、AI Work Flow 内置双轴提示词。两个角色的报告分别置于 `## Standards` 和 `## Spec` 下，原样或轻度清理后呈现；**Code Reviewer** 不得合并、重排或跨轴比较结论，并以一行分别给出每轴的发现数及该轴最严重问题。
+**Code Reviewer** 只有在差异稳定后才能并行启动 **Review Standards** 和 **Review Spec**，并分别保留两者的发现。其他角色不得委派工作。审查完成后，**Orchestrator** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
 
 ### 浏览器自动化门禁
 
@@ -34,13 +22,7 @@
 
 ### Policy 与能力边界
 
-角色能力以 `agent-assets/policies.json` 为准。生成结果必须把每项能力标记为 `enforced`、`instruction-only` 或 `unsupported`；平台不能表达的限制必须告警，不得宣称已强制执行。若配置请求的平台能力与声明的 Policy 冲突，生成必须失败。Codex 对 `filesystem: none` 只能降级为 `read-only`，必须报告 `unsupported` 并告警；Codex 的只读/可写隔离与 OpenCode 的 filesystem 隔离可强制执行。Claude Code 的细粒度 shell、网络、Git 与写入范围目前仅能通过指令约束。
-
-### 风险路由
-
-项目任务默认由 **Orchestrator** 路由，纯问答或用户明确指定原生模式可绕过。路由分为四档：纯问答可直接回答；只读发现可委派 **File Explorer**；局部、可逆写入需要明确方案或已有授权；跨模块、破坏性、外部交互、并发写入、提交或发布属于高风险，必须先取得明确确认。导航索引是优先证据：索引缺失或过期时允许在目标 module 内聚焦搜索，只有跨 module 发现才委派 **File Explorer**。
-
-同一 worktree 只能有一个写入者。只有独立 worktree、明确文件所有权且合并顺序确定时才可并行。共享或脏 worktree 的提交前必须展示最终文件快照并确认一次；AI 创建、基线干净的隔离 worktree 可按已批准方案自动提交。
+角色能力以 `agent-assets/policies.json` 为准。生成结果必须把每项能力标记为 `enforced`、`instruction-only` 或 `unsupported`；平台不能表达的限制必须告警，不得宣称已强制执行。Codex 的 `filesystem: none` 只能降级为 `read-only`，必须标记为 `unsupported`；Codex 的委派约束属于指令约束而非平台强制能力。
 
 ### 子代理故障与重试
 
@@ -66,7 +48,7 @@ Orchestrator 只能原样转交首次清单与用户授权原文，Git Committer
 
 ### 最终审查去重
 
-完成所需 Git 与测试命令验证的 **Code Reviewer** 双轴审查才是最终独立审查。工具不可用或命令被拒绝导致的审查不算完成；审查能力基准恢复后可重新委派一次。同一会话中，同一稳定差异的已完成审查不得再次委派任何审查角色。用户确认的评审修复不得触发自动复审：修复完成后直接整合。只有用户明确要求新的独立审查，且代码、测试、规格或审查能力基准发生变化时，才可重新委派 **Code Reviewer**；重新审查仍只执行一次双轴审查。
+每个阶段先完成实现和测试验证并创建 review commit；**Code Reviewer** 仅对从已解析 fixed point 到该 review commit 的已提交差异执行一次 Standards + Spec 双轴审查，绝不审查未提交内容。完成所需 Git 与测试命令验证的双轴审查才是最终独立审查。工具不可用或命令被拒绝导致的审查不算完成；审查能力基准恢复后可重新委派一次。同一会话中，同一稳定差异的已完成审查不得再次委派任何审查角色。评审发现必须先报告用户，由用户决定是否修复以及修复哪些项；用户确认的修复提交通过阶段验证后直接整合，不自动复审相同范围。只有用户明确要求新的独立审查，且代码、测试、规格或审查能力基准发生变化时，才可重新委派 **Code Reviewer**；重新审查仍只执行一次双轴审查。
 
 ## 回复格式
 

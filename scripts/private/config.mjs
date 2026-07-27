@@ -42,7 +42,10 @@ function assertNoSymbolicLinks(root, path) {
 
 export function assertSafeEnvironmentPaths(paths) {
   const trustedRoot = paths.configHome ?? resolve(paths.dir, '..');
+  assertNoSymbolicLinks(trustedRoot, paths.dir);
   assertNoSymbolicLinks(trustedRoot, paths.environments);
+  assertNoSymbolicLinks(trustedRoot, paths.defaultEnvironment);
+  assertNoSymbolicLinks(trustedRoot, paths.environmentMarker);
 }
 
 function assertFiniteJson(value, path = 'configuration') {
@@ -54,7 +57,7 @@ function assertFiniteJson(value, path = 'configuration') {
 
 function validateKnownShape(config, roles, { overlay }) {
   const errors = [];
-  if (!isPlainObject(config) || (config.version !== undefined && config.version !== 1) || !isPlainObject(config.roles)) {
+  if (!isPlainObject(config) || config.version !== 1 || !isPlainObject(config.roles)) {
     return ['Configuration must contain version: 1 and a roles object.'];
   }
   for (const key of Object.keys(config)) if (!['version', 'roles'].includes(key)) errors.push(`Unknown configuration field: ${key}.`);
@@ -83,16 +86,28 @@ function validateKnownShape(config, roles, { overlay }) {
     }
   }
   if (!overlay) {
-    for (const role of roles) if (!Object.hasOwn(config.roles, role.id)) errors.push(`Missing configuration for role: ${role.id}.`);
+    for (const role of roles) {
+      const roleConfig = config.roles[role.id];
+      if (!Object.hasOwn(config.roles, role.id)) {
+        errors.push(`Missing configuration for role: ${role.id}.`);
+        continue;
+      }
+      for (const [platform, fields] of Object.entries(PLATFORM_FIELDS)) {
+        const settings = roleConfig?.[platform];
+        if (!isPlainObject(settings)) {
+          errors.push(`${role.id}.${platform} must be an object.`);
+          continue;
+        }
+        for (const field of fields) if (!Object.hasOwn(settings, field)) errors.push(`Missing configuration field: ${role.id}.${platform}.${field}.`);
+      }
+    }
   }
   return errors;
 }
 
 function mergePlatform(base, override, platform) {
   if (override === undefined) return structuredClone(base);
-  if (platform === 'opencode' && Object.hasOwn(override, 'options')) {
-    return { ...base, ...override, options: override.options };
-  }
+  if (platform === 'opencode' && Object.hasOwn(override, 'options')) return { ...base, ...override, options: override.options };
   return { ...base, ...override };
 }
 
@@ -102,9 +117,7 @@ export function mergeConfiguration(base, overlay = { roles: {} }) {
   for (const [roleId, baseRole] of Object.entries(base.roles)) {
     const overrideRole = overlay.roles?.[roleId] ?? {};
     roles[roleId] = {};
-    for (const platform of Object.keys(PLATFORM_FIELDS)) {
-      roles[roleId][platform] = mergePlatform(baseRole[platform], overrideRole[platform], platform);
-    }
+    for (const platform of Object.keys(PLATFORM_FIELDS)) roles[roleId][platform] = mergePlatform(baseRole[platform], overrideRole[platform], platform);
   }
   return { version: 1, roles };
 }
@@ -139,7 +152,7 @@ function validateFinal(config, roles, platforms = Object.keys(PLATFORM_FIELDS)) 
   return { errors, warnings };
 }
 
-export function validateConfiguration({ base, overlay, roles, platforms, requireDefault = false }) {
+export function validateConfiguration({ base, overlay, roles, platforms }) {
   const errors = [];
   try {
     assertFiniteJson(base, 'default configuration');
@@ -149,7 +162,6 @@ export function validateConfiguration({ base, overlay, roles, platforms, require
   }
   errors.push(...validateKnownShape(base, roles, { overlay: false }));
   if (overlay) errors.push(...validateKnownShape(overlay, roles, { overlay: true }));
-  if (requireDefault && overlay) errors.push('Default environment cannot be an overlay.');
   if (errors.length) return { errors, warnings: [], config: null };
   const config = mergeConfiguration(base, overlay);
   const final = validateFinal(config, roles, platforms);
@@ -170,10 +182,21 @@ function readVerifiedEnvironment(path, paths) {
   return readJson(path);
 }
 
+function readEnvironmentMarker(paths) {
+  if (!existsSync(paths.environmentMarker)) return 'default';
+  const entry = lstatSync(paths.environmentMarker);
+  if (entry.isSymbolicLink()) fail(`Environment marker must not be a symbolic link: ${paths.environmentMarker}`);
+  if (!entry.isFile()) fail(`Environment marker must be a regular file: ${paths.environmentMarker}`);
+  const name = readFileSync(paths.environmentMarker, 'utf8').trim();
+  assertEnvironmentName(name);
+  return name;
+}
+
 export function loadResolvedConfiguration({ paths, roles, platforms, environmentName = null }) {
   assertSafeEnvironmentPaths(paths);
   const base = readVerifiedEnvironment(paths.defaultEnvironment, paths);
-  const name = environmentName ?? (existsSync(paths.environmentMarker) ? readFileSync(paths.environmentMarker, 'utf8').trim() : 'default');
+  const markerName = readEnvironmentMarker(paths);
+  const name = environmentName ?? markerName;
   if (name !== 'default') assertEnvironmentName(name);
   const overlay = name === 'default' ? null : readVerifiedEnvironment(environmentPath(paths, name), paths);
   const validation = validateConfiguration({ base, overlay, roles, platforms });

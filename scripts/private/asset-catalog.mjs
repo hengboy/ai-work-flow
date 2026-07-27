@@ -26,6 +26,9 @@ function validateRole(role, errors) {
   for (const property of ['name', 'description', 'kind', 'policy']) {
     if (typeof role[property] !== 'string' || !role[property]) errors.push(`Role ${role.id} must have a non-empty ${property}.`);
   }
+  for (const property of Object.keys(role)) {
+    if (!['id', 'name', 'description', 'kind', 'policy', 'delegates', 'tools'].includes(property)) errors.push(`Role ${role.id} has unknown field: ${property}.`);
+  }
   if (!Array.isArray(role.delegates)) errors.push(`Role ${role.id}.delegates must be an array.`);
   if (!Array.isArray(role.tools)) errors.push(`Role ${role.id}.tools must be an array.`);
 }
@@ -37,32 +40,34 @@ function validatePolicy(name, policy, errors) {
   }
   for (const [capability, value] of Object.entries(policy)) {
     const values = POLICY_CAPABILITIES[capability];
-    if (!values) {
-      errors.push(`Policy ${name} has unknown capability: ${capability}.`);
-      continue;
-    }
-    if (!values.has(value)) errors.push(`Policy ${name}.${capability} must be one of: ${[...values].join(', ')}.`);
+    if (!values) errors.push(`Policy ${name} has unknown capability: ${capability}.`);
+    else if (!values.has(value)) errors.push(`Policy ${name}.${capability} must be one of: ${[...values].join(', ')}.`);
   }
   for (const capability of Object.keys(POLICY_CAPABILITIES)) {
     if (!Object.hasOwn(policy, capability)) errors.push(`Policy ${name} is missing capability: ${capability}.`);
   }
 }
 
-function validateAssetRelationships(catalog, policies, defaults, bodyNames, assetRoot) {
+function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames, assetRoot) {
   const errors = [];
   if (!isPlainObject(catalog) || catalog.version !== 1 || !Array.isArray(catalog.roles)) {
     errors.push('roles.json must contain version: 1 and a roles array.');
   }
   const roles = Array.isArray(catalog?.roles) ? catalog.roles : [];
   for (const role of roles) validateRole(role, errors);
-  if (!isPlainObject(policies) || policies.version !== 1 || !isPlainObject(policies.policies)) {
+  if (!isPlainObject(policyDocument) || policyDocument.version !== 1 || !isPlainObject(policyDocument.policies)) {
     errors.push('policies.json must contain version: 1 and a policies object.');
   } else {
-    for (const [name, policy] of Object.entries(policies.policies)) validatePolicy(name, policy, errors);
-    for (const role of roles) if (!isPlainObject(policies.policies[role.policy])) errors.push(`Role ${role.id} references an unknown policy: ${role.policy}.`);
+    for (const [name, policy] of Object.entries(policyDocument.policies)) validatePolicy(name, policy, errors);
+    for (const role of roles) if (!isPlainObject(policyDocument.policies[role.policy])) errors.push(`Role ${role.id} references an unknown policy: ${role.policy}.`);
   }
   const ids = roles.map((role) => role?.id).filter(Boolean);
   if (!unique(ids)) errors.push('roles.json contains duplicate role ids.');
+  for (const role of roles) {
+    for (const delegate of role.delegates ?? []) {
+      if (typeof delegate !== 'string' || !ids.includes(delegate)) errors.push(`Role ${role.id} delegates to an unknown role: ${delegate}.`);
+    }
+  }
 
   if (!isPlainObject(defaults) || defaults.version !== 1 || !isPlainObject(defaults.roles)) {
     errors.push('default-config.json must contain version: 1 and a roles object.');

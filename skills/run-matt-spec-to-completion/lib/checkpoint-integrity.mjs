@@ -62,9 +62,7 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
         if (!allowWorktreeRelocation && resolveRepositoryPath(mainWorktree.root, checkpoint.worktree) !== execution.root) {
           diagnostics.push(diagnostic("worktree-path", checkpoint.worktree));
         }
-        if (await git(executionWorktree, ["branch", "--show-current"]) !== checkpoint.branch) {
-          diagnostics.push(diagnostic("execution-branch", checkpoint.branch));
-        }
+        if (await git(executionWorktree, ["branch", "--show-current"]) !== checkpoint.branch) diagnostics.push(diagnostic("execution-branch", checkpoint.branch));
       } catch (error) {
         diagnostics.push(diagnostic("execution-worktree", error.message));
       }

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { checkpointPath, deriveSpecLocation, executionPlanPath } from "./paths.mjs";
-import { createCheckpoint, markMerged, readCheckpoint, recordStashReference, relocateCheckpoint, resolveRepositoryPath, writeCheckpoint as writeCheckpointToDisk } from "./checkpoint.mjs";
+import { createCheckpoint, markMerged, readCheckpoint, recordStashReference, relocateCheckpoint, resolveRepositoryPath } from "./checkpoint.mjs";
 import { requireCheckpointIntegrity } from "./checkpoint-integrity.mjs";
 import { currentHead, git, gitOutput, gitSucceeds, gitSucceedsWithInput, isAncestor } from "./git.mjs";
 import { assertSpecArtifactsInMainWorktree, materializeSpec, verifyExecutionPlan, writeExecutionPlan } from "./spec-intake.mjs";
@@ -13,10 +13,11 @@ import { createExecutionWorktree, ensureExecutionWorktree, findExecutionWorktree
 import { createPreMergeStash } from "./pre-merge-stash.mjs";
 import { createIntegrationLifecycle } from "./integration-lifecycle.mjs";
 import { selectTicketFrontier } from "./ticket-frontier.mjs";
+import { createRuntimeStateStore, withFeatureLock } from "../../../execution-runtime/state-store.mjs";
 
 const executionCli = fileURLToPath(new URL("../../../execution-runtime/execution-cli.mjs", import.meta.url));
 
-async function canonicalTicketTransition(command, { mainWorktree, featureSlug, worktree }, input) {
+async function canonicalTransition(command, { mainWorktree, featureSlug, worktree }, input) {
   const args = [executionCli, command, "--repository", mainWorktree, "--feature", featureSlug];
   if (worktree) args.push("--worktree", worktree);
   return new Promise((resolve, reject) => {
@@ -25,32 +26,17 @@ async function canonicalTicketTransition(command, { mainWorktree, featureSlug, w
     let stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.once("error", (error) => reject(new Error(`Canonical ${command} transition failed: ${error.message}`, { cause: error })));
+    child.once("error", reject);
     child.once("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`Canonical ${command} transition failed: ${stderr.trim() || `exit ${code}`}`));
-        return;
-      }
-      try {
-        resolve(JSON.parse(stdout));
-      } catch (error) {
-        reject(new Error(`Canonical ${command} transition returned invalid JSON: ${error.message}`, { cause: error }));
-      }
+      if (code !== 0) return reject(new Error(`Canonical ${command} transition failed: ${stderr.trim() || `exit ${code}`}`));
+      try { resolve(JSON.parse(stdout)); } catch (error) { reject(error); }
     });
     child.stdin.end(input ? `${JSON.stringify(input)}\n` : undefined);
   });
 }
 
-function canonicalHandoff(result) {
-  return {
-    role_id: "execution-orchestrator",
-    status: result.status,
-    summary: result.summary,
-    artifacts: [],
-    checks: result.tests,
-    ...(result.status === "blocked" ? { error: result.error } : {}),
-    payload: result,
-  };
+function handoff(result) {
+  return { role_id: "execution-orchestrator", status: result.status, summary: result.summary, artifacts: [], checks: result.tests, ...(result.status === "blocked" ? { error: result.error } : {}), payload: result };
 }
 
 async function commitFiles(worktree, files, message) {
@@ -93,6 +79,20 @@ async function executionRecordsHaveChanges({ mainWorktree, featureSlug, executio
   return (await changedPaths(mainWorktree)).some((path) => files.has(path));
 }
 
+async function assertResultCommits(worktree, result, ticket) {
+  for (const commit of result.commits) {
+    if (!await gitSucceeds(worktree, ["rev-parse", "--verify", `${commit}^{commit}`])) {
+      throw new Error(`Completion result commit does not exist: ${commit}`);
+    }
+    if (!await isAncestor(worktree, commit)) {
+      throw new Error(`Completion result commit is not on the execution branch: ${commit}`);
+    }
+    if (commit === ticket.start_commit || !await isAncestor(worktree, ticket.start_commit, commit)) {
+      throw new Error(`Completion result commit must be after ticket ${ticket.id} start commit: ${commit}`);
+    }
+  }
+}
+
 function verifiedExecutionPlan(executionPlan, integrity) {
   if (executionPlan && executionPlan.revision !== integrity.executionPlan.revision) {
     throw new Error("Provided execution plan does not match the verified persisted execution plan");
@@ -100,17 +100,22 @@ function verifiedExecutionPlan(executionPlan, integrity) {
   return integrity.executionPlan;
 }
 
-export function createExecutionOrchestrator({ adapter, directExecutor, materialize = materializeSpec, now = toShanghaiTimestamp, generateCommitMessage, checkpointWriter = writeCheckpointToDisk } = {}) {
+export function createExecutionOrchestrator({ adapter, directExecutor, materialize = materializeSpec, now = toShanghaiTimestamp, generateCommitMessage } = {}) {
   const stash = createPreMergeStash({ git, gitSucceeds, gitOutput, gitSucceedsWithInput });
+  const stateStore = createRuntimeStateStore();
 
   const requireIntegrity = async ({ mainWorktree, featureSlug, executionWorktree, checkExecutionWorktree = true, allowWorktreeRelocation = false }) => {
     return requireCheckpointIntegrity({ worktree: mainWorktree, executionWorktree, featureSlug, checkExecutionWorktree, allowWorktreeRelocation });
   };
 
   const persist = async (worktree, featureSlug, checkpoint, { verify = true } = {}) => {
-    if (verify) await requireIntegrity({ mainWorktree: worktree, featureSlug, checkExecutionWorktree: false });
-    await checkpointWriter(worktree, featureSlug, checkpoint);
-    return checkpoint;
+    if (!verify) return stateStore.initialize({ repository: worktree, featureSlug, checkpoint });
+    return (await stateStore.transition({
+      repository: worktree,
+      featureSlug,
+      checkExecutionWorktree: false,
+      apply: () => checkpoint,
+    })).checkpoint;
   };
 
   const integrationLifecycle = createIntegrationLifecycle({
@@ -134,11 +139,14 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
   });
 
   return {
-    async initialize({ repository, branch, baseline, worktreePath, specPath }) {
+    async initialize({ repository, branch, baseline, worktreePath, specPath, _locked = false }) {
       baseline ??= await currentHead(repository);
       const mainWorktree = await findMainWorktree(repository);
       if (!mainWorktree) throw new Error("Main worktree is unavailable");
-      deriveSpecLocation(mainWorktree, specPath);
+      const { featureSlug } = deriveSpecLocation(mainWorktree, specPath);
+      if (!_locked) {
+        return withFeatureLock(mainWorktree, featureSlug, () => this.initialize({ repository, branch, baseline, worktreePath, specPath, _locked: true }));
+      }
       const executionPlan = await materialize({ mainWorktree, specPath });
       verifyExecutionPlan(executionPlan);
       await assertSpecArtifactsInMainWorktree({ mainWorktree, executionPlan });
@@ -150,10 +158,13 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
       return { worktree, mainWorktree, executionPlan, checkpoint };
     },
 
-    async resume({ repository, branch, specPath, worktreePath }) {
+    async resume({ repository, branch, specPath, worktreePath, _locked = false }) {
       const mainWorktree = await findMainWorktree(repository);
       if (!mainWorktree) throw new Error("Main worktree is unavailable");
       const { featureSlug } = deriveSpecLocation(mainWorktree, specPath);
+      if (!_locked) {
+        return withFeatureLock(mainWorktree, featureSlug, () => this.resume({ repository, branch, specPath, worktreePath, _locked: true }));
+      }
       const preflight = await requireIntegrity({ mainWorktree, featureSlug, checkExecutionWorktree: false });
       const mainCheckpoint = preflight.checkpoint;
       if (mainCheckpoint.integration.status === "done") {
@@ -175,7 +186,7 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
           checkpointForMerge = recordStashReference(checkpointForMerge, stashRef, now());
           await persist(mainWorktree, featureSlug, checkpointForMerge);
         }
-        const merged = markMerged(checkpointForMerge, { executionHead: await git(mainWorktree, ["rev-parse", branch]), mainWorktree, mergedCommit: await currentHead(mainWorktree), stashRef: checkpointForMerge.integration.stash_ref }, now());
+        const merged = markMerged(checkpointForMerge, { executionHead: await git(mainWorktree, ["rev-parse", branch]), mainWorktree, repository: mainWorktree, mergedCommit: await currentHead(mainWorktree), stashRef: checkpointForMerge.integration.stash_ref }, now());
         await persist(mainWorktree, featureSlug, merged);
         return this.completeMergedCleanup({ repository, mainWorktree, featureSlug, executionPlan: preflight.executionPlan, checkpoint: merged });
       }
@@ -199,7 +210,7 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
       readTicket ??= createIssueTracker({ mainWorktree, executionPlan }).read.bind(null);
       const selection = selectTicketFrontier({ executionPlan, checkpoint });
       if (selection.status === "blocked") return { status: "blocked", checkpoint, results: [], ...(selection.reason ? { reason: selection.reason } : {}) };
-      const claimed = await canonicalTicketTransition("claim", { mainWorktree, featureSlug, worktree });
+      const claimed = await canonicalTransition("claim", { mainWorktree, featureSlug, worktree });
       const ticket = claimed.ticket;
       checkpoint = claimed.checkpoint;
       let rawResult;
@@ -211,13 +222,10 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
         } catch (error) {
           rawResult = { ticket_id: ticket.id, status: "blocked", commits: [], tests: [], summary: "Orchestrator execution failed", error: error instanceof Error ? error.message : String(error) };
         }
-      } else {
-        throw new Error("Completion adapter is required to execute a ticket");
-      }
+      } else throw new Error("Completion adapter is required to execute a ticket");
       const result = assertCompletionResult(rawResult);
       if (result.ticket_id !== ticket.id) throw new Error(`Completion result belongs to ${result.ticket_id}, expected ${ticket.id}`);
-      const recorded = await canonicalTicketTransition("record-ticket", { mainWorktree, featureSlug, worktree }, canonicalHandoff(result));
-      checkpoint = recorded.checkpoint;
+      checkpoint = (await canonicalTransition("record-ticket", { mainWorktree, featureSlug, worktree }, handoff(result))).checkpoint;
       if (result.status === "done") {
         await requireIntegrity({ mainWorktree, featureSlug, executionWorktree: worktree });
         const issueTracker = createIssueTracker({ mainWorktree, executionPlan });
@@ -226,15 +234,13 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
       return { checkpoint, results: [result] };
     },
 
-    async startReview({ mainWorktree, featureSlug, findingsSummary }) {
-      const recorded = await canonicalTicketTransition("record-review", { mainWorktree, featureSlug }, { findings_summary: findingsSummary });
-      return recorded.checkpoint;
+    async startReview({ mainWorktree, featureSlug, findingsSummary = "Final review pending." }) {
+      return (await canonicalTransition("record-review", { mainWorktree, featureSlug }, { findings_summary: findingsSummary })).checkpoint;
     },
 
     async finishReview({ mainWorktree, featureSlug, checkpoint, findingsSummary }) {
-      await this.startReview({ mainWorktree, featureSlug, checkpoint, findingsSummary });
-      const decided = await canonicalTicketTransition("review-decision", { mainWorktree, featureSlug }, { decision: "approve" });
-      return decided.checkpoint;
+      await this.startReview({ mainWorktree, featureSlug, findingsSummary });
+      return (await canonicalTransition("review-decision", { mainWorktree, featureSlug }, { decision: "approve" })).checkpoint;
     },
 
     async run({ repository, branch, specPath, worktreePath, review }) {
@@ -253,15 +259,13 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
       const readTicket = issueTracker.read.bind(issueTracker);
       if (checkpoint.status === "executing" && checkpoint.tickets.every((ticket) => ticket.status === "done")) {
         for (const ticket of checkpoint.tickets) await issueTracker.markComplete(ticket.id);
-        checkpoint = await this.startReview({ mainWorktree, featureSlug, checkpoint, findingsSummary: "Final review pending." });
+        checkpoint = await this.startReview({ mainWorktree, featureSlug, checkpoint });
       }
       while (checkpoint.status === "executing") {
         const result = await this.executeFrontier({ worktree, mainWorktree, featureSlug, executionPlan, checkpoint, readTicket });
         if (result.status === "blocked") return result;
         checkpoint = result.checkpoint;
-        if (checkpoint.tickets.every((ticket) => ticket.status === "done")) {
-          checkpoint = await this.startReview({ mainWorktree, featureSlug, checkpoint, findingsSummary: "Final review pending." });
-        }
+        if (checkpoint.tickets.every((ticket) => ticket.status === "done")) checkpoint = await this.startReview({ mainWorktree, featureSlug, checkpoint });
       }
       if (checkpoint.status === "reviewing") {
         if (!review) return { status: "reviewing", worktree, executionPlan, checkpoint };
@@ -274,11 +278,11 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
     },
 
     async integrate(args) {
-      return integrationLifecycle.integrate(args);
+      return withFeatureLock(args.repository, args.featureSlug, () => integrationLifecycle.integrate(args));
     },
 
     async completeMergedCleanup(args) {
-      return integrationLifecycle.completeMergedCleanup(args);
+      return withFeatureLock(args.repository, args.featureSlug, () => integrationLifecycle.completeMergedCleanup(args));
     },
   };
 }

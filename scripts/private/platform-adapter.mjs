@@ -101,12 +101,12 @@ function claudePermission(policy) {
 function claudeRender(role, settings, body, policy) {
   return [
     '---',
-    `name: ${JSON.stringify(role.id)}`,
+    `name: ${role.id}`,
     `description: ${JSON.stringify(agentDescription(role))}`,
-    `model: ${JSON.stringify(settings.model)}`,
-    `effort: ${JSON.stringify(settings.effort)}`,
-    `tools: ${JSON.stringify(role.tools.join(', ') || 'Task')}`,
-    `permissionMode: ${JSON.stringify(claudePermission(policy))}`,
+    `model: ${settings.model}`,
+    `effort: ${settings.effort}`,
+    `tools: ${role.tools.join(', ') || 'Task'}`,
+    `permissionMode: ${claudePermission(policy)}`,
     '---',
     '',
     body,
@@ -137,7 +137,7 @@ function opencodeRender(role, settings, body, policy) {
     `mode: ${role.kind === 'primary' ? 'primary' : 'subagent'}`,
     `permission: ${JSON.stringify(opencodePermission(role, policy))}`
   ];
-  if (settings.model) frontmatter.splice(3, 0, `model: ${JSON.stringify(settings.model)}`);
+  if (settings.model) frontmatter.splice(3, 0, `model: ${settings.model}`);
   if (settings.variant) frontmatter.push(`variant: ${JSON.stringify(settings.variant)}`);
   if (isPlainObject(settings.options) && Object.keys(settings.options).length) frontmatter.push(`options: ${JSON.stringify(settings.options)}`);
   frontmatter.push('---', '', body, '');
@@ -195,21 +195,20 @@ const strategies = {
   }
 };
 
-const CAPABILITY_LEVELS = {
-  codex: { filesystem: 'enforced', shell: 'instruction-only', network: 'unsupported', browser: 'unsupported', git: 'instruction-only', write_scope: 'instruction-only', delegation: 'enforced' },
-  claude: { filesystem: 'instruction-only', shell: 'instruction-only', network: 'unsupported', browser: 'unsupported', git: 'instruction-only', write_scope: 'instruction-only', delegation: 'instruction-only' },
-  opencode: { filesystem: 'enforced', shell: 'instruction-only', network: 'unsupported', browser: 'unsupported', git: 'instruction-only', write_scope: 'instruction-only', delegation: 'enforced' }
-};
+function capabilityLevel(platform, role, capability, requested) {
+  if (capability === 'filesystem') {
+    if (platform === 'codex') return requested === 'none' ? 'unsupported' : 'enforced';
+    if (platform === 'opencode') return 'enforced';
+    return 'instruction-only';
+  }
+  if (capability === 'network' || capability === 'browser') return 'unsupported';
+  if (platform === 'opencode' && REVIEWER_ROLE_IDS.has(role.id) && (capability === 'shell' || capability === 'git') && requested === 'read') return 'enforced';
+  return 'instruction-only';
+}
 
-export function capabilityMatrix(platform, policy) {
-  const levels = CAPABILITY_LEVELS[platform];
-  if (!levels) fail(`Unknown platform: ${platform}`);
-  return Object.fromEntries(Object.keys(policy).map((capability) => {
-    const level = platform === 'codex' && capability === 'filesystem' && policy.filesystem === 'none'
-      ? 'unsupported'
-      : levels[capability] ?? 'unsupported';
-    return [capability, level];
-  }));
+export function capabilityMatrix(platform, role, policy) {
+  if (!strategies[platform]) fail(`Unknown platform: ${platform}`);
+  return Object.fromEntries(Object.entries(policy).map(([capability, requested]) => [capability, capabilityLevel(platform, role, capability, requested)]));
 }
 
 // --- Entry point ---
@@ -251,10 +250,10 @@ export function planGeneration({ platform, paths, roles, policies, config, bodie
   return plan;
 }
 
-export function applyGenerationPlan(plan, dryRun, transactionPath) {
-  return applyTransaction(plan, { transactionPath, dryRun });
+export function applyGenerationPlan(plan, dryRun, transaction) {
+  return applyTransaction(plan, { ...transaction, dryRun });
 }
 
 export function generate(options) {
-  return applyGenerationPlan(planGeneration(options), options.dryRun);
+  return applyGenerationPlan(planGeneration(options), options.dryRun, options.transaction);
 }

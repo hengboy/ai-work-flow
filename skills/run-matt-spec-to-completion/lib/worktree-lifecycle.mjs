@@ -1,5 +1,5 @@
-import { access, mkdir } from "node:fs/promises";
-import { dirname, relative, resolve } from "node:path";
+import { access, lstat, mkdir } from "node:fs/promises";
+import { dirname, relative, resolve, sep } from "node:path";
 import { git, gitSucceeds, repoRoot } from "./git.mjs";
 
 function parseWorktrees(output) {
@@ -28,13 +28,28 @@ export async function worktreeIsClean(worktree) {
   return (await git(worktree, ["status", "--porcelain"])) === "";
 }
 
+async function assertNoSymlinkPathChain(root, target) {
+  const relativeTarget = relative(root, target);
+  let current = root;
+  for (const segment of relativeTarget.split(sep).slice(0, -1)) {
+    current = resolve(current, segment);
+    try {
+      if ((await lstat(current)).isSymbolicLink()) throw new Error(`Worktree path contains a symbolic-link parent: ${current}`);
+    } catch (error) {
+      if (error.code === "ENOENT") break;
+      throw error;
+    }
+  }
+}
+
 async function prepareNewWorktreePath(repository, root, path) {
   const target = resolve(path);
   const repositoryPath = relative(resolve(repository), target);
-  if (!repositoryPath || repositoryPath === ".." || repositoryPath.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
+  if (!repositoryPath || repositoryPath === ".." || repositoryPath.startsWith(`..${sep}`)) {
     throw new Error(`Execution worktree path must be inside the repository: ${target}`);
   }
   const canonicalTarget = resolve(root, repositoryPath);
+  await assertNoSymlinkPathChain(root, canonicalTarget);
   try {
     await access(canonicalTarget);
     throw new Error(`Worktree path already exists: ${canonicalTarget}`);
@@ -42,7 +57,20 @@ async function prepareNewWorktreePath(repository, root, path) {
     if (error.code !== "ENOENT") throw error;
   }
   await mkdir(dirname(canonicalTarget), { recursive: true });
+  await assertNoSymlinkPathChain(root, canonicalTarget);
   return canonicalTarget;
+}
+
+async function verifyCreatedWorktree(root, target, branch) {
+  if (resolve(await repoRoot(target)) !== target) throw new Error("Created worktree root does not match requested path");
+  if (await git(target, ["branch", "--show-current"]) !== branch) throw new Error("Created worktree branch does not match requested branch");
+  const [mainCommonDir, executionCommonDir] = await Promise.all([
+    git(root, ["rev-parse", "--git-common-dir"]),
+    git(target, ["rev-parse", "--git-common-dir"]),
+  ]);
+  if (resolve(root, mainCommonDir) !== resolve(target, executionCommonDir)) {
+    throw new Error("Created worktree does not share the repository Git common directory");
+  }
 }
 
 export async function ensureExecutionWorktree({ repository, branch, path }) {
@@ -54,6 +82,7 @@ export async function ensureExecutionWorktree({ repository, branch, path }) {
   }
   const target = await prepareNewWorktreePath(repository, root, path);
   await git(root, ["worktree", "add", target, branch]);
+  await verifyCreatedWorktree(root, target, branch);
   return { worktree: target, created: true };
 }
 
@@ -61,6 +90,7 @@ export async function createExecutionWorktree({ repository, branch, baseline, pa
   const root = await repoRoot(repository);
   const target = await prepareNewWorktreePath(repository, root, path);
   await git(root, ["worktree", "add", "-b", branch, target, baseline]);
+  await verifyCreatedWorktree(root, target, branch);
   return target;
 }
 

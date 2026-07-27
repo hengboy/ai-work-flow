@@ -11,10 +11,7 @@
     "artifacts": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "checks": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "error": { "type": "string", "minLength": 1 },
-    "payload": { "$ref": "#/$defs/completion-result" }
-  },
-  "$defs": {
-    "completion-result": {
+    "payload": {
       "type": "object",
       "required": ["ticket_id", "status", "commits", "tests", "summary"],
       "additionalProperties": false,

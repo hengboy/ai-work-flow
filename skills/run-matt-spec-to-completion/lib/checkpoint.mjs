@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { checkpointPath, sourceSpecPath } from "./paths.mjs";
 import { toShanghaiTimestamp } from "./time.mjs";
@@ -54,7 +54,9 @@ export async function writeCheckpoint(worktree, featureSlug, checkpoint) {
   verifyCheckpointShape(checkpoint);
   const path = join(worktree, checkpointPath(featureSlug));
   await mkdir(join(worktree, ".scratch", featureSlug), { recursive: true });
-  await writeFile(path, `${JSON.stringify(checkpoint, null, 2)}\n`);
+  const temporaryPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(temporaryPath, `${JSON.stringify(checkpoint, null, 2)}\n`);
+  await rename(temporaryPath, path);
   return path;
 }
 
@@ -65,9 +67,7 @@ export async function readCheckpoint(worktree, featureSlug) {
 export function verifyCheckpointShape(checkpoint) {
   assertCheckpoint(checkpoint);
   assertRelativeRepositoryPath(checkpoint.worktree, "Checkpoint worktree");
-  if (checkpoint.integration?.main_worktree) {
-    assertRelativeRepositoryPath(checkpoint.integration.main_worktree, "Checkpoint main worktree");
-  }
+  if (checkpoint.integration?.main_worktree) assertRelativeRepositoryPath(checkpoint.integration.main_worktree, "Checkpoint main worktree");
   return checkpoint;
 }
 
@@ -153,7 +153,7 @@ export function completeReview(checkpoint, findingsSummary, now = new Date()) {
 export function recordReview(checkpoint, findingsSummary, now = new Date()) {
   now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "review-recorded", findingsSummary, now);
-  if (!["in_progress", "awaiting_user"].includes(next.review.status)) throw new Error("Review is not in progress");
+  if (!['in_progress', 'awaiting_user'].includes(next.review.status)) throw new Error("Review is not in progress");
   next.review = { ...next.review, status: "awaiting_user", findings_summary: findingsSummary, completed_at: now };
   return completeTransition(next);
 }
@@ -163,13 +163,8 @@ export function decideReview(checkpoint, decision, now = new Date()) {
   if (!["approve", "fix"].includes(decision)) throw new Error("Review decision must be approve or fix");
   const next = revise(checkpoint, "review-decision", decision, now);
   if (next.review.status !== "awaiting_user") throw new Error("Review is not awaiting a user decision");
-  if (decision === "approve") {
-    next.review = { ...next.review, status: "done", decision };
-    next.status = "integrating";
-  } else {
-    next.review = { ...next.review, status: "done", decision };
-    next.status = "fixing";
-  }
+  next.review = { ...next.review, status: "done", decision };
+  next.status = decision === "approve" ? "integrating" : "fixing";
   return completeTransition(next);
 }
 

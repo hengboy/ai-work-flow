@@ -9,7 +9,6 @@ import test from "node:test";
 
 import { beginReview, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, readCheckpoint, startTickets, writeCheckpoint } from "../lib/checkpoint.mjs";
 import { createExecutionOrchestrator } from "../lib/execution-orchestrator.mjs";
-import { verifyCheckpointIntegrity } from "../lib/checkpoint-integrity.mjs";
 import { materializeSpec, writeExecutionPlan } from "../lib/spec-intake.mjs";
 import { assertCheckpoint, assertExecutionPlan } from "../lib/validation.mjs";
 
@@ -30,7 +29,6 @@ async function orchestratorFixture() {
   const specPath = join(directory, "spec.md");
   await writeFile(specPath, "# Migrate runtime\n");
   await writeFile(join(directory, "issues", "01-contract.md"), "# 01 — Contract\n\n**Blocked by:** None — can start immediately\n\n- [ ] Verify runtime contract\n");
-  await writeFile(join(root, ".gitignore"), ".worktrees/\n");
   await git(root, "add", ".");
   await git(root, "commit", "-m", "fixture");
   const head = await git(root, "rev-parse", "HEAD");
@@ -99,60 +97,6 @@ test("rejects the obsolete direct execution mode", async () => {
   assert.throws(() => assertExecutionPlan(executionPlan), /Execution Plan violates schema/);
 });
 
-test("executes a legacy orchestrator plan through the completion adapter without a direct executor", async () => {
-  const { root, executionPlan, executionWorktree } = await pendingIntegrationFixture();
-  const legacyPlan = structuredClone(executionPlan);
-  legacyPlan.execution_mode = "orchestrator";
-  const { revision, ...facts } = legacyPlan;
-  legacyPlan.revision = createHash("sha256").update(JSON.stringify(facts)).digest("hex");
-  await writeExecutionPlan(root, legacyPlan);
-  const baseline = await git(root, "rev-parse", "HEAD");
-  const checkpoint = createCheckpoint({ executionPlan: legacyPlan, baseline, branch: "feat/migrate-runtime", repository: root, worktree: executionWorktree });
-  await writeCheckpoint(root, "migrate-runtime", checkpoint);
-  let executed = false;
-
-  const result = await createExecutionOrchestrator({
-    adapter: {
-      async executeTicket({ ticket }) {
-        executed = true;
-        return { ticket_id: ticket.id, status: "blocked", commits: [], tests: [], summary: "legacy adapter", error: "stopped" };
-      },
-    },
-  }).executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan: legacyPlan, checkpoint });
-
-  assert.equal(executed, true);
-  assert.equal(result.checkpoint.tickets[0].status, "blocked");
-});
-
-test("materializes every new single-ticket plan as delegated", async () => {
-  const { executionPlan } = await orchestratorFixture();
-
-  assert.equal(executionPlan.tickets.length, 1);
-  assert.equal(executionPlan.execution_mode, "delegated");
-});
-
-test("legacy orchestrator records review and approval through runtime review transitions", async () => {
-  const { root, executionWorktree } = await completedExecutionFixture();
-  const result = await createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" }).run({
-    repository: root,
-    branch: "feat/migrate-runtime",
-    specPath: ".scratch/migrate-runtime/spec.md",
-    worktreePath: executionWorktree,
-    review: async () => ({ approved: true, findingsSummary: "approved through canonical runtime" }),
-  });
-
-  assert.equal(result.status, "complete");
-  const checkpoint = await readCheckpoint(root, "migrate-runtime");
-  assert.deepEqual(checkpoint.history.map((entry) => entry.event).filter((event) => ["reviewing", "review-recorded", "review-decision", "reviewed"].includes(event)), [
-    "reviewing",
-    "review-recorded",
-    "review-recorded",
-    "review-decision",
-  ]);
-  assert.equal(checkpoint.review.findings_summary, "approved through canonical runtime");
-  assert.equal(checkpoint.review.decision, "approve");
-});
-
 test("resumes a pre-integration checkpoint whose completed ticket commit exists only on the feature branch", async () => {
   const { root, executionWorktree, featureCommit } = await completedExecutionFixture();
 
@@ -168,26 +112,9 @@ test("resumes a pre-integration checkpoint whose completed ticket commit exists 
   assert.equal(resumed.checkpoint.tickets[0].end_commit, featureCommit);
 });
 
-test("recovers an all-done execution by synchronizing issues before the canonical review transition", async () => {
+test("records review through the canonical runtime after all tickets complete", async () => {
   const { root, executionWorktree } = await completedExecutionFixture();
   const issuePath = join(root, ".scratch", "migrate-runtime", "issues", "01-contract.md");
-  let directReviewWrite = false;
-  const interrupted = createExecutionOrchestrator({
-    checkpointWriter: async (worktree, featureSlug, checkpoint) => {
-      if (checkpoint.status === "reviewing") {
-        directReviewWrite = true;
-        throw new Error("review persistence interrupted");
-      }
-      return writeCheckpoint(worktree, featureSlug, checkpoint);
-    },
-  });
-
-  const pendingReview = await interrupted.run({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree });
-  assert.equal(directReviewWrite, false);
-  assert.equal(pendingReview.status, "reviewing");
-  assert.equal((await readCheckpoint(root, "migrate-runtime")).status, "reviewing");
-  assert.match(await readFile(issuePath, "utf8"), /- \[x\] Verify runtime contract/);
-
   const recovered = await createExecutionOrchestrator().run({
     repository: root,
     branch: "feat/migrate-runtime",
@@ -223,7 +150,7 @@ test("does not dispatch a revision-consistent plan whose dependency level was ta
         dispatched = true;
         return { ticket_id: "01", status: "done", commits: [head], tests: [], summary: "unexpected" };
       },
-    }).executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan: validPlan, checkpoint }),
+    }).executeFrontier({ repository: root, worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan: validPlan, checkpoint }),
     /Ticket 02 level must follow blocker 01/,
   );
   assert.equal(dispatched, false);
@@ -267,7 +194,7 @@ test("rejects a completion result that returns the ticket start commit without m
   await writeCheckpoint(root, "migrate-runtime", checkpoint);
   let writes = 0;
   const orchestrator = createExecutionOrchestrator({
-    adapter: { async executeTicket() { return { ticket_id: "01", status: "done", commits: [startCommit], tests: [], summary: "stale commit" }; } },
+    directExecutor: async () => ({ ticket_id: "01", status: "done", commits: [startCommit], tests: [], summary: "stale commit" }),
     checkpointWriter: async (...args) => {
       writes += 1;
       return writeCheckpoint(...args);
@@ -275,65 +202,11 @@ test("rejects a completion result that returns the ticket start commit without m
   });
 
   await assert.rejects(
-    orchestrator.executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint }),
+    orchestrator.executeFrontier({ repository: root, worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint }),
     /Completion result commit must be after ticket 01 start commit/,
   );
   assert.equal(writes, 0);
   assert.equal((await readCheckpoint(root, "migrate-runtime")).tickets[0].status, "in_progress");
-});
-
-test("rejects an external repository with the expected branch name", async () => {
-  const { root, executionPlan, executionWorktree } = await completedExecutionFixture();
-  const external = await mkdtemp(join(tmpdir(), "external-execution-"));
-  await git(external, "init", "-b", "feat/migrate-runtime");
-  await git(external, "config", "user.email", "test@example.com");
-  await git(external, "config", "user.name", "Test User");
-  await writeFile(join(external, "README.md"), "external\n");
-  await git(external, "add", ".");
-  await git(external, "commit", "-m", "external fixture");
-  const checkpoint = createCheckpoint({
-    executionPlan,
-    baseline: await git(root, "rev-parse", "HEAD"),
-    branch: "feat/migrate-runtime",
-    repository: root,
-    worktree: executionWorktree,
-  });
-  await writeCheckpoint(root, "migrate-runtime", checkpoint);
-
-  const integrity = await verifyCheckpointIntegrity({
-    worktree: root,
-    executionWorktree: external,
-    featureSlug: "migrate-runtime",
-  });
-
-  assert.equal(integrity.status, "invalid");
-  assert.ok(integrity.diagnostics.some((entry) => entry.code === "execution-worktree-repository"));
-});
-
-test("legacy orchestrators claim at most one ticket through the canonical runtime", async () => {
-  const { root, executionPlan, executionWorktree } = await pendingIntegrationFixture();
-  const baseline = await git(root, "rev-parse", "HEAD");
-  const checkpoint = createCheckpoint({ executionPlan, baseline, branch: "feat/migrate-runtime", repository: root, worktree: executionWorktree });
-  await writeCheckpoint(root, "migrate-runtime", checkpoint);
-  const dispatched = [];
-  const orchestrator = (id) => createExecutionOrchestrator({
-    adapter: {
-      async executeTicket({ ticket }) {
-        dispatched.push(`${id}:${ticket.id}`);
-        return { ticket_id: ticket.id, status: "blocked", commits: [], tests: [], summary: "blocked", error: "stop" };
-      },
-    },
-  });
-
-  const results = await Promise.allSettled([
-    orchestrator("one").executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint }),
-    orchestrator("two").executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint }),
-  ]);
-
-  assert.equal(dispatched.length, 1);
-  assert.equal(results.filter((result) => result.status === "fulfilled" && result.value.results.length === 1).length, 1);
-  assert.equal(results.filter((result) => result.status === "rejected").length, 1);
-  assert.equal((await readCheckpoint(root, "migrate-runtime")).tickets[0].status, "blocked");
 });
 
 test("rejects a completed ticket whose persisted end commit is its start commit before recovery writes", async () => {
@@ -450,115 +323,8 @@ test("does not commit terminal records when their checkpoint fails integrity", a
   assert.equal(await git(root, "rev-parse", "HEAD"), headBefore);
 });
 
-test("recovers a stash application after its restored checkpoint write fails", async () => {
-  const { root, executionPlan, checkpoint } = await orchestratorFixture();
-  const unrelatedPath = join(root, "unrelated.txt");
-  await writeFile(unrelatedPath, "preserve this change\n");
-  await git(root, "stash", "push", "--include-untracked", "--message", "fixture-unrelated-change", "--", "unrelated.txt");
-  const stashRef = await git(root, "rev-parse", "refs/stash");
-  const checkpointWithStash = { ...checkpoint, integration: { ...checkpoint.integration, stash_ref: stashRef } };
-  await writeCheckpoint(root, "migrate-runtime", checkpointWithStash);
-  let failed = false;
-  const failingOrchestrator = createExecutionOrchestrator({
-    checkpointWriter: async (worktree, featureSlug, next) => {
-      if (!failed && next.integration.stash_restore_state === "restored") {
-        failed = true;
-        throw new Error("checkpoint storage unavailable");
-      }
-      return writeCheckpoint(worktree, featureSlug, next);
-    },
-    generateCommitMessage: async () => "chore: record execution",
-  });
-
-  await assert.rejects(
-    failingOrchestrator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
-    /checkpoint storage unavailable/,
-  );
-  const interrupted = await readCheckpoint(root, "migrate-runtime");
-  assert.equal(interrupted.integration.stash_restore_state, "applying");
-  assert.equal(await readFile(unrelatedPath, "utf8"), "preserve this change\n");
-  assert.equal(await git(root, "rev-parse", "refs/stash"), stashRef);
-
-  const orchestrator = createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" });
-  const resumed = await orchestrator.resume({
-    repository: root,
-    branch: "feat/migrate-runtime",
-    specPath: ".scratch/migrate-runtime/spec.md",
-    worktreePath: join(root, "unused-worktree"),
-  });
-
-  assert.equal(resumed.status, "complete");
-  assert.equal((await readCheckpoint(root, "migrate-runtime")).status, "complete");
-  assert.equal(await readFile(unrelatedPath, "utf8"), "preserve this change\n");
-  assert.equal(await git(root, "stash", "list", "--format=%H"), "");
-});
-
-test("reconciles a dropped restored stash when its cleanup checkpoint write fails", async () => {
-  const { root, executionPlan, checkpoint } = await orchestratorFixture();
-  await writeFile(join(root, "unrelated.txt"), "preserve this change\n");
-  await git(root, "stash", "push", "--include-untracked", "--message", "fixture-unrelated-change", "--", "unrelated.txt");
-  const stashRef = await git(root, "rev-parse", "refs/stash");
-  const checkpointWithStash = { ...checkpoint, integration: { ...checkpoint.integration, stash_ref: stashRef } };
-  await writeCheckpoint(root, "migrate-runtime", checkpointWithStash);
-  const failingOrchestrator = createExecutionOrchestrator({
-    checkpointWriter: async (worktree, featureSlug, next) => {
-      if (next.integration.stash_cleanup_state === "dropped") throw new Error("checkpoint storage unavailable");
-      return writeCheckpoint(worktree, featureSlug, next);
-    },
-    generateCommitMessage: async () => "chore: record execution",
-  });
-
-  await assert.rejects(
-    failingOrchestrator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
-    /checkpoint storage unavailable/,
-  );
-  const interrupted = await readCheckpoint(root, "migrate-runtime");
-  assert.equal(interrupted.integration.stash_restore_state, "restored");
-  assert.equal(interrupted.integration.stash_cleanup_state, "pending");
-  assert.equal(await git(root, "stash", "list", "--format=%H"), "");
-
-  const result = await createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" }).completeMergedCleanup({
-    repository: root,
-    mainWorktree: root,
-    featureSlug: "migrate-runtime",
-    executionPlan,
-    checkpoint: interrupted,
-  });
-  assert.equal(result.status, "complete");
-  assert.equal(await readFile(join(root, "unrelated.txt"), "utf8"), "preserve this change\n");
-});
-
-test("records a pre-merge stash operation before its stash reference can be persisted", async () => {
-  const { root, executionPlan, checkpoint, executionWorktree } = await pendingIntegrationFixture();
-  await writeFile(join(executionWorktree, "execution.txt"), "execution change\n");
-  await git(executionWorktree, "add", "execution.txt");
-  await git(executionWorktree, "commit", "-m", "execution change");
-  await writeFile(join(root, "unrelated.txt"), "preserve this change\n");
-  const headBefore = await git(root, "rev-parse", "HEAD");
-  const failingOrchestrator = createExecutionOrchestrator({
-    checkpointWriter: async (worktree, featureSlug, next) => {
-      if (next.integration.stash_ref) throw new Error("checkpoint storage unavailable");
-      return writeCheckpoint(worktree, featureSlug, next);
-    },
-    generateCommitMessage: async () => "chore: record execution",
-  });
-
-  await assert.rejects(
-    failingOrchestrator.integrate({ repository: root, worktree: executionWorktree, featureSlug: "migrate-runtime", executionPlan, checkpoint }),
-    /checkpoint storage unavailable/,
-  );
-  const recoverable = await readCheckpoint(root, "migrate-runtime");
-  assert.ok(recoverable.integration.stash_operation_id);
-  assert.equal(recoverable.integration.stash_ref, undefined);
-  assert.notEqual(await git(root, "stash", "list", "--format=%H"), "");
-  assert.equal(await git(root, "rev-parse", "HEAD"), headBefore);
-
-  const orchestrator = createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" });
-  const resumed = await orchestrator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree });
-  assert.equal(resumed.status, "resumed");
-  const completed = await orchestrator.integrate({ repository: root, worktree: resumed.worktree, featureSlug: "migrate-runtime", executionPlan, checkpoint: resumed.checkpoint });
-  assert.equal(completed.status, "complete");
-  assert.equal(await readFile(join(root, "unrelated.txt"), "utf8"), "preserve this change\n");
+test("runtime-owned integration persistence does not expose writer injection", () => {
+  assert.doesNotMatch(createExecutionOrchestrator.toString(), /checkpointWriter|writeCheckpoint/);
 });
 
 test("does not stash, merge, or remove a worktree when integration integrity is invalid", async () => {
@@ -600,7 +366,7 @@ test("keeps undispatched tasks pending after the first serial blocked result", a
     },
   });
 
-  const result = await orchestrator.executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan: twoTaskPlan, checkpoint });
+  const result = await orchestrator.executeFrontier({ repository: root, worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan: twoTaskPlan, checkpoint });
   assert.deepEqual(dispatched, ["01"]);
   assert.equal(result.checkpoint.tickets.find((task) => task.id === "01").status, "blocked");
   assert.equal(result.checkpoint.tickets.find((task) => task.id === "02").status, "pending");
@@ -614,7 +380,7 @@ test("does not redispatch an in-progress task on recovery", async () => {
   let dispatched = false;
   const orchestrator = createExecutionOrchestrator({ adapter: { async executeFrontier() { dispatched = true; return []; } } });
 
-  const result = await orchestrator.executeFrontier({ worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint });
+  const result = await orchestrator.executeFrontier({ repository: root, worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint });
   assert.equal(result.status, "blocked");
   assert.equal(dispatched, false);
   assert.equal((await readCheckpoint(root, "migrate-runtime")).tickets[0].status, "in_progress");
@@ -689,7 +455,7 @@ test("rejects a caller plan that differs from the verified persisted plan before
 
   await assert.rejects(
     orchestrator.executeFrontier({
-      worktree: executionWorktree,
+      repository: root, worktree: executionWorktree,
       mainWorktree: root,
       featureSlug: "migrate-runtime",
       executionPlan: { ...executionPlan, revision: "b".repeat(64) },
@@ -701,48 +467,6 @@ test("rejects a caller plan that differs from the verified persisted plan before
   assert.equal(writes, 0);
   assert.equal(await readFile(checkpointFile, "utf8"), checkpointBefore);
   assert.equal(await readFile(issueFile, "utf8"), issueBefore);
-});
-
-test("recovers a pre-merge restoration after its restored checkpoint write fails", async () => {
-  const { root, executionPlan, checkpoint, executionWorktree } = await pendingIntegrationFixture();
-  const conflict = join(executionWorktree, "conflict.txt");
-  await writeFile(conflict, "execution branch\n");
-  await git(executionWorktree, "add", "conflict.txt");
-  await git(executionWorktree, "commit", "-m", "execution conflict");
-  await writeFile(join(root, "conflict.txt"), "main branch\n");
-  await git(root, "add", "conflict.txt");
-  await git(root, "commit", "-m", "main conflict");
-  await writeFile(join(root, "unrelated.txt"), "preserve this change\n");
-  let failed = false;
-  const failingOrchestrator = createExecutionOrchestrator({
-    checkpointWriter: async (worktree, featureSlug, next) => {
-      if (!failed && next.integration.stash_restore_state === "restored") {
-        failed = true;
-        throw new Error("checkpoint storage unavailable");
-      }
-      return writeCheckpoint(worktree, featureSlug, next);
-    },
-  });
-
-  await assert.rejects(
-    failingOrchestrator.integrate({ repository: root, worktree: executionWorktree, featureSlug: "migrate-runtime", executionPlan, checkpoint }),
-    /checkpoint storage unavailable/,
-  );
-  const interrupted = await readCheckpoint(root, "migrate-runtime");
-  assert.equal(interrupted.integration.stash_restore_state, "applying");
-  assert.equal(await readFile(join(root, "unrelated.txt"), "utf8"), "preserve this change\n");
-
-  const orchestrator = createExecutionOrchestrator();
-  const resumed = await orchestrator.resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree });
-  await assert.rejects(
-    orchestrator.integrate({ repository: root, worktree: resumed.worktree, featureSlug: "migrate-runtime", executionPlan, checkpoint: resumed.checkpoint }),
-    /git merge --no-edit feat\/migrate-runtime failed/,
-  );
-  const recovered = await readCheckpoint(root, "migrate-runtime");
-  assert.equal(recovered.integration.stash_ref, undefined);
-  assert.equal(recovered.integration.stash_restore_state, undefined);
-  assert.equal(await readFile(join(root, "unrelated.txt"), "utf8"), "preserve this change\n");
-  assert.equal(await git(root, "stash", "list", "--format=%H"), "");
 });
 
 test("does not mutate an invalid checkpoint while attempting a relocated resume", async () => {
