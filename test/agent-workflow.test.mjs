@@ -268,7 +268,7 @@ test('implementation commits precede the committed-range dual-axis review', () =
   const coder = readFileSync(resolve(agentAssets, 'bodies/full-stack-coder.md'), 'utf8');
   const committer = readFileSync(resolve(agentAssets, 'bodies/git-committer.md'), 'utf8');
   const skill = readFileSync(resolve(root, 'skills/git-commit/SKILL.md'), 'utf8');
-  const protocol = readFileSync(resolve(root, 'skills/run-matt-spec-to-completion/references/completion-protocol.md'), 'utf8');
+  const protocol = readFileSync(resolve(root, 'skills', executionSkill, 'references/completion-protocol.md'), 'utf8');
   const requiredScopeContract = [
     /初始状态必须为空/,
     /git diff --name-only <base_commit>/,
@@ -284,7 +284,7 @@ test('implementation commits precede the committed-range dual-axis review', () =
   for (const assertion of requiredScopeContract) assert.match(routing, assertion);
   for (const assertion of requiredScopeContract.slice(0, 5)) assert.match(coder, assertion);
   assert.match(committer, /git add -- <changed_paths>/);
-  assert.match(committer, /HEAD 精确等于交接 `base_commit`/);
+  assert.match(committer, /当前 `HEAD` 精确等于交接 `base_commit`/);
   assert.match(skill, /Never run `git push`/);
   assert.match(skill, /Never use `git add \.`/);
   assert.match(skill, /HEAD` exactly equals `base_commit` and the initial status was empty/);
