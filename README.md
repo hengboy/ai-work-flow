@@ -135,7 +135,7 @@ node "$runtime" record-ticket --repository <repo> --feature <feature> --worktree
 | **Code Reviewer** | 汇总标准与需求双轴评审 |
 | **Review Standards** / **Review Spec** | Code Reviewer 使用的内部评审角色 |
 
-在任意项目中调用 `$setup-matt-pocock-skills`，只会初始化该项目的 issue tracker 和领域文档；全局 Skills、配置和 agents 由本仓库的安装器维护。
+项目级 issue tracker 和领域文档由目标项目自行维护；全局 Skills、配置和 agents 由本仓库的安装器维护。
 
 ## Skills
 
@@ -150,7 +150,7 @@ node "$runtime" record-ticket --repository <repo> --feature <feature> --worktree
 3. **执行** — 逐个执行 Ticket Frontier，委派专职角色实施
 4. **评审与整合** — 每个稳定阶段对固定提交范围执行一次 Standards + Spec 双轴评审；用户确认修复并验证后直接整合，不自动复审相同范围
 
-前置条件：Spec 目录须包含 `spec.md` 和 `issues/NN-*.md`，且项目已运行 `setup-matt-pocock-skills`。
+前置条件：Spec 目录须包含 `spec.md` 和 `issues/NN-*.md`，项目还须提供 `docs/agents/issue-tracker.md`。
 
 ### `$generate-ai-work-flow-agents`
 
@@ -165,18 +165,18 @@ node "$runtime" record-ticket --repository <repo> --feature <feature> --worktree
 
 为当前项目初始化、使用并持续维护 `.ai-work-flow/index/` 代码导航索引。索引按真实代码记录功能关键词与页面、路由、API、Service、任务等入口；修改代码前必须先用索引定位，且文件或功能入口变化必须在同一轮改动中更新索引。仅在项目实际包含相应层时创建 `frontend-navigation.md` 或 `backend-navigation.md`。
 
-## 与 Matt Pocock Skills 的关系
+## AI Work Flow 评审与执行契约
 
-`run-matt-spec-to-completion` 最初基于 [Matt Pocock Skills](https://github.com/mattpocock/skills)（基线 `ed37663`）的 `to-spec`/`to-tickets` 产物格式设计。当前本仓库已独立维护，不再与上游同步更新，但产物格式仍保持兼容。
+`run-matt-spec-to-completion` 消费 `to-spec` 和 `to-tickets` 生成的 Spec/Ticket 结构。双轴评审方法借鉴成熟工程工作流，但固定提交范围、三角色评审拓扑、模型配置、权限边界、Checkpoint 和整合门禁均由 AI Work Flow 独立定义和维护。
 
-上游提供的技能（`to-spec`、`to-tickets`、`implement`、`code-review`、`ask-matt`、`setup-matt-pocock-skills` 等）作为独立依赖安装。AI Work Flow 仅提供：
+`to-spec`、`to-tickets`、`implement` 和 `code-review` 可以作为独立能力安装。AI Work Flow 提供：
 
 - **Orchestrator 路由层**：`routing.md` + 9 角色 Agent 定义
 - **执行引擎**：`run-matt-spec-to-completion`（适配 `to-spec`/`to-tickets` 产物）
 - **配置管理**：`generate-ai-work-flow-agents` + `agent-workflow.mjs`
 - **项目导航**：`project-code-navigation` + 目标项目 `.ai-work-flow/index/`
 
-如需更新上游兼容性，确认 `run-matt-spec-to-completion` 与目标版本 `to-spec`/`to-tickets` 产物格式兼容后，重新运行结构、命名及工件边界验证。
+如需调整产物兼容性，确认 `run-matt-spec-to-completion` 与目标 `to-spec`/`to-tickets` 结构兼容后，重新运行结构、命名及工件边界验证。
 
 ## 开发验证
 

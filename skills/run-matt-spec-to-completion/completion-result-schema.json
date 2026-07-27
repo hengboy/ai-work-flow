@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mattpocock/skills/run-matt-spec-to-completion/completion-result.schema.json",
+  "$id": "https://github.com/hengboy/ai-work-flow/schemas/run-matt-spec-to-completion/completion-result.schema.json",
   "title": "run-matt-spec-to-completion Completion Result",
   "description": "Completion Adapter 返回给编排器的单个 Ticket 终态结果。",
   "type": "object",

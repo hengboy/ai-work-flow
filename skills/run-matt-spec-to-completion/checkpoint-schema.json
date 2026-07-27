@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://mattpocock/skills/run-matt-spec-to-completion/checkpoint.schema.json",
+  "$id": "https://github.com/hengboy/ai-work-flow/schemas/run-matt-spec-to-completion/checkpoint.schema.json",
   "$defs": {
     "shanghai-date-time": { "type": "string", "format": "date-time", "pattern": "\\+08:00$" }
   },

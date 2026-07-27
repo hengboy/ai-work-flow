@@ -4,7 +4,7 @@ description: "执行已签署的 Spec，完成 Ticket 实施、评审、整合�
 disable-model-invocation: true
 ---
 
-# 执行 Matt Spec 至完成
+# 执行 AI Work Flow Spec 至完成
 
 ## 目标
 
@@ -14,7 +14,7 @@ disable-model-invocation: true
 
 - 输入必须是 `<target-project>/.scratch/<featureSlug>/spec.md`；运行时从此路径推导 `featureSlug`，并拒绝其他位置或兼容路径。
 - Spec 目录必须包含由 `to-tickets` 写入的 `issues/NN-<slug>.md`。
-- 必须存在 `docs/agents/issue-tracker.md`；缺少时先运行 `setup-matt-pocock-skills`。
+- 必须存在 `docs/agents/issue-tracker.md`；缺少时停止并报告项目配置阻塞。
 - 在 skill 目录运行 `npm run check:runtime`；安装与失败处理见 [运行时依赖](references/installation.md)。
 
 ## 约束

@@ -100,6 +100,25 @@ function agentPath(paths, platform, name, extension) {
   return resolve(base, 'agents', `${name}.${extension}`);
 }
 
+test('repository-owned artifacts use AI Work Flow terminology', () => {
+  const borrowedBrand = ['M', 'att'].join('');
+  const executionSkill = `run-${borrowedBrand.toLowerCase()}-spec-to-completion`;
+  const tracked = spawnSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
+  assert.equal(tracked.status, 0, tracked.stderr);
+  const paths = tracked.stdout.split('\n').filter(Boolean).filter((path) => existsSync(resolve(root, path)));
+  const brandedPath = paths.find((path) => (
+    new RegExp(`(^|[-_/])${borrowedBrand}([-_/]|$)`, 'i').test(path.replaceAll(executionSkill, ''))
+  ));
+  assert.equal(brandedPath, undefined, brandedPath);
+
+  const brandedContent = paths.find((path) => {
+    const contents = readFileSync(resolve(root, path));
+    if (contents.includes(0)) return false;
+    return new RegExp(`(^|[^a-z0-9_])${borrowedBrand}([^a-z0-9_]|$)|${borrowedBrand}pocock`, 'i').test(contents.toString('utf8').replaceAll(executionSkill, ''));
+  });
+  assert.equal(brandedContent, undefined, brandedContent);
+});
+
 test('every role has one shared body template without platform formatting', () => {
   const expected = catalog.roles.map((role) => `${role.id}.md`).sort();
   const bodies = resolve(agentAssets, 'bodies');
@@ -464,7 +483,7 @@ test('code review approval satisfies the final independent review', () => {
   assert.doesNotMatch(orchestrator, /同一稳定差异的已完成审查不得再次委派/);
 });
 
-test('review agents preserve the Matt committed-range contract', () => {
+test('review agents preserve the AI Work Flow committed-range contract', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const bodies = Object.fromEntries(['code-reviewer', 'review-standards', 'review-spec'].map((role) => [
     role,
@@ -486,6 +505,8 @@ test('review agents preserve the Matt committed-range contract', () => {
   assert.match(routing, /完全相同的两个完整 SHA、diff 命令和 commit list/);
   assert.match(routing, /禁止使用无参数 `git diff` 或 `git diff --cached`/);
   assert.match(bodies['code-reviewer'], /不得合并或跨轴重新排序/);
+  assert.match(bodies['code-reviewer'], /无条件执行 AI Work Flow 的双轴审查流程/);
+  assert.doesNotMatch(bodies['code-reviewer'], /\$code-review|已安装时|未安装时|Matt/);
   assert.match(bodies['review-standards'], /缺少任一项时阻塞/);
   assert.match(bodies['review-spec'], /缺少任一项时阻塞/);
 

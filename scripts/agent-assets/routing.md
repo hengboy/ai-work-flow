@@ -14,7 +14,7 @@
 
 **Code Reviewer** 只有在差异稳定后才能并行启动 **Review Standards** 和 **Review Spec**，并分别保留两者的发现。其他角色不得委派工作。审查完成后，**Orchestrator** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
 
-### Matt 审查子任务契约
+### AI Work Flow 审查子任务契约
 
 **Code Reviewer** 必须先固定 `fixed-point` 与 `review-commit` 两个完整提交 SHA。工作流评审使用 Checkpoint 中已经冻结的端点；用户直接指定 fixed point 时，将开始评审时的 `HEAD` 解析为 `review-commit`，不得在委派后重新解析。委派前按顺序运行并保存以下命令及结果：
 
@@ -28,7 +28,7 @@ git log <fixed-point>..<review-commit> --oneline
 
 两个端点必须可解析，fixed point 必须是 review commit 的祖先，三点 diff 必须非空。`git status --short` 只用于确认工作树干净；存在 staged、unstaged 或 untracked 内容时阻塞，不得读取或评价其内容。评审发现只允许来自固定的 committed diff，禁止使用无参数 `git diff` 或 `git diff --cached` 扩大范围。
 
-**Review Standards** 与 **Review Spec** 必须收到完全相同的两个完整 SHA、diff 命令和 commit list。Standards 任务还必须收到标准来源文件列表、完整 Fowler 异味基准及 Matt brief；Spec 任务还必须收到规格路径或完整内容及 Matt brief。缺少任一范围字段时不得自行推断。两个任务并行执行并保持上下文隔离；最终报告只能原样或轻度整理两轴结果，不得合并、跨轴重新排序或选择跨轴的单一最严重问题。
+**Review Standards** 与 **Review Spec** 必须收到完全相同的两个完整 SHA、diff 命令和 commit list。Standards 任务还必须收到标准来源文件列表、完整 Fowler 异味基准及 AI Work Flow Standards 评审任务说明；Spec 任务还必须收到规格路径或完整内容及 AI Work Flow Spec 评审任务说明。缺少任一范围字段时不得自行推断。两个任务并行执行并保持上下文隔离；最终报告只能原样或轻度整理两轴结果，不得合并、跨轴重新排序或选择跨轴的单一最严重问题。
 
 ### 浏览器自动化门禁
 

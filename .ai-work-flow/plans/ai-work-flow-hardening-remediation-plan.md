@@ -82,7 +82,7 @@
 
 ### 5. 审查与状态机
 
-1. Matt `code-review` 要求调用方提供 fixed point，并审查 `git diff <fixed-point>...HEAD`。因此 Code Reviewer 必须在每阶段实现和验证完成、该阶段代码已提交后，基于固定 Git 基线审查该提交；不得审查滚动工作区或未提交内容。
+1. AI Work Flow `code-review` 契约要求调用方提供 fixed point，并审查 `git diff <fixed-point>...HEAD`。因此 Code Reviewer 必须在每阶段实现和验证完成、该阶段代码已提交后，基于固定 Git 基线审查该提交；不得审查滚动工作区或未提交内容。
 2. 每次审查并行或分别执行 Review Standards 与 Review Spec 两个独立轴，分别保留发现后再汇总；任一轴未完成都不算该次审查完成。
 3. 审查发现先完整记录并报告用户。只有用户明确决定修复时，实施角色才可在当前 review commit 之后创建追加修复 commit，重跑完整阶段验证；不得 amend、rebase 或移动已审查提交来隐藏审查历史。
 4. 用户获准的修复提交不自动触发 Code Reviewer，也不构成新的审查轮次；验证通过后直接固定该阶段关卡并进入下一阶段或 integration。只有用户明确要求新的独立审查，且提供新的审查范围和规格依据时，才可启动一次新的双轴审查。
@@ -125,7 +125,7 @@ git log <fixed-point>..<review-commit> --oneline
 - 固定审查范围为 `F_n...H_n`；Review Standards 与 Review Spec 基于完全相同的两个 SHA 独立审查。开始审查后不得 amend、rebase、强制移动或替换这两个端点。
 - 若任一审查轴有 finding，先结束并记录审查结果，再等待用户决定。用户批准修复时，实施角色创建追加 commit 并重跑完整阶段验证，不自动启动下一轮 Code Reviewer；用户拒绝必须修复的 finding 或验证失败时停止。不得把工作区修补直接展示给 reviewer。
 - `H_n` 无 finding 时固定为 `G_n`；用户批准且验证通过的修复后，修复 head 固定为 `G_n`。固定后的 `G_n` 不得 amend、rebase 或强制移动。若用户明确要求新审查，必须先记录新的完整 SHA、fixed point 和规格依据；它是新的用户发起操作，而非流程自动续轮。
-- 提交顺序“实现与验证 -> review commit -> Code Reviewer”直接满足 Matt Skills 的 fixed point、Git 范围证据和 Standards/Spec 双轴方法；不依赖不存在的“review before final commit”默认规则。
+- 提交顺序“实现与验证 -> review commit -> Code Reviewer”直接满足 AI Work Flow 的 fixed point、Git 范围证据和 Standards/Spec 双轴方法；不依赖不存在的“review before final commit”默认规则。
 - 提交信息遵循仓库 Gitmoji + 既有中文风格；Git Committer 仍须遵守完整状态清单和一次性白名单授权，不从任务相关性推断可提交文件。
 
 ## 阶段 1：配置安全
