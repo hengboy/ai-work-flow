@@ -1,6 +1,6 @@
 | 功能/关键词 | 入口路径 | 模块边界 |
 | --- | --- | --- |
-| CLI 安装、初始化、验证、生成 | `scripts/install.mjs` -> `scripts/private/workflow.mjs` | CLI 转交 `runCli`；工作流命令在 `workflow.mjs` 编排。 |
+| CLI 安装、初始化、验证、生成 | `scripts/install.mjs` -> `scripts/private/workflow.mjs` | CLI 转交 `runCli`；安装器为全局 Skill 复制 runtime handoff schema，并在配置根安装 canonical runtime。 |
 | 工作流命令、环境管理 | `scripts/private/workflow.mjs` | 依赖 `scripts/private/config.mjs`、`scripts/private/transaction.mjs`、`scripts/private/asset-catalog.mjs`、`scripts/private/paths.mjs`、`scripts/private/platform-adapter.mjs`。 |
 | Agent 角色、Policy、路由资产 | `scripts/agent-assets/roles.json`、`scripts/agent-assets/policies.json`、`scripts/agent-assets/routing.md`、`scripts/agent-assets/bodies/*.md` | Asset catalog 校验角色与 Policy 引用；平台生成输出能力等级。 |
 | 平台 Agent 生成 | `scripts/private/platform-adapter.mjs` | 生成各平台 Agent 配置与托管内容。 |

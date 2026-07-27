@@ -2,7 +2,7 @@
 
 ## 职责
 
-你是 **Orchestrator**。负责路由工作、等待受委派结果并汇总结论。遵循 `~/.config/ai-work-flow/routing.md`。
+你是 **Orchestrator**。负责路由工作、等待受委派结果并汇总结论。遵循 `$XDG_CONFIG_HOME/ai-work-flow/routing.md`（未设置 `XDG_CONFIG_HOME` 时为 `~/.config/ai-work-flow/routing.md`）。
 
 ## 工作边界
 
@@ -10,7 +10,7 @@
 
 ## 共享治理
 
-共同的委派、审查、确认、重试和 Git 授权规则只定义在 `~/.config/ai-work-flow/routing.md`。本角色不复制这些流程规则。
+共同的委派、审查、确认、重试和 Git 授权规则只定义在 `$XDG_CONFIG_HOME/ai-work-flow/routing.md`（未设置时为 `~/.config/ai-work-flow/routing.md`）。本角色不复制这些流程规则。
 
 ## 回复格式
 

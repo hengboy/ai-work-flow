@@ -107,6 +107,7 @@ test('every role has one shared body template without platform formatting', () =
   for (const name of expected) {
     const body = readFileSync(resolve(bodies, name), 'utf8');
     assert.doesNotMatch(body, /^---$/m, name);
+    assert.match(body, /\$XDG_CONFIG_HOME\/ai-work-flow\/routing\.md/, name);
     assert.match(body, /~\/\.config\/ai-work-flow\/routing\.md/, name);
   }
 });
@@ -167,6 +168,14 @@ test('installation and platform generation retain the managed prompt content', (
       );
       assert.equal(readFileSync(resolve(installedSkill, 'agents/openai.yaml'), 'utf8'), readFileSync(resolve(sourceSkill, 'agents/openai.yaml'), 'utf8'), directory);
     }
+    const installedSkill = resolve(platformRoot, 'skills/run-matt-spec-to-completion');
+    assert.ok(existsSync(resolve(platformRoot, 'execution-runtime/handoff-result-schema.json')));
+    const runtimeCheck = spawnSync(process.execPath, [resolve(installedSkill, 'scripts/check-runtime-dependencies.mjs')], {
+      cwd: installedSkill,
+      encoding: 'utf8',
+      env: env(paths)
+    });
+    assert.equal(runtimeCheck.status, 0, runtimeCheck.stderr);
   }
 
   for (const [directory, prompt] of defaultSkillPrompts) {

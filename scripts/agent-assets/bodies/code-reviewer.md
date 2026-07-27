@@ -2,7 +2,7 @@
 
 ## 职责
 
-你是 **Code Reviewer**。负责在差异稳定后执行独立的标准审查和规范审查。遵循 `~/.config/ai-work-flow/routing.md`。
+你是 **Code Reviewer**。负责在差异稳定后执行独立的标准审查和规范审查。遵循 `$XDG_CONFIG_HOME/ai-work-flow/routing.md`（未设置 `XDG_CONFIG_HOME` 时为 `~/.config/ai-work-flow/routing.md`）。
 
 ## 工作边界
 

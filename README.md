@@ -154,7 +154,7 @@ node "$runtime" record-ticket --repository <repo> --feature <feature> --worktree
 
 ### `$generate-ai-work-flow-agents`
 
-验证全局配置并重新生成 Codex、Claude Code、OpenCode agents。默认环境修改 `$XDG_CONFIG_HOME/ai-work-flow/environments/default.json`（未设置时为 `~/.config/ai-work-flow/environments/default.json`）后，或修改非默认环境对应的 `environments/<name>.json` 后，调用此技能使配置生效。切换环境后也需要重新生成 agents：
+验证全局配置并重新生成 Codex、Claude Code、OpenCode agents。默认环境修改 `$XDG_CONFIG_HOME/ai-work-flow/environments/default.json`（未设置时为 `~/.config/ai-work-flow/environments/default.json`）后，或修改非默认环境对应的 `environments/<name>.json` 后，调用此技能使配置生效。`env use` 已在事务内重新生成受管理 agents；仅在不通过该命令修改配置时才需要调用此技能：
 
 1. 定位 `$XDG_CONFIG_HOME/ai-work-flow/agent-workflow.mjs`（未设置时为 `~/.config/ai-work-flow/agent-workflow.mjs`）
 2. 运行 `validate`，验证失败则停止

@@ -86,6 +86,9 @@ function installSkills(lifecycle, dryRun) {
     }
   }
   for (const destination of destinations) {
+    const runtimeDirectory = resolve(destination, '..', 'execution-runtime');
+    mkdirSync(runtimeDirectory, { recursive: true });
+    cpSync(resolve(ROOT, 'execution-runtime', 'handoff-result-schema.json'), resolve(runtimeDirectory, 'handoff-result-schema.json'), { force: true });
     for (const path of [
       resolve(destination, 'run-matt-spec-to-completion', 'lib', `execution-${OBSOLETE_PRIMARY_AGENT_ID}.mjs`),
       resolve(destination, 'run-matt-spec-to-completion', 'test', `execution-${OBSOLETE_PRIMARY_AGENT_ID}.test.mjs`)
