@@ -176,6 +176,17 @@ test('installation and platform generation retain the managed prompt content', (
   assert.doesNotMatch(readFileSync(resolve(root, 'skills/run-matt-spec-to-completion/agents/openai.yaml'), 'utf8'), /^  default_prompt:/m);
 
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), readFileSync(resolve(agentAssets, 'routing.md'), 'utf8'));
+  const runtime = resolve(paths.config, 'ai-work-flow/execution-runtime/execution-cli.mjs');
+  assert.ok(existsSync(runtime));
+  assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/execution-runtime/handoff-result-schema.json')));
+  assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/skills/run-matt-spec-to-completion/lib/validation.mjs')));
+  const runtimeResult = spawnSync(process.execPath, [runtime, 'record-ticket', '--repository', paths.project, '--feature', 'example', '--worktree', paths.project], {
+    encoding: 'utf8',
+    env: env(paths),
+    input: '{}\n'
+  });
+  assert.equal(runtimeResult.status, 1);
+  assert.match(runtimeResult.stderr, /Handoff Result violates schema/);
   for (const role of catalog.roles) {
     const body = readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8').trimEnd();
     assert.equal(codexDeveloperInstructions(readFileSync(agentPath(paths, 'codex', role.id, 'toml'), 'utf8')), body, role.id);
@@ -184,7 +195,7 @@ test('installation and platform generation retain the managed prompt content', (
   }
 });
 
-test('Git Committer authorized scope is preserved through installation and every platform', () => {
+test('routing is the sole source for shared Git authorization governance', () => {
   const gitCommitter = readFileSync(resolve(agentAssets, 'bodies/git-committer.md'), 'utf8');
   const orchestrator = readFileSync(resolve(agentAssets, 'bodies/orchestrator.md'), 'utf8');
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
@@ -192,29 +203,6 @@ test('Git Committer authorized scope is preserved through installation and every
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
 
-  const committerAssertions = [
-    /git status --porcelain=v1 -z/,
-    /完整文件清单/,
-    /首次检查/,
-    /不得调用 `git add`、`git commit`/,
-    /一次性白名单/,
-    /逐项、原样文件路径/,
-    /当前完整变更集合与授权快照完全一致/,
-    /暂存前停止/,
-    /一次提交尝试后失效/,
-    /不得.*相关性.*推断/
-  ];
-  const orchestratorAssertions = [
-    /当前对话状态中保留.*完整清单/,
-    /清单展示之后/,
-    /明确指向刚才列出的全部文件/,
-    /笼统.*不能.*授权/,
-    /用户的授权原文/,
-    /逐项、原样文件路径/,
-    /当前变更集合.*差异.*暂存前停止/,
-    /完成或失败后清除.*快照/,
-    /不得推断.*相关性/
-  ];
   const sharedAssertions = [
     /首次阻塞清单是唯一授权对象/,
     /授权必须发生在清单展示之后/,
@@ -224,16 +212,21 @@ test('Git Committer authorized scope is preserved through installation and every
     /不得推断文件相关性/
   ];
 
-  for (const assertion of committerAssertions) assert.match(gitCommitter, assertion);
-  for (const assertion of orchestratorAssertions) assert.match(orchestrator, assertion);
+  assert.match(gitCommitter, /`routing\.md` 的授权范围/);
+  assert.match(gitCommitter, /`git-commit` Skill/);
+  assert.match(orchestrator, /共同的委派、审查、确认、重试和 Git 授权规则只定义在/);
+  for (const body of [gitCommitter, orchestrator]) {
+    assert.doesNotMatch(body, /首次范围检查/);
+    assert.doesNotMatch(body, /一次性白名单/);
+  }
   for (const assertion of sharedAssertions) assert.match(routing, assertion);
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
 
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generatedCommitter = readFileSync(agentPath(paths, platform, 'git-committer', extension), 'utf8');
     const generatedOrchestrator = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
-    for (const assertion of committerAssertions) assert.match(generatedCommitter, assertion, platform);
-    for (const assertion of orchestratorAssertions) assert.match(generatedOrchestrator, assertion, platform);
+    assert.match(generatedCommitter, /`routing\.md` 的授权范围/, platform);
+    assert.match(generatedOrchestrator, /共同的委派、审查、确认、重试和 Git 授权规则只定义在/, platform);
   }
 });
 
@@ -311,14 +304,14 @@ test('init ignores a legacy config when creating the default environment', () =>
   assert.equal(validation.status, 0, validation.stderr);
 });
 
-test('orchestrator routes every required discovery phase through File Explorer', () => {
+test('routing is the sole source for shared discovery governance', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const source = readFileSync(resolve(agentAssets, 'bodies/orchestrator.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
 
-  for (const content of [routing, source]) {
+  for (const content of [routing]) {
     assert.match(content, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/);
     assert.match(content, /先委派 \*\*File Explorer\*\* 并等待其交接/);
     assert.match(content, /当前会话已有交接时可复用/);
@@ -332,10 +325,11 @@ test('orchestrator routes every required discovery phase through File Explorer',
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generated = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
-    assert.match(generated, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/);
-    assert.match(generated, /先委派 \*\*File Explorer\*\* 并等待其交接/);
-    assert.match(generated, /不得将发现阶段.*后续执行角色/);
+    assert.match(generated, /~\/\.config\/ai-work-flow\/routing\.md/, platform);
+    assert.doesNotMatch(generated, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/, platform);
   }
+  assert.match(source, /~\/\.config\/ai-work-flow\/routing\.md/);
+  assert.doesNotMatch(source, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/);
 });
 
 test('project navigation is a managed global skill and stores indexes in the project workflow directory', () => {
@@ -398,7 +392,7 @@ test('planning workflow resolves material user decisions before writing a plan a
   assert.match(planningWriter, /\.ai-work-flow\/plans\/<planId>\.md/);
   assert.match(planningWriter, /不得实施/);
   assert.match(routing, /\*\*Planning Writer\*\* 写入计划、ADR/);
-  for (const content of [orchestrator, routing]) {
+  for (const content of [routing]) {
     assert.match(content, /可通过工作区探索确认的事实委派 \*\*File Explorer\*\*/);
     assert.match(content, /会实质影响目标、范围、行为、取舍、兼容性、风险或验收标准/);
     assert.match(content, /每次只询问一个决策/);
@@ -421,11 +415,11 @@ test('planning workflow resolves material user decisions before writing a plan a
     const generatedOrchestrator = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
     assert.match(generatedPlanningWriter, /\.ai-work-flow\/plans\/<planId>\.md/, platform);
     assert.match(generatedPlanningWriter, /不得实施/, platform);
-    assert.match(generatedOrchestrator, /每次只询问一个决策/, platform);
-    assert.match(generatedOrchestrator, /所有已确认决策必须随任务交接给 \*\*Planning Writer\*\*/, platform);
-    assert.match(generatedOrchestrator, /等待用户明确确认/, platform);
-    assert.match(generatedOrchestrator, /不得自动.*实施/, platform);
+    assert.match(generatedOrchestrator, /~\/\.config\/ai-work-flow\/routing\.md/, platform);
+    assert.doesNotMatch(generatedOrchestrator, /每次只询问一个决策/, platform);
   }
+  assert.match(orchestrator, /~\/\.config\/ai-work-flow\/routing\.md/);
+  assert.doesNotMatch(orchestrator, /每次只询问一个决策/);
 });
 
 test('code review approval satisfies the final independent review', () => {
@@ -436,23 +430,30 @@ test('code review approval satisfies the final independent review', () => {
   assert.equal(result.status, 0, result.stderr);
 
   const assertions = [
-    /完成所需 Git 与测试命令验证的 \*\*Code Reviewer\*\* 双轴审查才是最终独立审查/,
+    /每个阶段先完成实现和测试验证并创建 review commit/,
+    /fixed point 到该 review commit 的已提交差异执行一次 Standards \+ Spec 双轴审查/,
+    /绝不审查未提交内容/,
+    /完成所需 Git 与测试命令验证的双轴审查才是最终独立审查/,
     /工具不可用或命令被拒绝导致的审查不算完成/,
     /审查能力基准恢复后可重新委派一次/,
     /同一会话中，同一稳定差异的已完成审查不得再次委派任何审查角色/,
-    /只有代码、测试、规格或审查能力基准发生变化时，才可重新委派 \*\*Code Reviewer\*\*/,
+    /用户确认的修复提交通过阶段验证后直接整合，不自动复审相同范围/,
+    /只有用户明确要求新的独立审查，且代码、测试、规格或审查能力基准发生变化时，才可重新委派 \*\*Code Reviewer\*\*/,
   ];
 
-  for (const content of [routing, orchestrator]) {
+  for (const content of [routing]) {
     for (const assertion of assertions) assert.match(content, assertion);
   }
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generated = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
-    for (const assertion of assertions) assert.match(generated, assertion, platform);
+    assert.match(generated, /~\/\.config\/ai-work-flow\/routing\.md/, platform);
+    assert.doesNotMatch(generated, /同一稳定差异的已完成审查不得再次委派/, platform);
   }
+  assert.match(orchestrator, /~\/\.config\/ai-work-flow\/routing\.md/);
+  assert.doesNotMatch(orchestrator, /同一稳定差异的已完成审查不得再次委派/);
 });
 
-test('orchestrator carries the retry and stop-lock policy into every generated platform', () => {
+test('routing is the sole source for retry and stop-lock governance', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const source = readFileSync(resolve(agentAssets, 'bodies/orchestrator.md'), 'utf8');
   const paths = environment();
@@ -477,7 +478,7 @@ test('orchestrator carries the retry and stop-lock policy into every generated p
     /OpenCode 不得传入旧 `task_id`/
   ];
 
-  for (const content of [routing, source]) {
+  for (const content of [routing]) {
     for (const assertion of assertions) assert.match(content, assertion);
   }
   assert.equal(
@@ -487,8 +488,11 @@ test('orchestrator carries the retry and stop-lock policy into every generated p
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generated = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
-    for (const assertion of assertions) assert.match(generated, assertion, platform);
+    assert.match(generated, /~\/\.config\/ai-work-flow\/routing\.md/, platform);
+    assert.doesNotMatch(generated, /最多重试 2 次，共 3 次/, platform);
   }
+  assert.match(source, /~\/\.config\/ai-work-flow\/routing\.md/);
+  assert.doesNotMatch(source, /最多重试 2 次，共 3 次/);
 });
 
 test('platform generation enforces the declared workspace access where supported', () => {

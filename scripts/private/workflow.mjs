@@ -102,6 +102,8 @@ function installRuntime(assets, lifecycle, dryRun) {
   cpSync(resolve(lifecycle.sourceDir, lifecycle.entry), resolve(dir, 'agent-workflow.mjs'), { force: true });
   cpSync(resolve(import.meta.dirname), resolve(dir, 'private'), { recursive: true, force: true });
   cpSync(assets.root, resolve(dir, 'agent-assets'), { recursive: true, force: true });
+  cpSync(resolve(ROOT, 'execution-runtime'), resolve(dir, 'execution-runtime'), { recursive: true, force: true });
+  cpSync(resolve(SKILLS_ROOT, 'run-matt-spec-to-completion'), resolve(dir, 'skills', 'run-matt-spec-to-completion'), { recursive: true, force: true });
   const obsoleteBody = resolve(dir, 'agent-assets', 'bodies', `${OBSOLETE_PRIMARY_AGENT_ID}.md`);
   if (existsSync(obsoleteBody)) unlinkSync(obsoleteBody);
 }

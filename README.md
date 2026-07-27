@@ -18,7 +18,7 @@ node scripts/install.mjs
 
 安装会完成以下工作：
 
-- 将自定义技能（`run-matt-spec-to-completion`、`generate-ai-work-flow-agents`、`switch-ai-work-flow-env`、`project-code-navigation`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录
+- 将自定义技能（`run-matt-spec-to-completion`、`generate-ai-work-flow-agents`、`switch-ai-work-flow-env`、`project-code-navigation`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录，并安装共享 execution runtime 及其依赖
 - 创建并默认直接使用 `~/.config/ai-work-flow/environments/default.json` 和 `routing.md`；仓库中的 `scripts/agent-assets/default-config.json` 仅作为初始化模板
 - 生成三端的 9 个受管理 agent
 - 更新三端的路由配置，并将 OpenCode 默认 agent 设为 `orchestrator`
@@ -60,7 +60,7 @@ node scripts/install.mjs --help
 ~/.config/ai-work-flow/environments/default.json
 ```
 
-设置 `XDG_CONFIG_HOME` 后，路径会变为 `$XDG_CONFIG_HOME/ai-work-flow/environments/default.json`。无 `.environment` 标记时直接使用默认环境；非默认环境由 `.environment` 指向 `environments/<name>.json`。环境文件只在 `roles` 的角色名层级与默认环境浅合并：环境中覆盖的角色对象整体替换默认环境同名角色，未覆盖的角色保留，不会递归合并平台或 `options`。被覆盖角色必须提供完整的 `codex`、`claude`、`opencode` 配置及必需字段，因此环境文件不能只写差异字段。配置按角色和平台组织，例如：
+设置 `XDG_CONFIG_HOME` 后，路径会变为 `$XDG_CONFIG_HOME/ai-work-flow/environments/default.json`。无 `.environment` 标记时直接使用默认环境；非默认环境由 `.environment` 指向 `environments/<name>.json`。环境文件按角色、平台和字段覆盖默认环境，未提供的字段继承默认值；OpenCode 的 `options` 是例外，覆盖时整体替换，避免隐式保留旧选项。因此环境文件只需写差异字段，默认环境仍须保留全部受管理角色及三端完整配置。配置按角色和平台组织，例如：
 
 ```json
 {
@@ -97,7 +97,9 @@ OpenCode 对继承主会话模型或未设置原生 `variant/options` 的角色�
 node scripts/install.mjs env use <name>
 ```
 
-非默认环境由 `.environment` 标记选择。`env use default` 通过删除该标记选择默认环境；无标记时已使用默认环境。该命令不会验证或生成 agents，切换后需另行执行验证和生成，或调用 `$generate-ai-work-flow-agents`。
+非默认环境由 `.environment` 标记选择。`env use default` 通过删除该标记选择默认环境；无标记时已使用默认环境。该命令会先验证目标环境，再以单个事务重新生成所有已管理平台的 agents 并更新标记；任一步失败时会恢复原有 agents 和环境选择。事务日志是未经信任的恢复输入，只有通过受信根、目标、备份和符号链接检查后才会执行恢复；非法日志保留现场并停止。
+
+`env status` 输出每个角色的平台 capability matrix：只有平台实际强制的项标记为 `enforced`，其余会明确标记为 `instruction-only` 或 `unsupported` 并产生警告。特别是 Codex 的 `filesystem: none` 不能强制隔离，必须显示为 `unsupported`。
 
 ## 生成位置
 
@@ -107,6 +109,18 @@ node scripts/install.mjs env use <name>
 - 共享运行时和配置：`$XDG_CONFIG_HOME/ai-work-flow/`（未设置时为 `~/.config/ai-work-flow/`）
 
 生成器只更新 AI Work Flow 管理的文件和配置片段，不覆盖其他全局 agent 或工具设置。
+
+## 共享执行 Runtime
+
+`$XDG_CONFIG_HOME/ai-work-flow/execution-runtime/execution-cli.mjs` 是执行状态的 canonical 接口；未设置 `XDG_CONFIG_HOME` 时使用 `~/.config/ai-work-flow/execution-runtime/execution-cli.mjs`。所有 Ticket 状态都经 runtime 的 feature lock 和 state store 变更，Orchestrator 不直接写 Checkpoint。
+
+```sh
+runtime="${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/execution-runtime/execution-cli.mjs"
+node "$runtime" claim --repository <repo> --feature <feature> --worktree <repo>/.worktrees/<feature>
+node "$runtime" record-ticket --repository <repo> --feature <feature> --worktree <repo>/.worktrees/<feature> < handoff.json
+```
+
+`record-ticket` 只接受 JSON Handoff envelope：它包含 `role_id`、`status`、`summary`、`artifacts`、`checks` 和类型化 `payload`，blocked 时还包含 `error`。裸 Completion Result 不是 runtime 输入。Checkpoint 的 worktree 仅能是仓库内相对路径；绝对路径、遍历路径、符号链接父路径和其他仓库的 worktree 均会停止，而不会迁移或猜测恢复。
 
 ## 角色
 
@@ -134,7 +148,7 @@ node scripts/install.mjs env use <name>
 1. **初始化** — 解析 spec.md，推导 feature slug，创建 worktree，物化执行计划
 2. **恢复** — 从已有 Checkpoint 验证并续接执行
 3. **执行** — 逐个执行 Ticket Frontier，委派专职角色实施
-4. **评审与整合** — 完成 Standards + Spec 双轴评审、用户确认修复、最终提交
+4. **评审与整合** — 每个稳定阶段对固定提交范围执行一次 Standards + Spec 双轴评审；用户确认修复并验证后直接整合，不自动复审相同范围
 
 前置条件：Spec 目录须包含 `spec.md` 和 `issues/NN-*.md`，且项目已运行 `setup-matt-pocock-skills`。
 
