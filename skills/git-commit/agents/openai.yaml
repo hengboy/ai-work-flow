@@ -1,4 +1,4 @@
 interface:
   display_name: "受控本地提交"
-  short_description: "创建经范围验证的本地实现提交"
-  default_prompt: "使用 `$git-commit` 根据实现交接创建一个受控本地提交。"
+  short_description: "生成标准提交信息并创建受控本地提交"
+  default_prompt: "使用 `$git-commit` 生成标准 Gitmoji 提交信息并创建受控本地提交。"

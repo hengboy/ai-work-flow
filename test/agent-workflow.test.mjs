@@ -25,7 +25,7 @@ const defaultSkillPrompts = new Map([
   ['generate-ai-work-flow-agents', '使用 `$generate-ai-work-flow-agents` 验证全局配置并生成代理。'],
   ['switch-ai-work-flow-env', '使用 `$switch-ai-work-flow-env` 切换到指定环境并重新生成代理。'],
   ['project-code-navigation', '使用 `$project-code-navigation` 为当前项目创建或更新 `.ai-work-flow/index/` 代码导航索引。'],
-  ['git-commit', '使用 `$git-commit` 根据实现交接创建一个受控本地提交。']
+  ['git-commit', '使用 `$git-commit` 生成标准 Gitmoji 提交信息并创建受控本地提交。']
 ]);
 
 function assertPromptLayout(source, name) {
@@ -287,6 +287,11 @@ test('implementation commits precede the committed-range dual-axis review', () =
   assert.match(committer, /当前 `HEAD` 精确等于交接 `base_commit`/);
   assert.match(skill, /Never run `git push`/);
   assert.match(skill, /Never use `git add \.`/);
+  assert.match(skill, /:sparkles:.*:bug:.*:memo:.*:recycle:/s);
+  assert.match(skill, /use Chinese and an action verb/);
+  assert.match(skill, /50 characters/);
+  assert.match(skill, /BREAKING CHANGE:/);
+  assert.match(skill, /Co-Authored-By/);
   assert.match(skill, /HEAD` exactly equals `base_commit` and the initial status was empty/);
   assert.match(skill, /de-duplicated union of `git diff --name-only <base_commit>` and `git ls-files --others --exclude-standard`/);
   assert.match(skill, /exactly matches `changed_paths`/);
