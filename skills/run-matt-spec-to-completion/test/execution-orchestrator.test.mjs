@@ -7,7 +7,7 @@ import { join, relative } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { beginReview, completeIntegration, completeReview, completeTicket, createCheckpoint, markMerged, readCheckpoint, startTickets, writeCheckpoint } from "../lib/checkpoint.mjs";
+import { beginReview, completeIntegration, completeReview, completeReviewFix, completeTicket, createCheckpoint, decideReview, markMerged, readCheckpoint, recordReview, startTickets, writeCheckpoint } from "../lib/checkpoint.mjs";
 import { createExecutionOrchestrator } from "../lib/execution-orchestrator.mjs";
 import { materializeSpec, writeExecutionPlan } from "../lib/spec-intake.mjs";
 import { assertCheckpoint, assertExecutionPlan } from "../lib/validation.mjs";
@@ -512,6 +512,25 @@ test("rejects a persisted review range whose review commit is missing", async ()
       worktreePath: executionWorktree,
     }),
     /review-commit-missing/,
+  );
+});
+
+test("rejects a persisted review fix whose commit is missing", async () => {
+  const { root, checkpoint: completed, executionWorktree, featureCommit } = await completedExecutionFixture();
+  let checkpoint = beginReview(completed, { fixedPoint: completed.baseline, reviewCommit: featureCommit });
+  checkpoint = recordReview(checkpoint, "requires a fix");
+  checkpoint = decideReview(checkpoint, "fix");
+  checkpoint = completeReviewFix(checkpoint, { fixCommit: "f".repeat(40), checks: ["npm test: pass"] });
+  await writeCheckpoint(root, "migrate-runtime", checkpoint);
+
+  await assert.rejects(
+    createExecutionOrchestrator().resume({
+      repository: root,
+      branch: "feat/migrate-runtime",
+      specPath: ".scratch/migrate-runtime/spec.md",
+      worktreePath: executionWorktree,
+    }),
+    /review-fix-commit-missing/,
   );
 });
 

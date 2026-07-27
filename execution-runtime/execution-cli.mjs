@@ -127,7 +127,20 @@ async function run(options) {
     return { command: "review-decision", status: result.checkpoint.status, checkpoint: result.checkpoint };
   }
   if (options.command === "complete-review-fix") {
-    const result = await stateStore.transition({ repository, featureSlug, checkExecutionWorktree: false, apply: ({ checkpoint }) => completeReviewFix(checkpoint, toShanghaiTimestamp(new Date())) });
+    const executionWorktree = requireOption(options, "worktree");
+    const input = await stdinJson();
+    if (!Array.isArray(input.checks) || input.checks.length === 0 || input.checks.some((check) => typeof check !== "string" || !check)) {
+      throw new Error("At least one review fix check is required.");
+    }
+    const result = await stateStore.transition({ repository, featureSlug, executionWorktree, async apply({ checkpoint }) {
+      if (await git(executionWorktree, ["status", "--short"])) throw new Error("Execution worktree must be clean after review fixes");
+      const fixCommit = await currentHead(executionWorktree);
+      const reviewCommit = checkpoint.review.review_commit;
+      if (fixCommit === reviewCommit || !await isAncestor(executionWorktree, reviewCommit, fixCommit)) {
+        throw new Error("Review fix commit must be after the reviewed commit");
+      }
+      return completeReviewFix(checkpoint, { fixCommit, checks: input.checks }, toShanghaiTimestamp(new Date()));
+    } });
     return { command: "complete-review-fix", status: result.checkpoint.status, checkpoint: result.checkpoint };
   }
   if (options.command === "integrate") {

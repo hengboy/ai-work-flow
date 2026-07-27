@@ -6,5 +6,5 @@
 | 平台 Agent 生成 | `scripts/private/platform-adapter.mjs` | 生成各平台 Agent 配置与托管内容。 |
 | 项目代码导航规则 | `skills/project-code-navigation/SKILL.md` | 维护 `.ai-work-flow/index/` 下的功能导航。 |
 | Spec、Ticket 执行 | `execution-runtime/execution-cli.mjs`、`skills/run-matt-spec-to-completion/lib/execution-orchestrator.mjs` | CLI 是 prepare/claim/record/review/fix/integrate/cleanup/status 的 canonical 状态入口；orchestrator 只协调。 |
-| 执行计划、Checkpoint | `execution-runtime/state-store.mjs`、`skills/run-matt-spec-to-completion/lib/checkpoint.mjs`、`skills/run-matt-spec-to-completion/lib/checkpoint-integrity.mjs`、`skills/run-matt-spec-to-completion/lib/ticket-frontier.mjs` | state store 是唯一 writer；Checkpoint 保存仓库相对 worktree 路径和固定评审端点，完整性校验路径、分支、Git common-dir 与 committed review range。 |
+| 执行计划、Checkpoint | `execution-runtime/state-store.mjs`、`skills/run-matt-spec-to-completion/lib/checkpoint.mjs`、`skills/run-matt-spec-to-completion/lib/checkpoint-integrity.mjs`、`skills/run-matt-spec-to-completion/lib/ticket-frontier.mjs` | state store 是唯一 writer；Checkpoint 保存仓库相对 worktree 路径、固定评审端点和评审修复证据，完整性校验路径、分支、Git common-dir 与 committed review range。 |
 | 测试 | `test/agent-workflow.test.mjs`、`package.json` | `package.json` 的 `test` 脚本使用 Node 测试运行器。 |

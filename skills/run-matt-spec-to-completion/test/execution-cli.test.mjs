@@ -133,10 +133,44 @@ test("review fixes advance directly to integration without another review", asyn
   const commit = await git(paths.worktree, "rev-parse", "HEAD");
   const handoff = { role_id: "full-stack-coder", status: "done", summary: "completed", artifacts: [], checks: [], payload: { ticket_id: "01", status: "done", commits: [commit], tests: [], summary: "completed" } };
   await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff));
-  await invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  const started = await invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  await assert.rejects(
+    invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]),
+    /Review can only begin from a pending execution review/,
+  );
+  const stillFrozen = await invoke(paths, "status", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  assert.equal(stillFrozen.checkpoint.review.fixed_point, started.checkpoint.review.fixed_point);
+  assert.equal(stillFrozen.checkpoint.review.review_commit, started.checkpoint.review.review_commit);
   await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "requires a fix" }));
   assert.equal((await invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "fix" }))).status, "fixing");
-  assert.equal((await invoke(paths, "complete-review-fix", ["--feature", "cli-flow"])).status, "integrating");
+  await assert.rejects(
+    invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]),
+    /Review can only begin from a pending execution review/,
+  );
+  await assert.rejects(
+    invoke(paths, "complete-review-fix", ["--feature", "cli-flow"], JSON.stringify({ checks: ["npm test: pass"] })),
+    /--worktree is required/,
+  );
+  await assert.rejects(
+    invoke(paths, "complete-review-fix", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify({ checks: ["npm test: pass"] })),
+    /Review fix commit must be after the reviewed commit/,
+  );
+  await writeFile(join(paths.worktree, "review-fix.txt"), "review fix\n");
+  await git(paths.worktree, "add", "review-fix.txt");
+  await git(paths.worktree, "commit", "-m", "apply review fix");
+  const fixCommit = await git(paths.worktree, "rev-parse", "HEAD");
+  await assert.rejects(
+    invoke(paths, "complete-review-fix", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify({ checks: [] })),
+    /At least one review fix check is required/,
+  );
+  const completed = await invoke(paths, "complete-review-fix", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify({ checks: ["npm test: pass"] }));
+  assert.equal(completed.status, "integrating");
+  assert.equal(completed.checkpoint.review.fix_commit, fixCommit);
+  assert.deepEqual(completed.checkpoint.review.fix_checks, ["npm test: pass"]);
+  await assert.rejects(
+    invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]),
+    /Review can only begin from a pending execution review/,
+  );
   await assert.rejects(invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "automatic re-review" })), /Review is not in progress/);
 });
 

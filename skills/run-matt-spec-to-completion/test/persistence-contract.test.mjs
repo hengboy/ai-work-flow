@@ -191,6 +191,12 @@ test("freezes the committed range when review begins", async () => {
     review_commit: reviewCommit,
     started_at: "2026-07-23T12:00:00.000+08:00",
   });
+  const frozen = structuredClone(checkpoint);
+  assert.throws(
+    () => beginReview(checkpoint, { fixedPoint, reviewCommit: "c".repeat(40) }),
+    /Review can only begin from a pending execution review/,
+  );
+  assert.deepEqual(checkpoint, frozen);
   assert.throws(
     () => beginReview({ ...checkpoint, status: "executing", review: { status: "pending" } }, { fixedPoint: "c".repeat(40), reviewCommit }),
     /fixed point must match the execution baseline/,
@@ -268,6 +274,8 @@ test("holds user-approved review fixes outside the review loop until they are co
   assert.equal(checkpoint.status, "fixing");
   assert.equal(checkpoint.review.status, "done");
   assert.equal(checkpoint.review.decision, "fix");
-  checkpoint = completeReviewFix(checkpoint);
+  checkpoint = completeReviewFix(checkpoint, { fixCommit: "c".repeat(40), checks: ["npm test: pass"] });
   assert.equal(checkpoint.status, "integrating");
+  assert.equal(checkpoint.review.fix_commit, "c".repeat(40));
+  assert.deepEqual(checkpoint.review.fix_checks, ["npm test: pass"]);
 });

@@ -132,6 +132,9 @@ export function relocateCheckpoint(checkpoint, worktree, now = new Date(), repos
 
 export function beginReview(checkpoint, { fixedPoint, reviewCommit }, now = new Date()) {
   now = toShanghaiTimestamp(now);
+  if (checkpoint.status !== "executing" || checkpoint.review.status !== "pending") {
+    throw new Error("Review can only begin from a pending execution review");
+  }
   if (checkpoint.tickets.some((ticket) => ticket.status !== "done")) {
     throw new Error("Cannot begin review while tickets are not done");
   }
@@ -169,12 +172,13 @@ export function decideReview(checkpoint, decision, now = new Date()) {
   return completeTransition(next);
 }
 
-export function completeReviewFix(checkpoint, now = new Date()) {
+export function completeReviewFix(checkpoint, { fixCommit, checks }, now = new Date()) {
   now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "review-fix-completed", "user-approved review fixes completed", now);
   if (next.status !== "fixing" || next.review.status !== "done" || next.review.decision !== "fix") {
     throw new Error("A user-approved review fix is required before integration");
   }
+  next.review = { ...next.review, fix_commit: fixCommit, fix_checks: checks };
   next.status = "integrating";
   return completeTransition(next);
 }

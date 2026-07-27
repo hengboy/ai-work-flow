@@ -55,7 +55,7 @@ disable-model-invocation: true
 2. 将完全相同的两个 SHA、diff 命令和 commit list 交给 **Code Reviewer**，完成 Standards 与 Spec 两轴评审（单次通过）。
 3. 将评审发现报告给用户，由用户决定是否修复以及修复哪些项。
 4. 用户确认后，委派 **Full Stack Coder** 完成用户指定的修复。
-5. 修复验证后调用 `complete-review-fix` 直接整合，不对同一固定范围自动复审；用户确认无需修复时由 `review-decision approve` 进入整合。
+5. 修复验证后调用 `complete-review-fix --worktree <feature-worktree>`，并从 stdin 提供非空 `checks` JSON；runtime 要求干净工作树和晚于 `review_commit` 的追加修复提交，持久化 `fix_commit` 与验证记录后直接整合，不对同一固定范围自动复审。用户确认无需修复时由 `review-decision approve` 进入整合。
 6. 完成执行记录的最终提交。
 
 **完成条件：** main 包含唯一的执行记录提交；若合并后清理失败，保留 `merged` 并且下次只重试清理。

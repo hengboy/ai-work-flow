@@ -94,6 +94,19 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
         diagnostics.push(diagnostic("review-diff-empty", `${fixedPoint}...${reviewCommit}`));
       }
     }
+    if (checkpoint.review.fix_commit) {
+      const fixCommit = checkpoint.review.fix_commit;
+      const fixCommitExists = await gitSucceeds(reviewWorktree, ["rev-parse", "--verify", `${fixCommit}^{commit}`]);
+      if (!fixCommitExists) diagnostics.push(diagnostic("review-fix-commit-missing", fixCommit));
+      else {
+        if (!reviewCommitExists || fixCommit === reviewCommit || !await isAncestor(reviewWorktree, reviewCommit, fixCommit)) {
+          diagnostics.push(diagnostic("review-fix-range", `${reviewCommit}..${fixCommit}`));
+        }
+        if (!await isAncestor(reviewWorktree, fixCommit, integrationRecord ? "HEAD" : checkpoint.branch)) {
+          diagnostics.push(diagnostic("review-fix-commit-not-ancestor", fixCommit));
+        }
+      }
+    }
   }
   const specTicketIds = new Set(executionPlan.tickets.map((ticket) => ticket.id));
   const checkpointTicketIds = new Set();
