@@ -5,10 +5,11 @@ import { createIntegrationLifecycle } from "../lib/integration-lifecycle.mjs";
 import { createPreMergeStash } from "../lib/pre-merge-stash.mjs";
 
 test("merges the verified execution commit instead of the mutable branch reference", async () => {
-  const executionHead = "a".repeat(40);
+  const reviewGateHead = "a".repeat(40);
   const checkpoint = {
     status: "integrating",
     branch: "feat/example",
+    review: { review_commit: reviewGateHead },
     integration: { status: "pending" },
   };
   let mergeArgs;
@@ -16,7 +17,7 @@ test("merges the verified execution commit instead of the mutable branch referen
     requireIntegrity: async () => ({ checkpoint, executionPlan: { revision: "revision" } }),
     findMainWorktree: async () => "/main",
     worktreeIsClean: async () => true,
-    currentHead: async () => executionHead,
+    currentHead: async () => "b".repeat(40),
     unexpectedMainWorktreeChanges: async () => [],
     git: async (_worktree, args) => {
       if (args[0] === "merge") {
@@ -32,7 +33,7 @@ test("merges the verified execution commit instead of the mutable branch referen
     lifecycle.integrate({ repository: "/repo", worktree: "/execution", featureSlug: "example", executionPlan: { revision: "revision" } }),
     /stop after observing merge target/,
   );
-  assert.deepEqual(mergeArgs, ["merge", "--no-edit", executionHead]);
+  assert.deepEqual(mergeArgs, ["merge", "--no-edit", reviewGateHead]);
 });
 
 test("does not report a stash patch as applied when its async reverse check is false or fails", async () => {

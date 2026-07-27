@@ -143,7 +143,7 @@ export function createIntegrationLifecycle({ now, newStashOperationId, requireIn
     }
     let mergeApplied = false;
     try {
-      const executionHead = await currentHead(worktree);
+      const executionHead = checkpoint.review.fix_commit || checkpoint.review.review_commit;
       await requireIntegrity({ mainWorktree, featureSlug, executionWorktree: worktree });
       await git(mainWorktree, ["merge", "--no-edit", executionHead]);
       mergeApplied = true;
