@@ -41,7 +41,7 @@ async function orchestratorFixture() {
   let checkpoint = createCheckpoint({ executionPlan, baseline: head, branch: "feat/migrate-runtime", worktree: root, now: new Date("2026-07-23T12:00:00+08:00") });
   checkpoint = startTickets(checkpoint, ["01"], head);
   checkpoint = completeTicket(checkpoint, "01", completionCommit);
-  checkpoint = beginReview(checkpoint);
+  checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: completionCommit });
   checkpoint = completeReview(checkpoint, "approved");
   checkpoint = markMerged(checkpoint, { executionHead: completionCommit, mainWorktree: root, mergedCommit: completionCommit });
   return { root, executionPlan, checkpoint };
@@ -59,7 +59,7 @@ async function pendingIntegrationFixture() {
   const completionCommit = await git(executionWorktree, "rev-parse", "HEAD");
   checkpoint = startTickets(checkpoint, ["01"], head);
   checkpoint = completeTicket(checkpoint, "01", completionCommit);
-  checkpoint = beginReview(checkpoint);
+  checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: completionCommit });
   checkpoint = completeReview(checkpoint, "approved");
   checkpoint = { ...checkpoint, worktree: relative(root, executionWorktree) };
   await writeCheckpoint(root, "migrate-runtime", checkpoint);
@@ -496,6 +496,23 @@ test("does not mutate an invalid checkpoint while attempting a relocated resume"
   assert.equal(writes, 0);
   assert.equal(await readFile(checkpointFile, "utf8"), before);
   assert.equal(await git(root, "rev-parse", "HEAD"), headBefore);
+});
+
+test("rejects a persisted review range whose review commit is missing", async () => {
+  const { root, checkpoint: completed, executionWorktree, featureCommit } = await completedExecutionFixture();
+  const reviewing = beginReview(completed, { fixedPoint: completed.baseline, reviewCommit: featureCommit });
+  reviewing.review.review_commit = "f".repeat(40);
+  await writeCheckpoint(root, "migrate-runtime", reviewing);
+
+  await assert.rejects(
+    createExecutionOrchestrator().resume({
+      repository: root,
+      branch: "feat/migrate-runtime",
+      specPath: ".scratch/migrate-runtime/spec.md",
+      worktreePath: executionWorktree,
+    }),
+    /review-commit-missing/,
+  );
 });
 
 test("does not create a recovery worktree when the current checkpoint is unavailable", async () => {

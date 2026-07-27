@@ -174,6 +174,29 @@ test("starts exactly one pending ticket at a time", async () => {
   );
 });
 
+test("freezes the committed range when review begins", async () => {
+  const { root, specPath } = await specFixture();
+  const executionPlan = await materializeSpec({ mainWorktree: root, specPath });
+  const fixedPoint = "a".repeat(40);
+  const reviewCommit = "b".repeat(40);
+  let checkpoint = createCheckpoint({ executionPlan, baseline: fixedPoint, branch: "feat/migrate-runtime", worktree: root });
+  checkpoint = startTickets(checkpoint, ["01"], fixedPoint);
+  checkpoint = completeTicket(checkpoint, "01", reviewCommit);
+
+  checkpoint = beginReview(checkpoint, { fixedPoint, reviewCommit }, new Date("2026-07-23T12:00:00+08:00"));
+
+  assert.deepEqual(checkpoint.review, {
+    status: "in_progress",
+    fixed_point: fixedPoint,
+    review_commit: reviewCommit,
+    started_at: "2026-07-23T12:00:00.000+08:00",
+  });
+  assert.throws(
+    () => beginReview({ ...checkpoint, status: "executing", review: { status: "pending" } }, { fixedPoint: "c".repeat(40), reviewCommit }),
+    /fixed point must match the execution baseline/,
+  );
+});
+
 test("rejects duplicate ticket IDs derived from issue file names", async () => {
   const { root, specPath } = await specFixture();
   const issueDirectory = join(root, ".scratch", "migrate-runtime", "issues");
@@ -196,7 +219,7 @@ test("retains a persisted stash reference when integration is marked merged", as
   });
   checkpoint = startTickets(checkpoint, ["01"], "a".repeat(40));
   checkpoint = completeTicket(checkpoint, "01", "a".repeat(40));
-  checkpoint = beginReview(checkpoint);
+  checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: "a".repeat(40) });
   checkpoint = completeReview(checkpoint, "approved");
   checkpoint.integration.stash_ref = "b".repeat(40);
 
@@ -215,7 +238,7 @@ test("rejects terminal integration while stash restoration is applying", async (
   const executionPlan = await materializeSpec({ mainWorktree: root, specPath });
   const checkpoint = createCheckpoint({ executionPlan, baseline: "a".repeat(40), branch: "feat/migrate-runtime", worktree: root });
   checkpoint.status = "integrating";
-  checkpoint.review = { status: "done", findings_summary: "approved", completed_at: "2026-07-23T12:00:00+08:00" };
+  checkpoint.review = { status: "done", fixed_point: "a".repeat(40), review_commit: "a".repeat(40), findings_summary: "approved", started_at: "2026-07-23T12:00:00+08:00", completed_at: "2026-07-23T12:00:00+08:00" };
   checkpoint.tickets = [{ id: "01", status: "done", start_commit: "a".repeat(40), started_at: "2026-07-23T12:00:00+08:00", end_commit: "a".repeat(40), completed_at: "2026-07-23T12:00:00+08:00" }];
   const merged = markMerged(checkpoint, { executionHead: "a".repeat(40), mainWorktree: root, mergedCommit: "a".repeat(40) });
   merged.integration = { ...merged.integration, stash_ref: "b".repeat(40), stash_restore_state: "applying" };
@@ -238,7 +261,7 @@ test("holds user-approved review fixes outside the review loop until they are co
   let checkpoint = createCheckpoint({ executionPlan, baseline: "a".repeat(40), branch: "feat/migrate-runtime", worktree: root });
   checkpoint = startTickets(checkpoint, ["01"], "a".repeat(40));
   checkpoint = completeTicket(checkpoint, "01", "b".repeat(40));
-  checkpoint = beginReview(checkpoint);
+  checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: "b".repeat(40) });
   checkpoint = recordReview(checkpoint, "needs a user choice");
   assert.equal(checkpoint.review.status, "awaiting_user");
   checkpoint = decideReview(checkpoint, "fix");

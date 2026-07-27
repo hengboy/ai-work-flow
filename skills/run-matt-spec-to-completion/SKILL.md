@@ -51,11 +51,12 @@ disable-model-invocation: true
 
 ### 4. 评审与整合
 
-1. 委派 **Code Reviewer** 完成 Standards 与 Spec 两轴评审（单次通过）。
-2. 将评审发现报告给用户，由用户决定是否修复以及修复哪些项。
-3. 用户确认后，委派 **Full Stack Coder** 完成用户指定的修复。
-4. 修复验证后调用 `complete-review-fix` 直接整合，不对同一固定范围自动复审；用户确认无需修复时由 `review-decision approve` 进入整合。
-5. 完成执行记录的最终提交。
+1. 调用 runtime 的 `begin-review --worktree <feature-worktree>`；工作树不干净、端点无效或三点 diff 为空时停止。保存返回的 `fixed_point`、`review_commit`、`diff_command` 和 `commit_list_command`。
+2. 将完全相同的两个 SHA、diff 命令和 commit list 交给 **Code Reviewer**，完成 Standards 与 Spec 两轴评审（单次通过）。
+3. 将评审发现报告给用户，由用户决定是否修复以及修复哪些项。
+4. 用户确认后，委派 **Full Stack Coder** 完成用户指定的修复。
+5. 修复验证后调用 `complete-review-fix` 直接整合，不对同一固定范围自动复审；用户确认无需修复时由 `review-decision approve` 进入整合。
+6. 完成执行记录的最终提交。
 
 **完成条件：** main 包含唯一的执行记录提交；若合并后清理失败，保留 `merged` 并且下次只重试清理。
 

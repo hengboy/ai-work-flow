@@ -76,6 +76,25 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
   } else if (!await isAncestor(worktree, checkpoint.baseline)) {
     diagnostics.push(diagnostic("baseline-not-ancestor", checkpoint.baseline));
   }
+  if (checkpoint.review.status !== "pending") {
+    const reviewWorktree = executionWorktree || worktree;
+    const fixedPoint = checkpoint.review.fixed_point;
+    const reviewCommit = checkpoint.review.review_commit;
+    if (fixedPoint !== checkpoint.baseline) diagnostics.push(diagnostic("review-fixed-point", fixedPoint));
+    const fixedPointExists = await gitSucceeds(reviewWorktree, ["rev-parse", "--verify", `${fixedPoint}^{commit}`]);
+    const reviewCommitExists = await gitSucceeds(reviewWorktree, ["rev-parse", "--verify", `${reviewCommit}^{commit}`]);
+    if (!fixedPointExists) diagnostics.push(diagnostic("review-fixed-point-missing", fixedPoint));
+    if (!reviewCommitExists) diagnostics.push(diagnostic("review-commit-missing", reviewCommit));
+    if (fixedPointExists && reviewCommitExists) {
+      if (!await isAncestor(reviewWorktree, fixedPoint, reviewCommit)) diagnostics.push(diagnostic("review-range", `${fixedPoint}...${reviewCommit}`));
+      if (!await isAncestor(reviewWorktree, reviewCommit, integrationRecord ? "HEAD" : checkpoint.branch)) {
+        diagnostics.push(diagnostic("review-commit-not-ancestor", reviewCommit));
+      }
+      if (await gitSucceeds(reviewWorktree, ["diff", "--quiet", `${fixedPoint}...${reviewCommit}`])) {
+        diagnostics.push(diagnostic("review-diff-empty", `${fixedPoint}...${reviewCommit}`));
+      }
+    }
+  }
   const specTicketIds = new Set(executionPlan.tickets.map((ticket) => ticket.id));
   const checkpointTicketIds = new Set();
   for (const ticket of checkpoint.tickets) {

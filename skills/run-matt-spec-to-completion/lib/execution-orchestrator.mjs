@@ -234,12 +234,12 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
       return { checkpoint, results: [result] };
     },
 
-    async startReview({ mainWorktree, featureSlug, findingsSummary = "Final review pending." }) {
-      return (await canonicalTransition("record-review", { mainWorktree, featureSlug }, { findings_summary: findingsSummary })).checkpoint;
+    async startReview({ mainWorktree, featureSlug, worktree }) {
+      return (await canonicalTransition("begin-review", { mainWorktree, featureSlug, worktree })).checkpoint;
     },
 
     async finishReview({ mainWorktree, featureSlug, checkpoint, findingsSummary }) {
-      await this.startReview({ mainWorktree, featureSlug, findingsSummary });
+      await canonicalTransition("record-review", { mainWorktree, featureSlug }, { findings_summary: findingsSummary });
       return (await canonicalTransition("review-decision", { mainWorktree, featureSlug }, { decision: "approve" })).checkpoint;
     },
 
@@ -259,13 +259,13 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
       const readTicket = issueTracker.read.bind(issueTracker);
       if (checkpoint.status === "executing" && checkpoint.tickets.every((ticket) => ticket.status === "done")) {
         for (const ticket of checkpoint.tickets) await issueTracker.markComplete(ticket.id);
-        checkpoint = await this.startReview({ mainWorktree, featureSlug, checkpoint });
+        checkpoint = await this.startReview({ mainWorktree, featureSlug, worktree });
       }
       while (checkpoint.status === "executing") {
         const result = await this.executeFrontier({ worktree, mainWorktree, featureSlug, executionPlan, checkpoint, readTicket });
         if (result.status === "blocked") return result;
         checkpoint = result.checkpoint;
-        if (checkpoint.tickets.every((ticket) => ticket.status === "done")) checkpoint = await this.startReview({ mainWorktree, featureSlug, checkpoint });
+        if (checkpoint.tickets.every((ticket) => ticket.status === "done")) checkpoint = await this.startReview({ mainWorktree, featureSlug, worktree });
       }
       if (checkpoint.status === "reviewing") {
         if (!review) return { status: "reviewing", worktree, executionPlan, checkpoint };

@@ -48,7 +48,7 @@ test("does not mark or drop a restored stash until its reverse check confirms th
       end_commit: "a".repeat(40),
       completed_at: "2026-07-23T12:00:00+08:00",
     }],
-    review: { status: "done", findings_summary: "approved", completed_at: "2026-07-23T12:00:00+08:00" },
+    review: { status: "done", fixed_point: "a".repeat(40), review_commit: "a".repeat(40), findings_summary: "approved", started_at: "2026-07-23T12:00:00+08:00", completed_at: "2026-07-23T12:00:00+08:00" },
     integration: {
       status: "merged",
       target_branch: "main",

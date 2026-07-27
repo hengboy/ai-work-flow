@@ -25,7 +25,8 @@ async function fixture() {
   await writeFile(join(root, ".gitignore"), ".worktrees/\n");
   await git(root, "add", ".");
   await git(root, "commit", "-m", "fixture");
-  return { root, spec: ".scratch/cli-flow/spec.md", worktree: join(root, ".worktrees", "execution") };
+  const baseline = await git(root, "rev-parse", "HEAD");
+  return { root, spec: ".scratch/cli-flow/spec.md", worktree: join(root, ".worktrees", "execution"), baseline };
 }
 
 async function invoke(paths, command, args = [], input) {
@@ -89,10 +90,37 @@ test("execution CLI completes review and integration through the same feature lo
   const commit = await git(paths.worktree, "rev-parse", "HEAD");
   const handoff = { role_id: "full-stack-coder", status: "done", summary: "completed", artifacts: ["completed.txt"], checks: [], payload: { ticket_id: "01", status: "done", commits: [commit], tests: [], summary: "completed" } };
   await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff));
+  await assert.rejects(
+    invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "range was not frozen" })),
+    /Review is not in progress/,
+  );
+  const review = await invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  assert.equal(review.checkpoint.review.fixed_point, paths.baseline);
+  assert.equal(review.checkpoint.review.review_commit, commit);
+  assert.equal(review.diff_command, `git diff ${paths.baseline}...${commit}`);
+  assert.equal(review.commit_list_command, `git log ${paths.baseline}..${commit} --oneline`);
   await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "approved" }));
   await invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "approve" }));
   const integrated = await invoke(paths, "integrate", ["--feature", "cli-flow", "--worktree", paths.worktree]);
   assert.equal(integrated.status, "complete");
+});
+
+test("begin-review rejects uncommitted worktree changes", async () => {
+  const paths = await fixture();
+  await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
+  await invoke(paths, "claim", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  await writeFile(join(paths.worktree, "completed.txt"), "done\n");
+  await git(paths.worktree, "add", "completed.txt");
+  await git(paths.worktree, "commit", "-m", "complete ticket");
+  const commit = await git(paths.worktree, "rev-parse", "HEAD");
+  const handoff = { role_id: "full-stack-coder", status: "done", summary: "completed", artifacts: ["completed.txt"], checks: [], payload: { ticket_id: "01", status: "done", commits: [commit], tests: [], summary: "completed" } };
+  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff));
+  await writeFile(join(paths.worktree, "uncommitted.txt"), "must not be reviewed\n");
+
+  await assert.rejects(
+    invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]),
+    /Execution worktree must be clean before review/,
+  );
 });
 
 test("review fixes advance directly to integration without another review", async () => {
@@ -105,6 +133,7 @@ test("review fixes advance directly to integration without another review", asyn
   const commit = await git(paths.worktree, "rev-parse", "HEAD");
   const handoff = { role_id: "full-stack-coder", status: "done", summary: "completed", artifacts: [], checks: [], payload: { ticket_id: "01", status: "done", commits: [commit], tests: [], summary: "completed" } };
   await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff));
+  await invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]);
   await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "requires a fix" }));
   assert.equal((await invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "fix" }))).status, "fixing");
   assert.equal((await invoke(paths, "complete-review-fix", ["--feature", "cli-flow"])).status, "integrating");

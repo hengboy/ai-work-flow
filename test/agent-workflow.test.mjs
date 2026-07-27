@@ -139,8 +139,8 @@ test('role bodies derive their common structure and reply sections from the cata
     'full-stack-coder': ['完成', '变更', '验证', '阻塞'],
     'git-committer': ['提交结果'],
     'code-reviewer': ['Standards', 'Spec', '结论', '测试缺口', '阻塞'],
-    'review-standards': ['结论', '严重', '测试缺口', '阻塞'],
-    'review-spec': ['结论', '严重', '测试缺口', '阻塞']
+    'review-standards': ['结论', '发现', '测试缺口', '阻塞'],
+    'review-spec': ['结论', '发现', '测试缺口', '阻塞']
   };
 
   for (const role of catalog.roles) {
@@ -460,6 +460,42 @@ test('code review approval satisfies the final independent review', () => {
   }
   assert.match(orchestrator, /~\/\.config\/ai-work-flow\/routing\.md/);
   assert.doesNotMatch(orchestrator, /同一稳定差异的已完成审查不得再次委派/);
+});
+
+test('review agents preserve the Matt committed-range contract', () => {
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const bodies = Object.fromEntries(['code-reviewer', 'review-standards', 'review-spec'].map((role) => [
+    role,
+    readFileSync(resolve(agentAssets, 'bodies', `${role}.md`), 'utf8')
+  ]));
+  const commands = [
+    'git rev-parse <fixed-point>',
+    'git rev-parse <review-commit>',
+    'git status --short',
+    'git diff <fixed-point>...<review-commit>',
+    'git log <fixed-point>..<review-commit> --oneline'
+  ];
+
+  for (const command of commands) assert.ok(routing.includes(command), command);
+  for (const body of Object.values(bodies)) {
+    assert.ok(body.includes('git diff <fixed-point>...<review-commit>'));
+    assert.ok(body.includes('git log <fixed-point>..<review-commit> --oneline'));
+  }
+  assert.match(routing, /完全相同的两个完整 SHA、diff 命令和 commit list/);
+  assert.match(routing, /禁止使用无参数 `git diff` 或 `git diff --cached`/);
+  assert.match(bodies['code-reviewer'], /不得合并或跨轴重新排序/);
+  assert.match(bodies['review-standards'], /缺少任一项时阻塞/);
+  assert.match(bodies['review-spec'], /缺少任一项时阻塞/);
+
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    for (const role of Object.keys(bodies)) {
+      const generated = readFileSync(agentPath(paths, platform, role, extension), 'utf8');
+      assert.ok(generated.includes('git diff <fixed-point>...<review-commit>'), `${platform}/${role}`);
+    }
+  }
 });
 
 test('routing is the sole source for retry and stop-lock governance', () => {

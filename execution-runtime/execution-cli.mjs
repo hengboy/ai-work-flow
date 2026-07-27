@@ -4,7 +4,7 @@ import { createExecutionOrchestrator } from "../skills/run-matt-spec-to-completi
 import { deriveSpecLocation } from "../skills/run-matt-spec-to-completion/lib/paths.mjs";
 import { findMainWorktree } from "../skills/run-matt-spec-to-completion/lib/worktree-lifecycle.mjs";
 import { blockTicket, beginReview, completeReviewFix, completeTicket, decideReview, recordReview, startTickets } from "../skills/run-matt-spec-to-completion/lib/checkpoint.mjs";
-import { currentHead, gitSucceeds, isAncestor } from "../skills/run-matt-spec-to-completion/lib/git.mjs";
+import { currentHead, git, gitSucceeds, isAncestor } from "../skills/run-matt-spec-to-completion/lib/git.mjs";
 import { selectTicketFrontier } from "../skills/run-matt-spec-to-completion/lib/ticket-frontier.mjs";
 import { assertCompletionResult, assertHandoffResult } from "../skills/run-matt-spec-to-completion/lib/validation.mjs";
 import { toShanghaiTimestamp } from "../skills/run-matt-spec-to-completion/lib/time.mjs";
@@ -94,14 +94,30 @@ async function run(options) {
     } });
     return { command: "record-ticket", status: completion.status, ticket_id: completion.ticket_id, checkpoint: result.checkpoint };
   }
+  if (options.command === "begin-review") {
+    const executionWorktree = requireOption(options, "worktree");
+    const result = await stateStore.transition({ repository, featureSlug, executionWorktree, async apply(current) {
+      if (await git(executionWorktree, ["status", "--short"])) throw new Error("Execution worktree must be clean before review");
+      const fixedPoint = current.checkpoint.baseline;
+      const reviewCommit = await currentHead(executionWorktree);
+      if (!await isAncestor(executionWorktree, fixedPoint, reviewCommit)) throw new Error("Review fixed point must be an ancestor of the review commit");
+      if (await gitSucceeds(executionWorktree, ["diff", "--quiet", `${fixedPoint}...${reviewCommit}`])) throw new Error("Review diff must not be empty");
+      return beginReview(current.checkpoint, { fixedPoint, reviewCommit }, toShanghaiTimestamp(new Date()));
+    } });
+    const { fixed_point: fixedPoint, review_commit: reviewCommit } = result.checkpoint.review;
+    return {
+      command: "begin-review",
+      status: result.checkpoint.status,
+      checkpoint: result.checkpoint,
+      diff_command: `git diff ${fixedPoint}...${reviewCommit}`,
+      commit_list_command: `git log ${fixedPoint}..${reviewCommit} --oneline`,
+    };
+  }
   if (options.command === "record-review") {
     const input = await stdinJson();
     if (typeof input.findings_summary !== "string" || !input.findings_summary) throw new Error("findings_summary is required.");
     const result = await stateStore.transition({ repository, featureSlug, checkExecutionWorktree: false, async apply(current) {
-      const started = current.checkpoint.status === "executing" && current.checkpoint.tickets.every((ticket) => ticket.status === "done")
-        ? beginReview(current.checkpoint, toShanghaiTimestamp(new Date()))
-        : current.checkpoint;
-      return recordReview(started, input.findings_summary, toShanghaiTimestamp(new Date()));
+      return recordReview(current.checkpoint, input.findings_summary, toShanghaiTimestamp(new Date()));
     } });
     return { command: "record-review", status: result.checkpoint.review.status, checkpoint: result.checkpoint };
   }

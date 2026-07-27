@@ -130,14 +130,15 @@ export function relocateCheckpoint(checkpoint, worktree, now = new Date(), repos
   return completeTransition(next);
 }
 
-export function beginReview(checkpoint, now = new Date()) {
+export function beginReview(checkpoint, { fixedPoint, reviewCommit }, now = new Date()) {
   now = toShanghaiTimestamp(now);
   if (checkpoint.tickets.some((ticket) => ticket.status !== "done")) {
     throw new Error("Cannot begin review while tickets are not done");
   }
+  if (fixedPoint !== checkpoint.baseline) throw new Error("Review fixed point must match the execution baseline");
   const next = revise(checkpoint, "reviewing", "final review started", now);
   next.status = "reviewing";
-  next.review = { status: "in_progress", started_at: now };
+  next.review = { status: "in_progress", fixed_point: fixedPoint, review_commit: reviewCommit, started_at: now };
   return completeTransition(next);
 }
 
