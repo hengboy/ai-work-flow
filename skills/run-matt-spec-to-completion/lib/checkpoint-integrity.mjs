@@ -80,6 +80,9 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
     const reviewWorktree = executionWorktree || worktree;
     const fixedPoint = checkpoint.review.fixed_point;
     const reviewCommit = checkpoint.review.review_commit;
+    const expectedGateHead = checkpoint.status === "fixing"
+      ? null
+      : checkpoint.review.fix_commit || reviewCommit;
     if (fixedPoint !== checkpoint.baseline) diagnostics.push(diagnostic("review-fixed-point", fixedPoint));
     const fixedPointExists = await gitSucceeds(reviewWorktree, ["rev-parse", "--verify", `${fixedPoint}^{commit}`]);
     const reviewCommitExists = await gitSucceeds(reviewWorktree, ["rev-parse", "--verify", `${reviewCommit}^{commit}`]);
@@ -105,6 +108,15 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
         if (!await isAncestor(reviewWorktree, fixCommit, integrationRecord ? "HEAD" : checkpoint.branch)) {
           diagnostics.push(diagnostic("review-fix-commit-not-ancestor", fixCommit));
         }
+      }
+    }
+    if (expectedGateHead) {
+      let actualGateHead = integrationRecord ? checkpoint.integration.execution_head : null;
+      if (!integrationRecord && await gitSucceeds(reviewWorktree, ["rev-parse", "--verify", `${checkpoint.branch}^{commit}`])) {
+        actualGateHead = await git(reviewWorktree, ["rev-parse", checkpoint.branch]);
+      }
+      if (actualGateHead !== expectedGateHead) {
+        diagnostics.push(diagnostic("review-gate-head", `${actualGateHead || checkpoint.branch} != ${expectedGateHead}`));
       }
     }
   }

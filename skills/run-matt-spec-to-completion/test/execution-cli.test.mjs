@@ -103,6 +103,11 @@ test("execution CLI completes review and integration through the same feature lo
   await invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "approve" }));
   const integrated = await invoke(paths, "integrate", ["--feature", "cli-flow", "--worktree", paths.worktree]);
   assert.equal(integrated.status, "complete");
+  const checkpointPath = join(paths.root, ".scratch", "cli-flow", "checkpoint.json");
+  const tampered = JSON.parse(await readFile(checkpointPath, "utf8"));
+  tampered.integration.execution_head = paths.baseline;
+  await writeFile(checkpointPath, `${JSON.stringify(tampered)}\n`);
+  await assert.rejects(invoke(paths, "status", ["--feature", "cli-flow"]), /review-gate-head/);
 });
 
 test("begin-review rejects uncommitted worktree changes", async () => {
@@ -120,6 +125,29 @@ test("begin-review rejects uncommitted worktree changes", async () => {
   await assert.rejects(
     invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]),
     /Execution worktree must be clean before review/,
+  );
+});
+
+test("integration rejects commits added after an approved review", async () => {
+  const paths = await fixture();
+  await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
+  await invoke(paths, "claim", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  await writeFile(join(paths.worktree, "completed.txt"), "done\n");
+  await git(paths.worktree, "add", "completed.txt");
+  await git(paths.worktree, "commit", "-m", "complete ticket");
+  const commit = await git(paths.worktree, "rev-parse", "HEAD");
+  const handoff = { role_id: "full-stack-coder", status: "done", summary: "completed", artifacts: ["completed.txt"], checks: [], payload: { ticket_id: "01", status: "done", commits: [commit], tests: [], summary: "completed" } };
+  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff));
+  await invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "approved" }));
+  await invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "approve" }));
+  await writeFile(join(paths.worktree, "after-review.txt"), "must not be integrated\n");
+  await git(paths.worktree, "add", "after-review.txt");
+  await git(paths.worktree, "commit", "-m", "unreviewed change");
+
+  await assert.rejects(
+    invoke(paths, "integrate", ["--feature", "cli-flow", "--worktree", paths.worktree]),
+    /review-gate-head/,
   );
 });
 
@@ -172,6 +200,13 @@ test("review fixes advance directly to integration without another review", asyn
     /Review can only begin from a pending execution review/,
   );
   await assert.rejects(invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "automatic re-review" })), /Review is not in progress/);
+  await writeFile(join(paths.worktree, "after-fix.txt"), "must not be integrated\n");
+  await git(paths.worktree, "add", "after-fix.txt");
+  await git(paths.worktree, "commit", "-m", "unrecorded post-fix change");
+  await assert.rejects(
+    invoke(paths, "integrate", ["--feature", "cli-flow", "--worktree", paths.worktree]),
+    /review-gate-head/,
+  );
 });
 
 test("prepare rejects a symbolic-link worktree parent before creating a worktree", async () => {
