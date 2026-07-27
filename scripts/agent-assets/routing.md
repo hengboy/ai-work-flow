@@ -6,13 +6,13 @@
 
 ## 委派与工作边界
 
-可写角色必须串行执行。**Document Maintainer** 写入 README、`docs/` 等普通文档。**Planning Writer** 写入计划、ADR、交接和跟踪器工件。**Full Stack Coder** 写入源码、测试、必要配置并提交。每个写入者完成后都要报告 `git diff --name-only`。
+可写角色必须串行执行。**Document Maintainer** 写入 README、`docs/` 等普通文档。**Planning Writer** 写入计划、ADR、交接和跟踪器工件。**Full Stack Coder** 写入源码、测试和必要配置，并交接精确的变更清单。**Git Committer** 随后创建仅本地的实现提交。每个写入者完成后都要报告 `git diff --name-only`。
 
 只要后续角色需要未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现，必须先委派 **File Explorer** 并等待其交接；当前会话已有交接时可复用。用户给出精确路径或只需读取已交接路径的直接依赖时可例外。不得将发现阶段交给后续执行角色。其他角色只能读取 **File Explorer** 交接的路径及其直接依赖。外部资料研究只交给 **Researcher**；**Researcher** 不得检查本地工作区。
 
 处理项目代码前，必须使用 `$project-code-navigation` 先读取 `.ai-work-flow/index/feature-navigation.md`，再按目标功能只读取相关索引。索引命中时直接读取记录的代码，禁止全局文件检索或搜索无关路径；仅在索引缺失、未覆盖目标功能或路径无法定位时，才委派 **File Explorer** 发现真实入口。**Full Stack Coder** 必须在同一轮改动中维护索引：新增文件，或文件移动、重命名、拆分、合并、删除、主职责变化，以及用户可见功能入口、路由或 API 变化时，更新 `.ai-work-flow/index/` 的对应文件；缺少索引的新功能视为未完成。项目导航只存放在 `.ai-work-flow/index/`，不得创建 `.agents/skills/project-code-navigation/` 或改写 `AGENTS.md`、`CLAUDE.md`。
 
-**Code Reviewer** 只有在差异稳定后才能并行启动 **Review Standards** 和 **Review Spec**，并分别保留两者的发现。其他角色不得委派工作。审查完成后，**Orchestrator** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
+确认方案后的实现阶段固定按以下顺序执行：**Full Stack Coder** 完成实现和测试并交接变更清单，**Git Committer** 创建本地 review commit，随后 **Code Reviewer** 并行启动 **Review Standards** 和 **Review Spec**。`run-matt-spec-to-completion` 的 Ticket 子代理是例外：它在隔离且起始干净的 feature worktree 中按同一 `$git-commit` 协议自行创建实现提交，以满足 Completion Adapter 返回完整 SHA 的契约。提交失败、工作树不干净或测试失败时不得启动审查。审查完成后，**Orchestrator** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
 
 ### AI Work Flow 审查子任务契约
 
@@ -56,11 +56,13 @@ git log <fixed-point>..<review-commit> --oneline
 
 完成澄清后，**Orchestrator** 委派 **Planning Writer** 前必须指定稳定的 kebab-case `planId`。**Planning Writer** 将方案保存到目标项目 `.ai-work-flow/plans/<planId>.md` 后，**Orchestrator** 向用户报告路径和摘要，并等待用户明确确认后才能实施。确认前不得自动委派 **Full Stack Coder**、**Git Committer** 或调用任何实施 Skill；沉默、继续讨论或仅确认已收到方案均不构成实施确认。用户要求修改方案时，委派 **Planning Writer** 更新同一文件，并在更新后重新等待用户明确确认。
 
-### Git 提交授权范围
+### Git 提交流水线
 
-首次范围阻塞时，Git Committer 必须在暂存前以完整 Git 状态构造并展示完整文件清单；首次阻塞清单是唯一授权对象。授权必须发生在清单展示之后，并明确指向全部所列文件；清单展示前的笼统提交指令或未指向该完整清单的确认均不构成授权。
+用户明确确认方案或要求实施，即授权为该实现阶段创建仅本地的 review commit；不需要在首次暂存前再次逐项请求授权。此授权不包含 push、amend、reset、clean、stash、切换或删除分支、标签操作，且不包含方案范围之外的已有变更。
 
-Orchestrator 只能原样转交首次清单与用户授权原文，Git Committer 只能逐项校验快照。第二次委派仅可使用该清单作为一次性白名单，当前变更集合必须与授权快照一致；存在任何差异时必须在暂存前停止，不得暂存或提交任何文件。白名单一次性消费，不能跨尝试、任务或新会话复用。任一角色都不得推断文件相关性，或按任务关系、文件名、diff 或其他推测扩大范围。
+**Full Stack Coder** 开始前必须记录 `base_commit` 和 `git status --short`，且初始状态必须为空；否则停止，不得猜测提交范围。完成后必须交接同一工作树的 `base_commit`、初始状态、精确 `changed_paths`、`git diff --name-only <base_commit>`、`git ls-files --others --exclude-standard` 和测试结果。`changed_paths` 是前两项命令输出的去重并集，必须包含新增、修改、删除与未跟踪文件。**Orchestrator** 在实现与测试成功后自动将该交接原样委派给 **Git Committer**。变更清单为空、当前 `HEAD` 不等于 `base_commit`、当前状态与交接不一致或存在未交接的变更时，Git Committer 必须停止且不得暂存任何文件。
+
+Git Committer 必须先调用 `$git-commit` 生成提交信息，只能通过 `git add -- <changed_paths>` 暂存交接中的精确路径，并在提交前确认 `git diff --cached --name-only` 与 `changed_paths` 完全一致且暂存差异非空。提交必须仅在本地创建，成功后报告完整 SHA 和 `git status --short`。工作树仍有 staged、unstaged 或 untracked 内容时，不能启动审查；该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实现阶段的提交授权。
 
 ### 最终审查去重
 

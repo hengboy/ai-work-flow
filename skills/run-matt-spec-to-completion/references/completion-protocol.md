@@ -16,4 +16,4 @@ ERROR: <仅 RESULT=BLOCKED 时填写，且非空>
 
 `completion-result-schema.json` 是字段格式的权威。`normalizeCompletion` 将缺字段、无效或短 SHA、`DONE` 无提交、`DONE` 含 ERROR、`BLOCKED` 含提交转换为 blocked Completion Result。协议错误的 `summary` 固定为 `Completion protocol error`，`error` 说明具体原因。
 
-子代理名为 `Spec Ticket - {task_title}`，使用主代理的模型并加载 `implement` skill。它只编辑、测试和提交实现代码；Orchestrator 委派 Full Stack Coder 在 main 更新本地 Issue 复选框和 Checkpoint。
+子代理名为 `Spec Ticket - {task_title}`，使用主代理的模型并加载 `implement` 与 `$git-commit` skill。它是隔离 feature worktree 中受限的 Full Stack Coder + Git Committer：开始前记录 `base_commit` 和空的 `git status --short`；完成实现和测试后，以 `git diff --name-only <base_commit>` 与 `git ls-files --others --exclude-standard` 的去重并集生成 `changed_paths`。只有当前 `HEAD` 仍精确等于 `base_commit`、范围核对通过且验证成功时，才按 `$git-commit` 创建仅本地的实现提交并返回完整 SHA；不得等待额外的提交授权。Orchestrator 委派 Full Stack Coder 在 main 更新本地 Issue 复选框和 Checkpoint。

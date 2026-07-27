@@ -18,12 +18,14 @@ const managedSkillDirectories = [
   'generate-ai-work-flow-agents',
   'switch-ai-work-flow-env',
   'project-code-navigation',
+  'git-commit',
   'run-matt-spec-to-completion'
 ];
 const defaultSkillPrompts = new Map([
   ['generate-ai-work-flow-agents', '使用 `$generate-ai-work-flow-agents` 验证全局配置并生成代理。'],
   ['switch-ai-work-flow-env', '使用 `$switch-ai-work-flow-env` 切换到指定环境并重新生成代理。'],
-  ['project-code-navigation', '使用 `$project-code-navigation` 为当前项目创建或更新 `.ai-work-flow/index/` 代码导航索引。']
+  ['project-code-navigation', '使用 `$project-code-navigation` 为当前项目创建或更新 `.ai-work-flow/index/` 代码导航索引。'],
+  ['git-commit', '使用 `$git-commit` 根据实现交接创建一个受控本地提交。']
 ]);
 
 function assertPromptLayout(source, name) {
@@ -223,7 +225,7 @@ test('installation and platform generation retain the managed prompt content', (
   }
 });
 
-test('routing is the sole source for shared Git authorization governance', () => {
+test('routing defines automatic scoped local commits after confirmed implementation', () => {
   const gitCommitter = readFileSync(resolve(agentAssets, 'bodies/git-committer.md'), 'utf8');
   const orchestrator = readFileSync(resolve(agentAssets, 'bodies/orchestrator.md'), 'utf8');
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
@@ -232,16 +234,19 @@ test('routing is the sole source for shared Git authorization governance', () =>
   assert.equal(result.status, 0, result.stderr);
 
   const sharedAssertions = [
-    /首次阻塞清单是唯一授权对象/,
-    /授权必须发生在清单展示之后/,
-    /只能原样转交.*只能逐项校验/,
-    /当前变更集合必须与授权快照一致/,
-    /白名单一次性消费/,
-    /不得推断文件相关性/
+    /确认方案或要求实施，即授权为该实现阶段创建仅本地的 review commit/,
+    /不需要在首次暂存前再次逐项请求授权/,
+    /base_commit/,
+    /精确 `changed_paths`/,
+    /git add -- <changed_paths>/,
+    /git diff --cached --name-only/,
+    /工作树仍有 staged、unstaged 或 untracked 内容时，不能启动审查/,
+    /而不是向用户重新请求同一实现阶段的提交授权/
   ];
 
-  assert.match(gitCommitter, /`routing\.md` 的授权范围/);
-  assert.match(gitCommitter, /`git-commit` Skill/);
+  assert.match(gitCommitter, /`routing\.md` 的自动提交流水线范围/);
+  assert.match(gitCommitter, /\$git-commit/);
+  assert.match(gitCommitter, /不得再次向用户请求/);
   assert.match(orchestrator, /共同的委派、审查、确认、重试和 Git 授权规则只定义在/);
   for (const body of [gitCommitter, orchestrator]) {
     assert.doesNotMatch(body, /首次范围检查/);
@@ -253,9 +258,47 @@ test('routing is the sole source for shared Git authorization governance', () =>
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generatedCommitter = readFileSync(agentPath(paths, platform, 'git-committer', extension), 'utf8');
     const generatedOrchestrator = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
-    assert.match(generatedCommitter, /`routing\.md` 的授权范围/, platform);
+    assert.match(generatedCommitter, /`routing\.md` 的自动提交流水线范围/, platform);
     assert.match(generatedOrchestrator, /共同的委派、审查、确认、重试和 Git 授权规则只定义在/, platform);
   }
+});
+
+test('implementation commits precede the committed-range dual-axis review', () => {
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const coder = readFileSync(resolve(agentAssets, 'bodies/full-stack-coder.md'), 'utf8');
+  const committer = readFileSync(resolve(agentAssets, 'bodies/git-committer.md'), 'utf8');
+  const skill = readFileSync(resolve(root, 'skills/git-commit/SKILL.md'), 'utf8');
+  const protocol = readFileSync(resolve(root, 'skills/run-matt-spec-to-completion/references/completion-protocol.md'), 'utf8');
+  const requiredScopeContract = [
+    /初始状态必须为空/,
+    /git diff --name-only <base_commit>/,
+    /git ls-files --others --exclude-standard/,
+    /去重并集/,
+    /包含新增、修改、删除与未跟踪文件/,
+    /当前 `HEAD` 不等于 `base_commit`/,
+    /git diff --cached --name-only.*`changed_paths` 完全一致/
+  ];
+
+  assert.match(routing, /Full Stack Coder.*Git Committer.*Code Reviewer[\s\S]*Review Standards.*Review Spec/);
+  assert.match(routing, /提交失败、工作树不干净或测试失败时不得启动审查/);
+  for (const assertion of requiredScopeContract) assert.match(routing, assertion);
+  for (const assertion of requiredScopeContract.slice(0, 5)) assert.match(coder, assertion);
+  assert.match(committer, /git add -- <changed_paths>/);
+  assert.match(committer, /HEAD 精确等于交接 `base_commit`/);
+  assert.match(skill, /Never run `git push`/);
+  assert.match(skill, /Never use `git add \.`/);
+  assert.match(skill, /HEAD` exactly equals `base_commit` and the initial status was empty/);
+  assert.match(skill, /de-duplicated union of `git diff --name-only <base_commit>` and `git ls-files --others --exclude-standard`/);
+  assert.match(skill, /exactly matches `changed_paths`/);
+  assert.match(skill, /git diff --cached --name-only` exactly equals the declared list/);
+  assert.match(protocol, /implement` 与 `\$git-commit` skill/);
+  assert.match(protocol, /空的 `git status --short`/);
+  assert.match(protocol, /git diff --name-only <base_commit>` 与 `git ls-files --others --exclude-standard` 的去重并集生成 `changed_paths`/);
+  assert.match(protocol, /当前 `HEAD` 仍精确等于 `base_commit`、范围核对通过且验证成功/);
+  assert.match(protocol, /不得等待额外的提交授权/);
+  assert.match(skill, /\*\*结果：\*\*/);
+  assert.match(skill, /\*\*状态：\*\*/);
+  assert.doesNotMatch(skill, /\*\*提交结果：\*\*/);
 });
 
 test('managed marker updates preserve user content outside the marker byte-for-byte', () => {

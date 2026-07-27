@@ -18,7 +18,7 @@ node scripts/install.mjs
 
 安装会完成以下工作：
 
-- 将自定义技能（`run-matt-spec-to-completion`、`generate-ai-work-flow-agents`、`switch-ai-work-flow-env`、`project-code-navigation`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录，并安装共享 execution runtime 及其依赖
+- 将自定义技能（`run-matt-spec-to-completion`、`generate-ai-work-flow-agents`、`switch-ai-work-flow-env`、`project-code-navigation`、`git-commit`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录，并安装共享 execution runtime 及其依赖
 - 创建并默认直接使用 `~/.config/ai-work-flow/environments/default.json` 和 `routing.md`；仓库中的 `scripts/agent-assets/default-config.json` 仅作为初始化模板
 - 生成三端的 9 个受管理 agent
 - 更新三端的路由配置，并将 OpenCode 默认 agent 设为 `orchestrator`
@@ -164,6 +164,10 @@ node "$runtime" record-ticket --repository <repo> --feature <feature> --worktree
 ### `$project-code-navigation`
 
 为当前项目初始化、使用并持续维护 `.ai-work-flow/index/` 代码导航索引。索引按真实代码记录功能关键词与页面、路由、API、Service、任务等入口；修改代码前必须先用索引定位，且文件或功能入口变化必须在同一轮改动中更新索引。仅在项目实际包含相应层时创建 `frontend-navigation.md` 或 `backend-navigation.md`。
+
+### `$git-commit`
+
+根据 Full Stack Coder 的 `base_commit`、初始状态和精确 `changed_paths` 创建一个仅本地的实现提交。它只暂存声明的路径，在提交前核对暂存清单与非空差异，并禁止 push、amend、reset、clean、stash 和扩大暂存范围。已确认方案的实现阶段无需为该提交重复请求用户授权。
 
 ## AI Work Flow 评审与执行契约
 
