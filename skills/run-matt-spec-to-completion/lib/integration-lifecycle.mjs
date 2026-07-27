@@ -145,7 +145,7 @@ export function createIntegrationLifecycle({ now, newStashOperationId, requireIn
     try {
       const executionHead = await currentHead(worktree);
       await requireIntegrity({ mainWorktree, featureSlug, executionWorktree: worktree });
-      await git(mainWorktree, ["merge", "--no-edit", checkpoint.branch]);
+      await git(mainWorktree, ["merge", "--no-edit", executionHead]);
       mergeApplied = true;
       if (!await isAncestor(mainWorktree, executionHead)) throw new Error("Merged main does not contain execution HEAD");
       const merged = markMerged(await readCheckpoint(mainWorktree, featureSlug), {

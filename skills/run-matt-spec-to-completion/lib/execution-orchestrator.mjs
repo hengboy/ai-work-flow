@@ -178,7 +178,8 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
       if (mainCheckpoint.integration.status === "merged") {
         return this.completeMergedCleanup({ repository, mainWorktree, featureSlug, executionPlan: preflight.executionPlan, checkpoint: mainCheckpoint });
       }
-      if (mainCheckpoint.status === "integrating" && await isAncestor(mainWorktree, branch)) {
+      const reviewGateHead = mainCheckpoint.review.fix_commit || mainCheckpoint.review.review_commit;
+      if (mainCheckpoint.status === "integrating" && await isAncestor(mainWorktree, reviewGateHead)) {
         let checkpointForMerge = mainCheckpoint;
         if (checkpointForMerge.integration.stash_operation_id && !checkpointForMerge.integration.stash_ref) {
           const stashRef = await stash.locate(mainWorktree, featureSlug, checkpointForMerge.integration.stash_operation_id);
@@ -186,7 +187,7 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
           checkpointForMerge = recordStashReference(checkpointForMerge, stashRef, now());
           await persist(mainWorktree, featureSlug, checkpointForMerge);
         }
-        const merged = markMerged(checkpointForMerge, { executionHead: await git(mainWorktree, ["rev-parse", branch]), mainWorktree, repository: mainWorktree, mergedCommit: await currentHead(mainWorktree), stashRef: checkpointForMerge.integration.stash_ref }, now());
+        const merged = markMerged(checkpointForMerge, { executionHead: reviewGateHead, mainWorktree, repository: mainWorktree, mergedCommit: await currentHead(mainWorktree), stashRef: checkpointForMerge.integration.stash_ref }, now());
         await persist(mainWorktree, featureSlug, merged);
         return this.completeMergedCleanup({ repository, mainWorktree, featureSlug, executionPlan: preflight.executionPlan, checkpoint: merged });
       }

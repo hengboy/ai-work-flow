@@ -4,6 +4,37 @@ import test from "node:test";
 import { createIntegrationLifecycle } from "../lib/integration-lifecycle.mjs";
 import { createPreMergeStash } from "../lib/pre-merge-stash.mjs";
 
+test("merges the verified execution commit instead of the mutable branch reference", async () => {
+  const executionHead = "a".repeat(40);
+  const checkpoint = {
+    status: "integrating",
+    branch: "feat/example",
+    integration: { status: "pending" },
+  };
+  let mergeArgs;
+  const lifecycle = createIntegrationLifecycle({
+    requireIntegrity: async () => ({ checkpoint, executionPlan: { revision: "revision" } }),
+    findMainWorktree: async () => "/main",
+    worktreeIsClean: async () => true,
+    currentHead: async () => executionHead,
+    unexpectedMainWorktreeChanges: async () => [],
+    git: async (_worktree, args) => {
+      if (args[0] === "merge") {
+        mergeArgs = args;
+        throw new Error("stop after observing merge target");
+      }
+      return "";
+    },
+    gitSucceeds: async () => false,
+  });
+
+  await assert.rejects(
+    lifecycle.integrate({ repository: "/repo", worktree: "/execution", featureSlug: "example", executionPlan: { revision: "revision" } }),
+    /stop after observing merge target/,
+  );
+  assert.deepEqual(mergeArgs, ["merge", "--no-edit", executionHead]);
+});
+
 test("does not report a stash patch as applied when its async reverse check is false or fails", async () => {
   const calls = [];
   const stash = createPreMergeStash({
