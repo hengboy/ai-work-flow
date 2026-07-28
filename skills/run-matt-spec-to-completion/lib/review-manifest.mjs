@@ -19,12 +19,20 @@ function deepFreeze(value) {
   return value;
 }
 
+function fixedDiffCommand(fixedPoint, reviewCommit) {
+  return ["git", "diff", "--no-ext-diff", `${fixedPoint}...${reviewCommit}`];
+}
+
+function sameJson(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export function reviewManifestDigest(manifest) {
   const { manifest_digest, ...unsigned } = manifest;
   return createHash("sha256").update(JSON.stringify(canonicalize(unsigned))).digest("hex");
 }
 
-export function assertReviewManifest(manifest) {
+export function assertReviewManifest(manifest, context) {
   if (!manifest || manifest.version !== 1 || !SHA_PATTERN.test(manifest.fixed_point) || !SHA_PATTERN.test(manifest.review_commit)) {
     throw new Error("ReviewManifest has invalid fixed review endpoints");
   }
@@ -42,16 +50,36 @@ export function assertReviewManifest(manifest) {
   if (manifest.commit_list.some((commit) => !commit || !SHA_PATTERN.test(commit.sha) || typeof commit.subject !== "string") ||
     manifest.checks.some((check) => typeof check !== "string" || !check) ||
     manifest.diff_command.some((argument) => typeof argument !== "string" || !argument) ||
-    manifest.standards_source.some((source) => !source || typeof source.path !== "string" || !source.path || typeof source.revision !== "string" || !source.revision) ||
+    manifest.standards_source.length === 0 || manifest.standards_source.some((source) => !source || typeof source.path !== "string" || !source.path || typeof source.revision !== "string" || !SHA_PATTERN.test(source.revision) || source.revision !== manifest.review_commit) ||
     (manifest.spec_source && (typeof manifest.spec_source.path !== "string" || !manifest.spec_source.path || typeof manifest.spec_source.revision !== "string" || !manifest.spec_source.revision))) {
     throw new Error("ReviewManifest has invalid structured content");
   }
+  if (!sameJson(manifest.diff_command, fixedDiffCommand(manifest.fixed_point, manifest.review_commit))) {
+    throw new Error("ReviewManifest must use the fixed review diff command");
+  }
+  const changedPaths = manifest.changed_paths.map((change) => change.path);
+  if (new Set(changedPaths).size !== changedPaths.length) throw new Error("ReviewManifest changed paths must be unique");
   const ids = new Set();
+  const shardPaths = [];
   for (const shard of manifest.shards) {
-    if (!shard || typeof shard.id !== "string" || !shard.id || ids.has(shard.id) || !Array.isArray(shard.paths) || !Array.isArray(shard.diff_command) || shard.paths.some((path) => typeof path !== "string" || !path) || shard.diff_command.some((argument) => typeof argument !== "string" || !argument)) {
+    if (!shard || typeof shard.id !== "string" || !shard.id || ids.has(shard.id) || !Array.isArray(shard.paths) || shard.paths.length === 0 || !Array.isArray(shard.diff_command) || shard.paths.some((path) => typeof path !== "string" || !path) || shard.diff_command.some((argument) => typeof argument !== "string" || !argument)) {
       throw new Error("ReviewManifest shards must have unique IDs, paths, and commands");
     }
+    if (!sameJson(shard.diff_command, [...fixedDiffCommand(manifest.fixed_point, manifest.review_commit), "--", ...shard.paths])) {
+      throw new Error("ReviewManifest shard command does not match the fixed review diff command");
+    }
     ids.add(shard.id);
+    shardPaths.push(...shard.paths);
+  }
+  if (new Set(shardPaths).size !== shardPaths.length || shardPaths.length !== changedPaths.length || shardPaths.some((path) => !changedPaths.includes(path))) {
+    throw new Error("ReviewManifest shards must cover every changed path exactly once");
+  }
+  if (context && (
+    context.fixedPoint !== manifest.fixed_point ||
+    context.reviewCommit !== manifest.review_commit ||
+    !sameJson(context.changedPaths, manifest.changed_paths)
+  )) {
+    throw new Error("ReviewManifest does not match the frozen review context");
   }
   if (typeof manifest.manifest_digest !== "string" || manifest.manifest_digest !== reviewManifestDigest(manifest)) {
     throw new Error("ReviewManifest digest does not match its immutable contents");
@@ -62,9 +90,10 @@ export function assertReviewManifest(manifest) {
 export function createReviewManifest(input) {
   const manifest = { version: 1, ...structuredClone(input) };
   manifest.commit_list.sort((left, right) => left.sha.localeCompare(right.sha));
+  manifest.changed_paths.sort((left, right) => left.path.localeCompare(right.path));
   manifest.shards.sort((left, right) => left.id.localeCompare(right.id));
   manifest.manifest_digest = reviewManifestDigest(manifest);
-  return assertReviewManifest(manifest);
+  return assertReviewManifest(manifest, { fixedPoint: manifest.fixed_point, reviewCommit: manifest.review_commit, changedPaths: manifest.changed_paths });
 }
 
 export function createReviewShardAssignments(manifest) {
@@ -81,8 +110,10 @@ export function assertReviewCoverage(manifest, coverage) {
     throw new Error("Review coverage does not identify this manifest");
   }
   const expected = new Set(manifest.shards.map((shard) => shard.id));
-  const seen = new Set([...coverage.completed_shard_ids, ...coverage.incomplete_shard_ids]);
-  if (seen.size !== expected.size || [...seen].some((id) => !expected.has(id)) || coverage.completed_shard_ids.some((id) => coverage.incomplete_shard_ids.includes(id))) {
+  const completed = new Set(coverage.completed_shard_ids);
+  const incomplete = new Set(coverage.incomplete_shard_ids);
+  const seen = new Set([...completed, ...incomplete]);
+  if (completed.size !== coverage.completed_shard_ids.length || incomplete.size !== coverage.incomplete_shard_ids.length || seen.size !== expected.size || [...seen].some((id) => !expected.has(id)) || [...completed].some((id) => incomplete.has(id))) {
     throw new Error("Review coverage is incomplete, duplicated, or outside the manifest");
   }
   if (coverage.incomplete_shard_ids.length > 0) throw new Error("Review cannot complete with incomplete shards");

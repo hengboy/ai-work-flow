@@ -677,7 +677,7 @@ test('platform generation enforces the declared workspace access where supported
     }
     if (reviewerRoles.has(role.id)) {
       const expectedTaskPermission = role.id === 'code-reviewer' ? 'allow' : 'deny';
-      assert.equal(openCode.permission.bash, 'deny', role.id);
+      assert.equal(openCode.permission.bash, 'allow', role.id);
       assert.equal(openCode.permission.task, expectedTaskPermission, role.id);
     } else if (policy.filesystem === 'read') {
       assert.equal(openCode.permission.read, 'allow', role.id);
@@ -1418,8 +1418,22 @@ test('OpenCode permissions deny every ungranted independent key', () => {
     assert.equal(evaluateOpenCodePermission(orchestrator, policies[orchestrator.policy], key), 'deny', key);
   }
   assert.equal(evaluateOpenCodePermission(reviewer, policies[reviewer.policy], 'task'), 'deny');
-  assert.equal(evaluateOpenCodePermission(reviewer, policies[reviewer.policy], 'bash'), 'deny');
+  assert.equal(evaluateOpenCodePermission(reviewer, policies[reviewer.policy], 'bash'), 'allow');
   assert.equal(capabilityMatrix('opencode', reviewer, policies.review).shell, 'instruction-only');
+});
+
+test('OpenCode reviewer configuration permits the fixed git diff command declared by each role', () => {
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  const reviewers = catalog.roles.filter((role) => ['code-reviewer', 'review-standards', 'review-spec'].includes(role.id));
+
+  for (const role of reviewers) {
+    const agent = parseFrontmatter(readFileSync(agentPath(paths, 'opencode', role.id, 'md'), 'utf8'));
+    assert.equal(agent.permission.bash, 'allow', role.id);
+  }
+  const diff = spawnSync('git', ['diff', '--no-ext-diff', 'HEAD...HEAD', '--', 'scripts/private/platform-adapter.mjs'], { cwd: root, encoding: 'utf8' });
+  assert.equal(diff.status, 0, diff.stderr);
 });
 
 test('environment status compares planned bytes, detects drift and shadows, and never prints fixture secrets', () => {
@@ -1438,12 +1452,21 @@ test('environment status compares planned bytes, detects drift and shadows, and 
     agent: { 'full-stack-coder': { token: 'fixture-secret-must-not-leak' } }
   }));
   writeFileSync(resolve(paths.config, 'ai-work-flow/.managed-platforms.json'), JSON.stringify({ version: 1, platforms: ['codex', 'claude'] }));
+  writeFileSync(resolve(paths.home, '.codex/AGENTS.md'), '# User instructions without managed marker\n');
+  writeFileSync(resolve(paths.home, '.codex/config.toml'), 'model = "user-model"\n[agents]\nmax_depth = 1\n');
+  mkdirSync(resolve(paths.home, '.codex/agents/code-reviewer'), { recursive: true });
+  writeFileSync(resolve(paths.home, '.codex/agents/code-reviewer/AGENT.md'), 'legacy reviewer override\n');
+  const openCodeConfig = JSON.parse(readFileSync(resolve(paths.config, 'opencode/opencode.json'), 'utf8'));
+  openCodeConfig.agent = { ...(openCodeConfig.agent ?? {}), researcher: { token: 'fixture-secret-must-not-leak' } };
+  writeFileSync(resolve(paths.config, 'opencode/opencode.json'), `${JSON.stringify(openCodeConfig, null, 2)}\n`);
 
   const status = run(paths, 'env', 'status');
   assert.equal(status.status, 0, status.stderr);
   assert.match(status.stdout, /STATUS claude\/researcher: drifted reasons=bytes/);
-  assert.match(status.stdout, /STATUS opencode\/researcher: drifted reasons=manifest,missing/);
-  assert.match(status.stdout, /STATUS codex\/orchestrator: shadowed reasons=project-agent/);
+  assert.match(status.stdout, /STATUS opencode\/researcher: shadowed reasons=manifest,missing,user-inline-agent/);
+  assert.match(status.stdout, /STATUS codex\/orchestrator: shadowed reasons=marker,config,project-agent/);
+  assert.match(status.stdout, /STATUS codex\/code-reviewer: shadowed reasons=marker,config,legacy-reviewer-agent/);
   assert.match(status.stdout, /STATUS opencode\/full-stack-coder: shadowed reasons=manifest,project-inline-agent/);
+  assert.match(status.stdout, /STATUS opencode\/researcher: shadowed reasons=manifest,missing,user-inline-agent/);
   assert.doesNotMatch(`${status.stdout}\n${status.stderr}`, /fixture-secret-must-not-leak/);
 });

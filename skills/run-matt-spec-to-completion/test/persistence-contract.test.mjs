@@ -11,7 +11,7 @@ import { assertCheckpoint, assertExecutionPlan } from "../lib/validation.mjs";
 import { createReviewManifest } from "../lib/review-manifest.mjs";
 
 function reviewManifest(fixedPoint, reviewCommit) {
-  return createReviewManifest({ fixed_point: fixedPoint, review_commit: reviewCommit, commit_list: [{ sha: reviewCommit, subject: "review" }], changed_paths: [], checks: [], diff_command: ["git", "diff", `${fixedPoint}...${reviewCommit}`], spec_status: "absent", spec_source: null, standards_source: [], shards: [] });
+  return createReviewManifest({ fixed_point: fixedPoint, review_commit: reviewCommit, commit_list: [{ sha: reviewCommit, subject: "review" }], changed_paths: [], checks: [], diff_command: ["git", "diff", "--no-ext-diff", `${fixedPoint}...${reviewCommit}`], spec_status: "absent", spec_source: null, standards_source: [{ path: "CONTEXT.md", revision: reviewCommit }], shards: [] });
 }
 
 async function specFixture() {

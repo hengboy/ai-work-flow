@@ -37,13 +37,21 @@ async function stdinJson() {
 }
 
 async function reviewManifestFromInput(worktree, fixedPoint, reviewCommit, input) {
-  if (!input || !["present", "absent"].includes(input.spec_status) || !Array.isArray(input.standards_source)) {
-    throw new Error("begin-review requires explicit spec_status and standards_source.");
+  if (!input || !["present", "absent"].includes(input.spec_status) || !Array.isArray(input.standards_source) || input.standards_source.length === 0) {
+    throw new Error("begin-review requires explicit spec_status and a non-empty standards_source.");
   }
   if ((input.spec_status === "present") !== Boolean(input.spec_source)) {
     throw new Error("begin-review spec_source must match explicit spec_status.");
   }
-  const paths = (await git(worktree, ["diff", "--name-only", "-z", `${fixedPoint}...${reviewCommit}`])).split("\0").filter(Boolean);
+  for (const source of input.standards_source) {
+    if (!source || typeof source.path !== "string" || !source.path || source.revision !== reviewCommit) {
+      throw new Error("begin-review standards_source must identify the frozen review commit.");
+    }
+    if (!await gitSucceeds(worktree, ["cat-file", "-e", `${reviewCommit}:${source.path}`])) {
+      throw new Error(`Review standards source is unavailable at frozen commit: ${source.path}`);
+    }
+  }
+  const paths = (await git(worktree, ["diff", "--name-only", "-z", `${fixedPoint}...${reviewCommit}`])).split("\0").filter(Boolean).sort();
   const commitList = (await gitOutput(worktree, ["log", "--format=%H%x1f%s", `${fixedPoint}..${reviewCommit}`])).trim().split("\n").filter(Boolean).map((line) => {
     const separator = line.indexOf("\x1f");
     if (separator < 1) throw new Error("Could not create a structured review commit list");

@@ -86,9 +86,15 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
       : checkpoint.review.fix_commit || reviewCommit;
     if (fixedPoint !== checkpoint.baseline) diagnostics.push(diagnostic("review-fixed-point", fixedPoint));
     try {
-      const manifest = assertReviewManifest(checkpoint.review.manifest);
+      const changedPaths = (await git(reviewWorktree, ["diff", "--name-only", "-z", `${fixedPoint}...${reviewCommit}`])).split("\0").filter(Boolean).sort().map((path) => ({ record_type: "1", index_status: "M", worktree_status: ".", path }));
+      const manifest = assertReviewManifest(checkpoint.review.manifest, { fixedPoint, reviewCommit, changedPaths });
       if (manifest.fixed_point !== fixedPoint || manifest.review_commit !== reviewCommit) {
         diagnostics.push(diagnostic("review-manifest-endpoints", manifest.manifest_digest));
+      }
+      for (const source of manifest.standards_source) {
+        if (!await gitSucceeds(reviewWorktree, ["cat-file", "-e", `${reviewCommit}:${source.path}`])) {
+          diagnostics.push(diagnostic("review-standards-source", source.path));
+        }
       }
       if (checkpoint.review.status !== "in_progress") {
         if (checkpoint.review.manifest_digest !== manifest.manifest_digest) diagnostics.push(diagnostic("review-manifest-digest", checkpoint.review.manifest_digest));

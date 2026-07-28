@@ -8,7 +8,6 @@ import { updateManagedMarker } from './managed-content.mjs';
 
 const OBSOLETE_PRIMARY_AGENT_ID = ['coord', 'inator'].join('');
 const LEGACY_CODE_REVIEWER_AGENT = 'AGENT.md';
-const REVIEWER_ROLE_IDS = new Set(['code-reviewer', 'review-standards', 'review-spec']);
 const OPENCODE_PERMISSION_KEYS = ['read', 'edit', 'glob', 'grep', 'bash', 'task', 'skill', 'webfetch', 'websearch', 'question', 'external_directory'];
 const OPENCODE_TOOL_KEYS = {
   Read: 'read',
@@ -153,7 +152,6 @@ export function opencodePermission(role, policy) {
   }
   if (policy.delegation === 'allowed') permission.task = 'allow';
   if (policy.delegation === 'none') permission.task = 'deny';
-  if (REVIEWER_ROLE_IDS.has(role.id)) permission.bash = 'deny';
   return permission;
 }
 
@@ -214,6 +212,43 @@ function projectShadow(platform, roleId) {
     }
   }
   return null;
+}
+
+function userShadow(platform, paths, roleId) {
+  if (platform === 'codex' && roleId === 'code-reviewer' && existsSync(resolve(paths.codexDir, 'agents', 'code-reviewer', LEGACY_CODE_REVIEWER_AGENT))) {
+    return 'legacy-reviewer-agent';
+  }
+  if (platform !== 'opencode') return null;
+  const configPath = resolve(paths.openCodeDir, 'opencode.json');
+  if (!existsSync(configPath)) return null;
+  try {
+    const agent = JSON.parse(readFileSync(configPath, 'utf8')).agent;
+    return agent && typeof agent === 'object' && Object.hasOwn(agent, roleId) ? 'user-inline-agent' : null;
+  } catch {
+    return 'user-config-unreadable';
+  }
+}
+
+function markerDrift(strategy, paths) {
+  if (!strategy.marker) return false;
+  const path = strategy.marker.path(paths);
+  try {
+    const source = existsSync(path) ? readFileSync(path, 'utf8') : '';
+    return strategy.marker.update(source, path) !== source;
+  } catch {
+    return true;
+  }
+}
+
+function configurationDrift(strategy, paths) {
+  if (!strategy.globalConfig) return false;
+  const path = strategy.globalConfig.path(paths);
+  try {
+    const source = existsSync(path) ? readFileSync(path, 'utf8') : '';
+    return strategy.globalConfig.update(source, path) !== source;
+  } catch {
+    return true;
+  }
 }
 
 // --- Strategy map ---
@@ -323,27 +358,31 @@ export function planGeneration({ platform, paths, roles, policies, config, bodie
   return plan;
 }
 
-export function generationStatus({ platforms, paths, roles, policies, config, bodies, managedPlatforms }) {
+export function generationStatus({ platforms, paths, roles, policies, config, bodies, managedPlatforms, managedManifestPresent = true }) {
   return platforms.flatMap((platform) => {
     const strategy = strategies[platform];
+    const markerIsDrifted = markerDrift(strategy, paths);
+    const configurationIsDrifted = configurationDrift(strategy, paths);
     return roles.map((role) => {
       const expected = strategy.render(role, config.roles[role.id][platform], bodies.get(role.id), policies[role.policy]);
       const target = agentFile(paths, platform, role.id);
       const reasons = [];
       let installedDigest;
-      if (!managedPlatforms.includes(platform)) reasons.push('manifest');
+      if (!managedManifestPresent || !managedPlatforms.includes(platform)) reasons.push('manifest');
       if (!existsSync(target)) reasons.push('missing');
       else {
         const installed = readFileSync(target, 'utf8');
         installedDigest = digest(installed);
         if (installed !== expected) reasons.push('bytes');
       }
-      const shadow = projectShadow(platform, role.id);
-      if (shadow) reasons.push(shadow);
+      if (markerIsDrifted) reasons.push('marker');
+      if (configurationIsDrifted) reasons.push('config');
+      const shadows = [userShadow(platform, paths, role.id), projectShadow(platform, role.id)].filter(Boolean);
+      reasons.push(...shadows);
       return {
         platform,
         role_id: role.id,
-        state: shadow ? 'shadowed' : reasons.length ? 'drifted' : 'in-sync',
+        state: shadows.length ? 'shadowed' : reasons.length ? 'drifted' : 'in-sync',
         reasons,
         planned_digest: digest(expected),
         ...(installedDigest ? { installed_digest: installedDigest } : {})

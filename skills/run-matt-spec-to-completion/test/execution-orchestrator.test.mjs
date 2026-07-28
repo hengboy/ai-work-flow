@@ -11,16 +11,17 @@ import { beginReview, completeIntegration, completeReview, completeReviewFix, co
 import { createExecutionOrchestrator } from "../lib/execution-orchestrator.mjs";
 import { materializeSpec, writeExecutionPlan } from "../lib/spec-intake.mjs";
 import { assertCheckpoint, assertExecutionPlan } from "../lib/validation.mjs";
-import { createReviewManifest } from "../lib/review-manifest.mjs";
+import { createReviewManifest, reviewManifestDigest } from "../lib/review-manifest.mjs";
 
 const execFileAsync = promisify(execFile);
 
-function reviewManifest(fixedPoint, reviewCommit) {
-  return createReviewManifest({ fixed_point: fixedPoint, review_commit: reviewCommit, commit_list: [{ sha: reviewCommit, subject: "review" }], changed_paths: [], checks: [], diff_command: ["git", "diff", `${fixedPoint}...${reviewCommit}`], spec_status: "absent", spec_source: null, standards_source: [], shards: [] });
+function reviewManifest(fixedPoint, reviewCommit, paths = []) {
+  const diffCommand = ["git", "diff", "--no-ext-diff", `${fixedPoint}...${reviewCommit}`];
+  return createReviewManifest({ fixed_point: fixedPoint, review_commit: reviewCommit, commit_list: [{ sha: reviewCommit, subject: "review" }], changed_paths: paths.map((path) => ({ record_type: "1", index_status: "M", worktree_status: ".", path })), checks: [], diff_command: diffCommand, spec_status: "absent", spec_source: null, standards_source: [{ path: "CONTEXT.md", revision: reviewCommit }], shards: paths.map((path, index) => ({ id: `shard-${index + 1}`, paths: [path], diff_command: [...diffCommand, "--", path] })) });
 }
 
 function completeReviewWithManifest(checkpoint, findingsSummary) {
-  checkpoint = recordReview(checkpoint, { manifestDigest: checkpoint.review.manifest.manifest_digest, coverage: { manifest_digest: checkpoint.review.manifest.manifest_digest, completed_shard_ids: [], incomplete_shard_ids: [] }, findingsSummary });
+  checkpoint = recordReview(checkpoint, { manifestDigest: checkpoint.review.manifest.manifest_digest, coverage: { manifest_digest: checkpoint.review.manifest.manifest_digest, completed_shard_ids: checkpoint.review.manifest.shards.map((shard) => shard.id), incomplete_shard_ids: [] }, findingsSummary });
   return decideReview(checkpoint, "approve");
 }
 
@@ -38,6 +39,7 @@ async function orchestratorFixture() {
   await mkdir(join(directory, "issues"), { recursive: true });
   const specPath = join(directory, "spec.md");
   await writeFile(specPath, "# Migrate runtime\n");
+  await writeFile(join(root, "CONTEXT.md"), "# Review standards\n");
   await writeFile(join(directory, "issues", "01-contract.md"), "# 01 — Contract\n\n**Blocked by:** None — can start immediately\n\n- [ ] Verify runtime contract\n");
   await git(root, "add", ".");
   await git(root, "commit", "-m", "fixture");
@@ -51,7 +53,7 @@ async function orchestratorFixture() {
   let checkpoint = createCheckpoint({ executionPlan, baseline: head, branch: "feat/migrate-runtime", worktree: root, now: new Date("2026-07-23T12:00:00+08:00") });
   checkpoint = startTickets(checkpoint, ["01"], head);
   checkpoint = completeTicket(checkpoint, "01", completionCommit);
-  checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: completionCommit, manifest: reviewManifest(checkpoint.baseline, completionCommit) });
+  checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: completionCommit, manifest: reviewManifest(checkpoint.baseline, completionCommit, ["fixture-completion.txt"]) });
   checkpoint = completeReviewWithManifest(checkpoint, "approved");
   checkpoint = markMerged(checkpoint, { executionHead: completionCommit, mainWorktree: root, mergedCommit: completionCommit });
   return { root, executionPlan, checkpoint };
@@ -69,7 +71,7 @@ async function pendingIntegrationFixture() {
   const completionCommit = await git(executionWorktree, "rev-parse", "HEAD");
   checkpoint = startTickets(checkpoint, ["01"], head);
   checkpoint = completeTicket(checkpoint, "01", completionCommit);
-  checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: completionCommit, manifest: reviewManifest(checkpoint.baseline, completionCommit) });
+  checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: completionCommit, manifest: reviewManifest(checkpoint.baseline, completionCommit, ["execution.txt"]) });
   checkpoint = completeReviewWithManifest(checkpoint, "approved");
   checkpoint = { ...checkpoint, worktree: relative(root, executionWorktree) };
   await writeCheckpoint(root, "migrate-runtime", checkpoint);
@@ -135,6 +137,52 @@ test("records review through the canonical runtime after all tickets complete", 
   assert.equal(recovered.status, "reviewing");
   assert.equal((await readCheckpoint(root, "migrate-runtime")).status, "reviewing");
   assert.match(await readFile(issuePath, "utf8"), /- \[x\] Verify runtime contract/);
+});
+
+test("freezes a non-empty standards source at the committed review revision", async () => {
+  const { root, executionPlan, executionWorktree } = await completedExecutionFixture();
+  const checkpoint = await createExecutionOrchestrator().startReview({
+    mainWorktree: root,
+    featureSlug: "migrate-runtime",
+    worktree: executionWorktree,
+    executionPlan,
+  });
+
+  assert.deepEqual(checkpoint.review.manifest.standards_source, [{
+    path: "CONTEXT.md",
+    revision: checkpoint.review.review_commit,
+  }]);
+});
+
+test("blocks review before state advancement when the frozen standards source is absent", async () => {
+  const { root, executionPlan, executionWorktree } = await completedExecutionFixture();
+  await git(executionWorktree, "rm", "CONTEXT.md");
+  await git(executionWorktree, "commit", "-m", "remove review standards");
+
+  await assert.rejects(
+    createExecutionOrchestrator().startReview({ mainWorktree: root, featureSlug: "migrate-runtime", worktree: executionWorktree, executionPlan }),
+    /Review standards source is unavailable at frozen commit/,
+  );
+  assert.equal((await readCheckpoint(root, "migrate-runtime")).status, "executing");
+});
+
+test("recovery rejects a rehashed standards source that differs from the frozen review revision", async () => {
+  const { root, executionPlan, executionWorktree } = await completedExecutionFixture();
+  const checkpoint = await createExecutionOrchestrator().startReview({
+    mainWorktree: root,
+    featureSlug: "migrate-runtime",
+    worktree: executionWorktree,
+    executionPlan,
+  });
+  const tampered = structuredClone(checkpoint);
+  tampered.review.manifest.standards_source[0].revision = tampered.baseline;
+  tampered.review.manifest.manifest_digest = reviewManifestDigest(tampered.review.manifest);
+  await writeCheckpoint(root, "migrate-runtime", tampered);
+
+  await assert.rejects(
+    createExecutionOrchestrator().resume({ repository: root, branch: "feat/migrate-runtime", specPath: ".scratch/migrate-runtime/spec.md", worktreePath: executionWorktree }),
+    /standards source.*frozen review context|review-manifest/,
+  );
 });
 
 test("does not dispatch a revision-consistent plan whose dependency level was tampered", async () => {
@@ -489,7 +537,7 @@ test("does not mutate an invalid checkpoint while attempting a relocated resume"
 
 test("rejects a persisted review range whose review commit is missing", async () => {
   const { root, checkpoint: completed, executionWorktree, featureCommit } = await completedExecutionFixture();
-  const reviewing = beginReview(completed, { fixedPoint: completed.baseline, reviewCommit: featureCommit, manifest: reviewManifest(completed.baseline, featureCommit) });
+  const reviewing = beginReview(completed, { fixedPoint: completed.baseline, reviewCommit: featureCommit, manifest: reviewManifest(completed.baseline, featureCommit, ["execution.txt"]) });
   reviewing.review.review_commit = "f".repeat(40);
   await writeCheckpoint(root, "migrate-runtime", reviewing);
 
@@ -506,8 +554,8 @@ test("rejects a persisted review range whose review commit is missing", async ()
 
 test("rejects a persisted review fix whose commit is missing", async () => {
   const { root, checkpoint: completed, executionWorktree, featureCommit } = await completedExecutionFixture();
-  let checkpoint = beginReview(completed, { fixedPoint: completed.baseline, reviewCommit: featureCommit, manifest: reviewManifest(completed.baseline, featureCommit) });
-  checkpoint = recordReview(checkpoint, { manifestDigest: checkpoint.review.manifest.manifest_digest, coverage: { manifest_digest: checkpoint.review.manifest.manifest_digest, completed_shard_ids: [], incomplete_shard_ids: [] }, findingsSummary: "requires a fix" });
+  let checkpoint = beginReview(completed, { fixedPoint: completed.baseline, reviewCommit: featureCommit, manifest: reviewManifest(completed.baseline, featureCommit, ["execution.txt"]) });
+  checkpoint = recordReview(checkpoint, { manifestDigest: checkpoint.review.manifest.manifest_digest, coverage: { manifest_digest: checkpoint.review.manifest.manifest_digest, completed_shard_ids: checkpoint.review.manifest.shards.map((shard) => shard.id), incomplete_shard_ids: [] }, findingsSummary: "requires a fix" });
   checkpoint = decideReview(checkpoint, "fix");
   checkpoint = completeReviewFix(checkpoint, { fixCommit: "f".repeat(40), checks: ["npm test: pass"] });
   await writeCheckpoint(root, "migrate-runtime", checkpoint);

@@ -51,7 +51,7 @@ disable-model-invocation: true
 
 ### 4. 评审与整合
 
-1. 全部 Ticket `done` 后，向 `begin-review --repository <repository> --feature <feature> --worktree <worktree>` 的 stdin 提供显式 `{spec_status, spec_source, standards_source}`。runtime 冻结并返回唯一 `ReviewManifest`；Code Reviewer 的全部叶子任务使用该 digest。随后以 `{manifest_digest, coverage, findings_summary}` 调用 `record-review --repository <repository> --feature <feature>`，再调用 `review-decision --repository <repository> --feature <feature>` 并提供 `approve` 或 `fix`。工作树不干净、端点无效、manifest/coverage 不一致或三点 diff 为空时停止。
+1. 全部 Ticket `done` 后，向 `begin-review --repository <repository> --feature <feature> --worktree <worktree>` 的 stdin 提供显式 `{spec_status, spec_source, standards_source}`。`standards_source` 必须非空，且每项以冻结 `review_commit` 标识可读取的已提交标准文件；自动编排固定使用该提交中的 `CONTEXT.md`。runtime 冻结并返回唯一 `ReviewManifest`；Code Reviewer 的全部叶子任务使用该 digest。随后以 `{manifest_digest, coverage, findings_summary}` 调用 `record-review --repository <repository> --feature <feature>`，再调用 `review-decision --repository <repository> --feature <feature>` 并提供 `approve` 或 `fix`。工作树不干净、标准来源缺失、端点无效、manifest/coverage 不一致或三点 diff 为空时停止。
 2. `approve` 后调用 `integrate --repository <repository> --feature <feature> --worktree <worktree>`；main 有 execution record 之外的改动时必须改用明确的 `integrate --repository <repository> --feature <feature> --worktree <worktree> --allow-stash true`，该授权只服务本次 execution。若返回 `merged`，再调用 `cleanup --repository <repository> --feature <feature>`。
 3. `fix` 后由 **Full Stack Coder** 修复并验证，由 **Git Committer** 创建晚于 `review_commit` 的追加提交，再调用 `complete-review-fix --repository <repository> --feature <feature> --worktree <worktree>` 并从 stdin 提供非空 `checks`，随后 `integrate` 和按需 `cleanup`。不得自动复审相同固定范围。
 

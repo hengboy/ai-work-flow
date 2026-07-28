@@ -341,7 +341,8 @@ export function runCli(argv) {
         policies: assets.policies,
         config: resolved.config,
         bodies: assets.compiledBodies,
-        managedPlatforms: managed
+        managedPlatforms: managed,
+        managedManifestPresent: existsSync(paths.managedPlatforms)
       })) {
         console.log(`STATUS ${status.platform}/${status.role_id}: ${status.state} reasons=${status.reasons.join(',') || 'none'} planned_digest=${status.planned_digest}${status.installed_digest ? ` installed_digest=${status.installed_digest}` : ''}`);
       }

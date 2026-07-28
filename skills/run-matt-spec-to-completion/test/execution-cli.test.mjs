@@ -23,6 +23,7 @@ async function fixture() {
   await mkdir(join(directory, "issues"), { recursive: true });
   await writeFile(join(directory, "spec.md"), "# CLI flow\n");
   await writeFile(join(directory, "issues", "01-work.md"), "# 01 - Work\n\n**Blocked by:** None - can start immediately\n");
+  await writeFile(join(root, "CONTEXT.md"), "# Review standards\n");
   await writeFile(join(root, ".gitignore"), ".worktrees/\n");
   await git(root, "add", ".");
   await git(root, "commit", "-m", "fixture");
@@ -63,7 +64,7 @@ async function beginReview(paths) {
   return invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify({
     spec_status: "present",
     spec_source: { path: paths.spec, revision: "a".repeat(64) },
-    standards_source: [],
+    standards_source: [{ path: "CONTEXT.md", revision: await git(paths.worktree, "rev-parse", "HEAD") }],
   }));
 }
 
@@ -197,6 +198,23 @@ test("begin-review rejects uncommitted worktree changes", async () => {
     beginReview(paths),
     /Execution worktree must be clean before review/,
   );
+});
+
+test("begin-review rejects an empty standards source without advancing review state", async () => {
+  const paths = await fixture();
+  await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
+  const claimed = await claim(paths);
+  await writeFile(join(paths.worktree, "completed.txt"), "done\n");
+  await git(paths.worktree, "add", "completed.txt");
+  await git(paths.worktree, "commit", "-m", "complete ticket");
+  const commit = await git(paths.worktree, "rev-parse", "HEAD");
+  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff(claimed, { ticket_id: "01", status: "done", commits: [commit], checks: [], changed_paths: [], summary: "completed" })));
+
+  await assert.rejects(
+    invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify({ spec_status: "present", spec_source: { path: paths.spec, revision: "a".repeat(64) }, standards_source: [] })),
+    /non-empty standards_source/,
+  );
+  assert.equal(JSON.parse(await readFile(join(paths.root, ".scratch", "cli-flow", "checkpoint.json"), "utf8")).status, "executing");
 });
 
 test("integration rejects commits added after an approved review", async () => {

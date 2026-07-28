@@ -16,6 +16,15 @@ import { selectTicketFrontier } from "./ticket-frontier.mjs";
 import { createRuntimeStateStore, withFeatureLock } from "../../../execution-runtime/state-store.mjs";
 
 const executionCli = fileURLToPath(new URL("../../../execution-runtime/execution-cli.mjs", import.meta.url));
+const REVIEW_STANDARDS_PATH = "CONTEXT.md";
+
+async function frozenStandardsSource(worktree) {
+  const revision = await currentHead(worktree);
+  if (!await gitSucceeds(worktree, ["cat-file", "-e", `${revision}:${REVIEW_STANDARDS_PATH}`])) {
+    throw new Error(`Review standards source is unavailable at frozen commit: ${REVIEW_STANDARDS_PATH}`);
+  }
+  return [{ path: REVIEW_STANDARDS_PATH, revision }];
+}
 
 async function canonicalTransition(command, { mainWorktree, featureSlug, worktree, roleId, sessionId }, input) {
   const args = [executionCli, command, "--repository", mainWorktree, "--feature", featureSlug];
@@ -241,10 +250,11 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
     },
 
     async startReview({ mainWorktree, featureSlug, worktree, executionPlan }) {
+      const standardsSource = await frozenStandardsSource(worktree);
       return (await canonicalTransition("begin-review", { mainWorktree, featureSlug, worktree }, {
         spec_status: "present",
         spec_source: { path: executionPlan.spec.ref, revision: executionPlan.revision },
-        standards_source: [],
+        standards_source: standardsSource,
       })).checkpoint;
     },
 
