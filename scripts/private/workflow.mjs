@@ -7,7 +7,7 @@ import { loadAgentAssets } from './asset-catalog.mjs';
 import { assertEnvironmentName, assertSafeEnvironmentPaths, environmentPath, loadResolvedConfiguration, validateConfiguration } from './config.mjs';
 import { globalPaths } from './paths.mjs';
 import { fail, readJson, write } from './shared.mjs';
-import { applyGenerationPlan, capabilityMatrix, planGeneration } from './platform-adapter.mjs';
+import { applyGenerationPlan, capabilityMatrix, generationStatus, planGeneration } from './platform-adapter.mjs';
 import { applyTransaction, recoverTransaction } from './transaction.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -289,7 +289,7 @@ function planGenerationFor(platforms, assets, config) {
   const paths = globalPaths();
   const validation = validateConfiguration({ base: config, roles: assets.roles, platforms });
   if (validation.errors.length) fail(validation.errors.join('\n'));
-  const plan = platforms.flatMap((platform) => planGeneration({ platform, paths, roles: assets.roles, policies: assets.policies, config, bodies: assets.bodies }));
+  const plan = platforms.flatMap((platform) => planGeneration({ platform, paths, roles: assets.roles, policies: assets.policies, config, bodies: assets.compiledBodies }));
   return { plan, warnings: validation.warnings, paths };
 }
 
@@ -332,7 +332,19 @@ export function runCli(argv) {
       const resolved = loadResolvedConfiguration({ paths, roles: assets.roles, platforms: [...PLATFORMS] });
       console.log(`Environment: ${resolved.name}`);
       console.log(`Managed platforms: ${managedPlatforms(paths).join(', ')}`);
-      reportCapabilities(managedPlatforms(paths), assets, resolved.config);
+      const managed = managedPlatforms(paths);
+      reportCapabilities(managed, assets, resolved.config);
+      for (const status of generationStatus({
+        platforms: [...PLATFORMS].sort(),
+        paths,
+        roles: assets.roles,
+        policies: assets.policies,
+        config: resolved.config,
+        bodies: assets.compiledBodies,
+        managedPlatforms: managed
+      })) {
+        console.log(`STATUS ${status.platform}/${status.role_id}: ${status.state} reasons=${status.reasons.join(',') || 'none'} planned_digest=${status.planned_digest}${status.installed_digest ? ` installed_digest=${status.installed_digest}` : ''}`);
+      }
       return;
     }
     if (options.envAction === 'create') {

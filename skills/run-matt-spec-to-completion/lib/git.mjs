@@ -1,5 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
+import { parsePorcelainV2 } from "./paths.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -10,6 +11,26 @@ export async function gitOutput(cwd, args) {
   } catch (error) {
     const detail = error.stderr?.trim() || error.message;
     throw new Error(`git ${args.join(" ")} failed: ${detail}`, { cause: error });
+  }
+}
+
+export async function gitPathChanges(cwd) {
+  try {
+    const { stdout } = await execFileAsync("git", ["status", "--porcelain=v2", "-z", "--untracked-files=all"], { cwd, encoding: "buffer" });
+    return parsePorcelainV2(stdout);
+  } catch (error) {
+    const detail = error.stderr?.toString().trim() || error.message;
+    throw new Error(`git status --porcelain=v2 failed: ${detail}`, { cause: error });
+  }
+}
+
+export async function commitWithPathChangeReport(cwd, args) {
+  try {
+    await git(cwd, args);
+  } catch (error) {
+    const reported = new Error(error.message, { cause: error });
+    reported.path_changes = await gitPathChanges(cwd);
+    throw reported;
   }
 }
 

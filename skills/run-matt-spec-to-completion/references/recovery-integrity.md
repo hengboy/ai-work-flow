@@ -2,7 +2,7 @@
 
 汇总提交前，执行记录尚未持久化到 Git，只能在保留这些工作区改动的同一 main worktree 恢复。汇总提交后，按 plan ID 查找 branch，并用 lifecycle module 复用已注册 worktree；丢失时可重建独立 worktree。branch 不存在、目标路径冲突或重建后的 worktree 不干净时停止并报告。
 
-调用 `verifyCheckpointIntegrity({ worktree: mainWorktree, executionWorktree, planId })`。只有 `status: "valid"` 可继续。它必须证明：
+调用 `verifyCheckpointIntegrity({ worktree: mainWorktree, executionWorktree, featureSlug })`。只有 `status: "valid"` 可继续。它必须证明：
 
 - 执行计划 revision 与 Checkpoint 引用一致，canonical 计划路径正确，baseline 存在且是 `HEAD` 的祖先。
 - 执行记录在 main，执行 worktree 位于记录的 branch，每个计划任务恰有一个 Checkpoint 条目。
@@ -11,4 +11,4 @@
 
 `invalid` 时显示 module 返回的精确 diagnostics；不得猜测、降级任务、重派 `done` 任务或用 `git log` 文本匹配替代验证。路径变动时用 `relocateCheckpoint` 更新记录。
 
-**有效 Checkpoint 的恢复规则：** `executing` 从最低未完成 Frontier 继续，`reviewing` 进入评审，`integrating` 只做整合清理，`complete` 只报告结果。先检查 main 上的 `merged` 和 `complete`，避免重建已整合的 worktree。
+**有效 Checkpoint 的恢复规则：** `executing` 从最低未完成 Frontier 继续，`reviewing` 进入冻结 manifest 审查，`fixing` 等待追加 fix commit，`integrating` 只做整合清理，`complete` 只报告结果。先检查 main 上的 `merged` 和 `complete`，避免重建已整合的 worktree。

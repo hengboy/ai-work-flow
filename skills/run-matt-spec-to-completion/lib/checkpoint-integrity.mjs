@@ -2,6 +2,7 @@ import { readExecutionPlan, verifyExecutionPlan } from "./spec-intake.mjs";
 import { readCheckpoint, resolveRepositoryPath, verifyCheckpointShape } from "./checkpoint.mjs";
 import { git, gitSucceeds, isAncestor } from "./git.mjs";
 import { sourceSpecPath } from "./paths.mjs";
+import { assertReviewCoverage, assertReviewManifest } from "./review-manifest.mjs";
 import { resolve } from "node:path";
 
 function diagnostic(code, detail) {
@@ -84,6 +85,18 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
       ? null
       : checkpoint.review.fix_commit || reviewCommit;
     if (fixedPoint !== checkpoint.baseline) diagnostics.push(diagnostic("review-fixed-point", fixedPoint));
+    try {
+      const manifest = assertReviewManifest(checkpoint.review.manifest);
+      if (manifest.fixed_point !== fixedPoint || manifest.review_commit !== reviewCommit) {
+        diagnostics.push(diagnostic("review-manifest-endpoints", manifest.manifest_digest));
+      }
+      if (checkpoint.review.status !== "in_progress") {
+        if (checkpoint.review.manifest_digest !== manifest.manifest_digest) diagnostics.push(diagnostic("review-manifest-digest", checkpoint.review.manifest_digest));
+        assertReviewCoverage(manifest, checkpoint.review.coverage);
+      }
+    } catch (error) {
+      diagnostics.push(diagnostic("review-manifest", error.message));
+    }
     const fixedPointExists = await gitSucceeds(reviewWorktree, ["rev-parse", "--verify", `${fixedPoint}^{commit}`]);
     const reviewCommitExists = await gitSucceeds(reviewWorktree, ["rev-parse", "--verify", `${reviewCommit}^{commit}`]);
     if (!fixedPointExists) diagnostics.push(diagnostic("review-fixed-point-missing", fixedPoint));

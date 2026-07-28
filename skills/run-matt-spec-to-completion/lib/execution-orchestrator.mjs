@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { checkpointPath, deriveSpecLocation, executionPlanPath } from "./paths.mjs";
 import { createCheckpoint, markMerged, readCheckpoint, recordStashReference, relocateCheckpoint, resolveRepositoryPath } from "./checkpoint.mjs";
 import { requireCheckpointIntegrity } from "./checkpoint-integrity.mjs";
-import { currentHead, git, gitOutput, gitSucceeds, gitSucceedsWithInput, isAncestor } from "./git.mjs";
+import { currentHead, git, gitOutput, gitPathChanges, gitSucceeds, gitSucceedsWithInput, isAncestor } from "./git.mjs";
 import { assertSpecArtifactsInMainWorktree, materializeSpec, verifyExecutionPlan, writeExecutionPlan } from "./spec-intake.mjs";
 import { createIssueTracker } from "./issue-tracker.mjs";
 import { assertCompletionResult } from "./validation.mjs";
@@ -17,9 +17,11 @@ import { createRuntimeStateStore, withFeatureLock } from "../../../execution-run
 
 const executionCli = fileURLToPath(new URL("../../../execution-runtime/execution-cli.mjs", import.meta.url));
 
-async function canonicalTransition(command, { mainWorktree, featureSlug, worktree }, input) {
+async function canonicalTransition(command, { mainWorktree, featureSlug, worktree, roleId, sessionId }, input) {
   const args = [executionCli, command, "--repository", mainWorktree, "--feature", featureSlug];
   if (worktree) args.push("--worktree", worktree);
+  if (roleId) args.push("--role-id", roleId);
+  if (sessionId) args.push("--session-id", sessionId);
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, args, { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
@@ -35,25 +37,30 @@ async function canonicalTransition(command, { mainWorktree, featureSlug, worktre
   });
 }
 
-function handoff(result) {
-  return { role_id: "execution-orchestrator", status: result.status, summary: result.summary, artifacts: [], checks: result.tests, ...(result.status === "blocked" ? { error: result.error } : {}), payload: result };
+function handoff(result, ticket) {
+  return {
+    role_id: ticket.expected_role_id,
+    session_id: ticket.session_id,
+    claim_id: ticket.claim_id,
+    status: result.status,
+    summary: result.summary,
+    artifacts: [],
+    checks: result.checks,
+    ...(result.status === "blocked" ? { error: result.error } : {}),
+    payload: result,
+  };
 }
 
 async function commitFiles(worktree, files, message) {
-  const changed = new Set(await changedPaths(worktree));
-  const filesToCommit = [...new Set(files)].filter((file) => changed.has(file));
+  const changed = await changedPaths(worktree);
+  const filesToCommit = [...new Set(files)].filter((file) => changed.some((change) => change.path === file || change.source_path === file));
   if (filesToCommit.length === 0) return;
   await git(worktree, ["add", "--", ...filesToCommit]);
   await git(worktree, ["commit", "--only", "-m", message, "--", ...filesToCommit]);
 }
 
 async function changedPaths(worktree) {
-  const outputs = await Promise.all([
-    git(worktree, ["diff", "--name-only"]),
-    git(worktree, ["diff", "--cached", "--name-only"]),
-    git(worktree, ["ls-files", "--others", "--exclude-standard"]),
-  ]);
-  return [...new Set(outputs.flatMap((output) => output ? output.split("\n") : []))];
+  return gitPathChanges(worktree);
 }
 
 async function executionRecordFiles({ mainWorktree, featureSlug, executionPlan }) {
@@ -63,20 +70,18 @@ async function executionRecordFiles({ mainWorktree, featureSlug, executionPlan }
 
 async function unexpectedMainWorktreeChanges({ mainWorktree, featureSlug, executionPlan }) {
   const allowed = new Set(await executionRecordFiles({ mainWorktree, featureSlug, executionPlan }));
-  return (await changedPaths(mainWorktree)).filter((path) => !allowed.has(path));
+  const runtimeLock = `${checkpointPath(featureSlug)}.runtime.lock`;
+  return (await changedPaths(mainWorktree)).filter((change) => change.path !== runtimeLock && !allowed.has(change.path) && !allowed.has(change.source_path));
 }
 
-async function commitExecutionRecords({ mainWorktree, featureSlug, executionPlan, generateCommitMessage }) {
-  if (!generateCommitMessage) throw new Error("A git-commit message generator is required");
+async function commitExecutionRecords({ mainWorktree, featureSlug, executionPlan }) {
   const files = await executionRecordFiles({ mainWorktree, featureSlug, executionPlan });
-  const message = await generateCommitMessage({ mainWorktree, featureSlug, executionPlan, files });
-  if (typeof message !== "string" || message.trim() === "") throw new Error("A non-empty execution record commit message is required");
-  await commitFiles(mainWorktree, files, message);
+  await commitFiles(mainWorktree, files, `chore(ai-work-flow): record ${featureSlug} execution`);
 }
 
 async function executionRecordsHaveChanges({ mainWorktree, featureSlug, executionPlan }) {
   const files = new Set(await executionRecordFiles({ mainWorktree, featureSlug, executionPlan }));
-  return (await changedPaths(mainWorktree)).some((path) => files.has(path));
+  return (await changedPaths(mainWorktree)).some((change) => files.has(change.path) || files.has(change.source_path));
 }
 
 async function assertResultCommits(worktree, result, ticket) {
@@ -100,7 +105,7 @@ function verifiedExecutionPlan(executionPlan, integrity) {
   return integrity.executionPlan;
 }
 
-export function createExecutionOrchestrator({ adapter, directExecutor, materialize = materializeSpec, now = toShanghaiTimestamp, generateCommitMessage } = {}) {
+export function createExecutionOrchestrator({ adapter, directExecutor, materialize = materializeSpec, now = toShanghaiTimestamp } = {}) {
   const stash = createPreMergeStash({ git, gitSucceeds, gitOutput, gitSucceedsWithInput });
   const stateStore = createRuntimeStateStore();
 
@@ -125,7 +130,7 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
     persist,
     stash,
     executionRecordsHaveChanges,
-    commitExecutionRecords: ({ mainWorktree, featureSlug, executionPlan }) => commitExecutionRecords({ mainWorktree, featureSlug, executionPlan, generateCommitMessage }),
+    commitExecutionRecords,
     findMainWorktree,
     worktreeIsClean,
     currentHead,
@@ -171,7 +176,7 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
         const executionPlan = preflight.executionPlan;
         if (await executionRecordsHaveChanges({ mainWorktree, featureSlug, executionPlan })) {
           await requireIntegrity({ mainWorktree, featureSlug });
-          await commitExecutionRecords({ mainWorktree, featureSlug, executionPlan, generateCommitMessage });
+          await commitExecutionRecords({ mainWorktree, featureSlug, executionPlan });
         }
         return { ...preflight, status: "complete", worktree: mainWorktree };
       }
@@ -211,7 +216,7 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
       readTicket ??= createIssueTracker({ mainWorktree, executionPlan }).read.bind(null);
       const selection = selectTicketFrontier({ executionPlan, checkpoint });
       if (selection.status === "blocked") return { status: "blocked", checkpoint, results: [], ...(selection.reason ? { reason: selection.reason } : {}) };
-      const claimed = await canonicalTransition("claim", { mainWorktree, featureSlug, worktree });
+      const claimed = await canonicalTransition("claim", { mainWorktree, featureSlug, worktree, roleId: "full-stack-coder", sessionId: randomUUID() });
       const ticket = claimed.ticket;
       checkpoint = claimed.checkpoint;
       let rawResult;
@@ -221,12 +226,12 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
         try {
           rawResult = await directExecutor({ task: ticket, worktree, executionPlan, readTicket });
         } catch (error) {
-          rawResult = { ticket_id: ticket.id, status: "blocked", commits: [], tests: [], summary: "Orchestrator execution failed", error: error instanceof Error ? error.message : String(error) };
+          rawResult = { ticket_id: ticket.id, status: "blocked", commits: [], checks: [], changed_paths: [], summary: "Orchestrator execution failed", error: error instanceof Error ? error.message : String(error) };
         }
       } else throw new Error("Completion adapter is required to execute a ticket");
       const result = assertCompletionResult(rawResult);
       if (result.ticket_id !== ticket.id) throw new Error(`Completion result belongs to ${result.ticket_id}, expected ${ticket.id}`);
-      checkpoint = (await canonicalTransition("record-ticket", { mainWorktree, featureSlug, worktree }, handoff(result))).checkpoint;
+      checkpoint = (await canonicalTransition("record-ticket", { mainWorktree, featureSlug, worktree }, handoff(result, ticket))).checkpoint;
       if (result.status === "done") {
         await requireIntegrity({ mainWorktree, featureSlug, executionWorktree: worktree });
         const issueTracker = createIssueTracker({ mainWorktree, executionPlan });
@@ -235,8 +240,12 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
       return { checkpoint, results: [result] };
     },
 
-    async startReview({ mainWorktree, featureSlug, worktree }) {
-      return (await canonicalTransition("begin-review", { mainWorktree, featureSlug, worktree })).checkpoint;
+    async startReview({ mainWorktree, featureSlug, worktree, executionPlan }) {
+      return (await canonicalTransition("begin-review", { mainWorktree, featureSlug, worktree }, {
+        spec_status: "present",
+        spec_source: { path: executionPlan.spec.ref, revision: executionPlan.revision },
+        standards_source: [],
+      })).checkpoint;
     },
 
     async finishReview({ mainWorktree, featureSlug, checkpoint, findingsSummary }) {
@@ -260,13 +269,13 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
       const readTicket = issueTracker.read.bind(issueTracker);
       if (checkpoint.status === "executing" && checkpoint.tickets.every((ticket) => ticket.status === "done")) {
         for (const ticket of checkpoint.tickets) await issueTracker.markComplete(ticket.id);
-        checkpoint = await this.startReview({ mainWorktree, featureSlug, worktree });
+        checkpoint = await this.startReview({ mainWorktree, featureSlug, worktree, executionPlan });
       }
       while (checkpoint.status === "executing") {
         const result = await this.executeFrontier({ worktree, mainWorktree, featureSlug, executionPlan, checkpoint, readTicket });
         if (result.status === "blocked") return result;
         checkpoint = result.checkpoint;
-        if (checkpoint.tickets.every((ticket) => ticket.status === "done")) checkpoint = await this.startReview({ mainWorktree, featureSlug, worktree });
+        if (checkpoint.tickets.every((ticket) => ticket.status === "done")) checkpoint = await this.startReview({ mainWorktree, featureSlug, worktree, executionPlan });
       }
       if (checkpoint.status === "reviewing") {
         if (!review) return { status: "reviewing", worktree, executionPlan, checkpoint };

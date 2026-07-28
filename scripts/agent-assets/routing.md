@@ -1,5 +1,7 @@
 # Agent 路由规则
 
+<!-- ai-work-flow:section id="core-governance" -->
+
 ## 职责与边界
 
 **Orchestrator** 是唯一面向用户的入口。它负责委派工作、等待受委派结果、请求后续工作并汇总结论。它不得检查工作区、运行 Shell 命令、编辑文件或实施变更。已安装 skill 中的所有操作指令都由受委派的专职角色执行，而不是由 **Orchestrator** 执行。
@@ -54,19 +56,21 @@ Code Reviewer 先以 `git diff --name-only <fixed-point>...<review-commit>` 生�
 
 用户请求制定方案时，**Orchestrator** 必须先区分事实与决策：可通过工作区探索确认的事实委派 **File Explorer**；会实质影响目标、范围、行为、取舍、兼容性、风险或验收标准且尚未确定的决策，必须在委派 **Planning Writer** 前向用户询问。每次只询问一个决策，说明推荐选项及其取舍，并等待用户的明确回答；不得以假设、沉默或继续讨论代替回答。所有已确认决策必须随任务交接给 **Planning Writer**。没有此类未决决策时无需提问。
 
-完成澄清后，**Orchestrator** 委派 **Planning Writer** 前必须指定稳定的 kebab-case `planId`。**Planning Writer** 将方案保存到目标项目 `.ai-work-flow/plans/<planId>.md` 后，**Orchestrator** 向用户报告路径和摘要，并等待用户明确确认后才能实施。确认前不得自动委派 **Full Stack Coder**、**Git Committer** 或调用任何实施 Skill；沉默、继续讨论或仅确认已收到方案均不构成实施确认。用户要求修改方案时，委派 **Planning Writer** 更新同一文件，并在更新后重新等待用户明确确认。
+完成澄清后，**Orchestrator** 委派 **Planning Writer** 前必须指定稳定的 kebab-case `plan_id`。**Planning Writer** 将方案保存到目标项目 `.ai-work-flow/plans/<plan_id>.md` 后，**Orchestrator** 向用户报告路径和摘要，并等待用户明确确认后才能实施。确认前不得自动委派 **Full Stack Coder**、**Git Committer** 或调用任何实施 Skill；沉默、继续讨论或仅确认已收到方案均不构成实施确认。用户要求修改方案时，委派 **Planning Writer** 更新同一文件，并在更新后重新等待用户明确确认。
 
 ### Git 提交流水线
 
 用户明确确认方案或要求实施，即授权为该实现阶段创建仅本地的 review commit；不需要在首次暂存前再次逐项请求授权。此授权不包含 push、amend、reset、clean、stash、切换或删除分支、标签操作，且不包含方案范围之外的已有变更。
 
-**Full Stack Coder** 开始前必须记录完整 `base_commit`、`git status --short` 的空输出，且初始状态必须为空；否则停止，不得猜测提交范围。完成后必须交接同一工作树的 `base_commit`、初始空状态、稳定排序的精确 `changed_paths`、`git diff --name-only <base_commit>`、`git ls-files --others --exclude-standard` 和每条已执行且通过的验证命令与结果。`changed_paths` 是前两项命令输出的去重并集，必须包含新增、修改、删除与未跟踪文件。**Orchestrator** 在收到完整且成功的实现交接后立即原样委派给 **Git Committer**。变更清单为空、当前 `HEAD` 不等于 `base_commit`、当前状态与交接不一致、验证失败或存在未交接的变更时，Git Committer 必须停止且不得暂存任何文件。
+**Full Stack Coder** 开始前必须记录完整 `base_commit`、空的 `git status --porcelain=v2 -z --untracked-files=all`，且初始状态必须为空；否则停止，不得猜测提交范围。完成后必须交接同一工作树的 `base_commit`、初始空状态、稳定排序的精确 `changed_paths: PathChange[]` 和每条已执行且通过的验证命令与结果。唯一的路径事实源是 porcelain v2 `-z`：每项为 `{record_type,index_status,worktree_status,path,source_path?}`，rename/copy 必须保留两条 Git 原始路径；不得换行分割或从展示文本反解析路径。**Orchestrator** 在收到完整且成功的实现交接后立即原样委派给 **Git Committer**。变更清单为空、当前 `HEAD` 不等于 `base_commit`、当前结构化状态与交接不一致、验证失败或存在未交接的变更时，Git Committer 必须停止且不得暂存任何文件。
 
-Git Committer 必须先调用 `$git-commit` 生成提交信息。提交前必须确认当前 `HEAD` 精确等于 `base_commit`、当前变更路径与交接 `changed_paths` 完全一致、已通过验证仍完整可用；只能通过 `git add -- <changed_paths>` 暂存交接中的精确路径，并在提交前确认 `git diff --cached --name-only` 与 `changed_paths` 完全一致且暂存差异非空。提交必须仅在本地创建，成功后报告完整 `review_commit` SHA 和空的 `git status --short`。范围不一致、工作树不干净、验证失败或提交 hook 失败时停止并报告精确原因，不得暂存、提交或重复请求同一实施阶段的授权。工作树仍有 staged、unstaged 或 untracked 内容时，不能启动审查；该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实现阶段的提交授权。
+Git Committer 必须先调用 `$git-commit` 生成提交信息。提交前必须确认当前 `HEAD` 精确等于 `base_commit`、当前 PathChange 集合与交接 `changed_paths` 全字段一致、已通过验证仍完整可用；只能以参数数组和 `--` 暂存交接 PathChange 的目标/源路径，并在提交前复核暂存结构化集合且暂存差异非空。提交必须仅在本地创建，成功后报告完整 `review_commit` SHA 和空的 porcelain 状态。范围不一致、工作树不干净、验证失败或提交 hook 失败时停止并报告精确原因；hook 失败后不得 reset、clean 或重试，必须用同一 parser 重新报告真实 index/worktree PathChange。工作树仍有 staged、unstaged 或 untracked 内容时，不能启动审查；该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实施阶段的提交授权。
 
 ### 最终审查去重
 
 每个阶段先完成实现和测试验证并创建 review commit；**Code Reviewer** 仅对从已解析 fixed point 到该 review commit 的已提交差异执行一次 Standards + Spec 双轴审查，绝不审查未提交内容。完成所需 Git 与测试命令验证的双轴审查才是最终独立审查。工具不可用或命令被拒绝导致的审查不算完成；审查能力基准恢复后可重新委派一次。同一会话中，同一稳定差异的已完成审查不得再次委派任何审查角色。评审发现必须先报告用户，由用户决定是否修复以及修复哪些项；`begin-review` 只能从 pending execution review 进入，开始后不得替换固定端点。用户确认的修复必须形成晚于 review commit 的追加提交，且 `complete-review-fix` 必须记录非空验证结果；验证后直接整合，不自动复审相同范围。只有用户明确要求新的独立审查，且代码、测试、规格或审查能力基准发生变化时，才可重新委派 **Code Reviewer**；重新审查仍只执行一次双轴审查。
+
+<!-- ai-work-flow:section-end -->
 
 ## 回复格式
 

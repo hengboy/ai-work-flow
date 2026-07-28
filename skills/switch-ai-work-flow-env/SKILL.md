@@ -11,16 +11,15 @@ description: 切换 AI Work Flow 环境预设并重新生成代理。当用户�
 
 ## 前置条件与约束
 
-默认环境为 `~/.config/ai-work-flow/environments/default.json`；其他环境预设存储在同一目录，且仅在 `roles` 的角色名层级与默认环境浅合并。覆盖角色会整体替换，必须提供完整的平台配置。设置 `XDG_CONFIG_HOME` 时，使用 `$XDG_CONFIG_HOME/ai-work-flow/` 目录。本技能绝不在当前项目写入 `.ai-work-flow`、`.codex`、`.claude`、`.opencode`、`AGENTS.md` 或 `CLAUDE.md`。
+默认环境为 `~/.config/ai-work-flow/environments/default.json`；其他环境预设按 `role -> platform -> field` 与默认环境合并，OpenCode `options` 整体替换。设置 `XDG_CONFIG_HOME` 时，使用 `$XDG_CONFIG_HOME/ai-work-flow/` 目录。本技能绝不在当前项目写入 `.ai-work-flow`、`.codex`、`.claude`、`.opencode`、`AGENTS.md` 或 `CLAUDE.md`。
 
 ## 执行步骤
 
 1. 定位 `~/.config/ai-work-flow/agent-workflow.mjs`；设置 `XDG_CONFIG_HOME` 时，使用 `$XDG_CONFIG_HOME/ai-work-flow/agent-workflow.mjs`。
 2. 运行 `node "<该脚本路径>" env` 查看可用环境列表，确认目标环境存在。
 3. 运行 `node "<该脚本路径>" env use <环境名>` 切换到目标环境；切换到默认配置时使用 `env use default`。
-4. 运行 `node "<该脚本路径>" validate` 验证合并后的配置。验证失败时停止并报告错误，不生成 agents。
-5. 运行 `node "<该脚本路径>" generate` 重新生成所有平台的代理。用户明确指定平台时，改用 `--platform codex`、`--platform claude`、`--platform opencode` 或逗号分隔组合。
-6. 报告切换结果和更新的代理文件，并提醒用户新会话才会读取生成后的代理。
+4. `env use` 已事务化验证并生成受管 agents；不得在其后重复 `validate` 或 `generate`。
+5. 报告切换结果和更新的代理文件，并提醒用户新会话才会读取生成后的代理。
 
 ## 回复格式
 

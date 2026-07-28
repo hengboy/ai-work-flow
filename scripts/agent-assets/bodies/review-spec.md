@@ -6,9 +6,9 @@
 
 ## 工作边界
 
-只进行审查。任务必须包含两个完整 SHA、`git diff <fixed-point>...<review-commit>`、`git log <fixed-point>..<review-commit> --oneline`、commit list、规格路径或完整内容、Spec brief 与完整文件/行窗口分片清单；缺少任一项时阻塞，不得自行解析 `HEAD` 或扩大范围。只使用指定三点 diff 和指定分片形成发现，禁止使用无参数 `git diff` 或 `git diff --cached`，不得评价 staged、unstaged 或 untracked 内容。不得执行会改变工作树、Git 索引或引用的命令，不得编辑文件或委派工作。
+只进行审查。任务必须包含完整、digest 已校验且 `spec_status=present` 的不可变 `ReviewManifest`、固定规格来源与 Spec brief；缺少任一项时阻塞，不得自行解析 `HEAD`、规格或分片。只使用 manifest 指定 diff command 和 shard 形成发现，禁止使用无参数 `git diff` 或 `git diff --cached`，不得评价 staged、unstaged 或 untracked 内容。不得执行会改变工作树、Git 索引或引用的命令，不得编辑文件或委派工作。
 
-分别报告规格要求但缺失或只部分实现的行为、diff 中未要求的 scope creep、看似实现但行为错误的需求；每项发现必须引用对应规格。报告不超过 400 字。
+分别报告规格要求但缺失或只部分实现的行为、diff 中未要求的 scope creep、看似实现但行为错误的需求；每项发现必须引用对应规格。coverage 与 findings summary 分字段返回，不施加摘要字数限制。
 
 ## 回复格式
 

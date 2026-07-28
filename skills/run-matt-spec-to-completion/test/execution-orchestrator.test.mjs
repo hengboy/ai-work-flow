@@ -11,8 +11,18 @@ import { beginReview, completeIntegration, completeReview, completeReviewFix, co
 import { createExecutionOrchestrator } from "../lib/execution-orchestrator.mjs";
 import { materializeSpec, writeExecutionPlan } from "../lib/spec-intake.mjs";
 import { assertCheckpoint, assertExecutionPlan } from "../lib/validation.mjs";
+import { createReviewManifest } from "../lib/review-manifest.mjs";
 
 const execFileAsync = promisify(execFile);
+
+function reviewManifest(fixedPoint, reviewCommit) {
+  return createReviewManifest({ fixed_point: fixedPoint, review_commit: reviewCommit, commit_list: [{ sha: reviewCommit, subject: "review" }], changed_paths: [], checks: [], diff_command: ["git", "diff", `${fixedPoint}...${reviewCommit}`], spec_status: "absent", spec_source: null, standards_source: [], shards: [] });
+}
+
+function completeReviewWithManifest(checkpoint, findingsSummary) {
+  checkpoint = recordReview(checkpoint, { manifestDigest: checkpoint.review.manifest.manifest_digest, coverage: { manifest_digest: checkpoint.review.manifest.manifest_digest, completed_shard_ids: [], incomplete_shard_ids: [] }, findingsSummary });
+  return decideReview(checkpoint, "approve");
+}
 
 async function git(cwd, ...args) {
   const { stdout } = await execFileAsync("git", args, { cwd, encoding: "utf8" });
@@ -41,8 +51,8 @@ async function orchestratorFixture() {
   let checkpoint = createCheckpoint({ executionPlan, baseline: head, branch: "feat/migrate-runtime", worktree: root, now: new Date("2026-07-23T12:00:00+08:00") });
   checkpoint = startTickets(checkpoint, ["01"], head);
   checkpoint = completeTicket(checkpoint, "01", completionCommit);
-  checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: completionCommit });
-  checkpoint = completeReview(checkpoint, "approved");
+  checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: completionCommit, manifest: reviewManifest(checkpoint.baseline, completionCommit) });
+  checkpoint = completeReviewWithManifest(checkpoint, "approved");
   checkpoint = markMerged(checkpoint, { executionHead: completionCommit, mainWorktree: root, mergedCommit: completionCommit });
   return { root, executionPlan, checkpoint };
 }
@@ -59,8 +69,8 @@ async function pendingIntegrationFixture() {
   const completionCommit = await git(executionWorktree, "rev-parse", "HEAD");
   checkpoint = startTickets(checkpoint, ["01"], head);
   checkpoint = completeTicket(checkpoint, "01", completionCommit);
-  checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: completionCommit });
-  checkpoint = completeReview(checkpoint, "approved");
+  checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: completionCommit, manifest: reviewManifest(checkpoint.baseline, completionCommit) });
+  checkpoint = completeReviewWithManifest(checkpoint, "approved");
   checkpoint = { ...checkpoint, worktree: relative(root, executionWorktree) };
   await writeCheckpoint(root, "migrate-runtime", checkpoint);
   return { root, executionPlan, checkpoint, executionWorktree };
@@ -148,7 +158,7 @@ test("does not dispatch a revision-consistent plan whose dependency level was ta
     createExecutionOrchestrator({
       directExecutor: async () => {
         dispatched = true;
-        return { ticket_id: "01", status: "done", commits: [head], tests: [], summary: "unexpected" };
+        return { ticket_id: "01", status: "done", commits: [head], checks: [], changed_paths: [], summary: "unexpected" };
       },
     }).executeFrontier({ repository: root, worktree: executionWorktree, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan: validPlan, checkpoint }),
     /Ticket 02 level must follow blocker 01/,
@@ -194,7 +204,7 @@ test("rejects a completion result that returns the ticket start commit without m
   await writeCheckpoint(root, "migrate-runtime", checkpoint);
   let writes = 0;
   const orchestrator = createExecutionOrchestrator({
-    directExecutor: async () => ({ ticket_id: "01", status: "done", commits: [startCommit], tests: [], summary: "stale commit" }),
+    directExecutor: async () => ({ ticket_id: "01", status: "done", commits: [startCommit], checks: [], changed_paths: [], summary: "stale commit" }),
     checkpointWriter: async (...args) => {
       writes += 1;
       return writeCheckpoint(...args);
@@ -231,7 +241,7 @@ test("rejects a completed ticket whose persisted end commit is its start commit 
   assert.equal(await readFile(checkpointPath, "utf8"), checkpointBefore);
 });
 
-test("keeps merged cleanup recoverable when final record commit fails", async () => {
+test("commits merged execution records with the fixed runtime message", async () => {
   const { root, executionPlan, checkpoint } = await orchestratorFixture();
   const unrelatedPath = join(root, "unrelated.txt");
   await writeFile(unrelatedPath, "preserve this change\n");
@@ -242,37 +252,20 @@ test("keeps merged cleanup recoverable when final record commit fails", async ()
     integration: { ...checkpoint.integration, stash_ref: stashRef },
   };
   await writeCheckpoint(root, "migrate-runtime", checkpointWithStash);
-  const failingOrchestrator = createExecutionOrchestrator({
-    generateCommitMessage: async () => {
-      throw new Error("commit generator unavailable");
-    },
-  });
-
-  await assert.rejects(
-    failingOrchestrator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
-    /commit generator unavailable/,
-  );
-  const recoverable = await readCheckpoint(root, "migrate-runtime");
-  assert.equal(recoverable.status, "integrating");
-  assert.equal(recoverable.integration.status, "merged");
-  assert.equal(recoverable.integration.stash_restored, true);
-  assert.equal(recoverable.integration.stash_ref, stashRef);
-  assert.equal(await readFile(unrelatedPath, "utf8"), "preserve this change\n");
-
-  const orchestrator = createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" });
-  const result = await orchestrator.completeMergedCleanup({
+  const result = await createExecutionOrchestrator().completeMergedCleanup({
     repository: root,
     mainWorktree: root,
     featureSlug: "migrate-runtime",
     executionPlan,
-    checkpoint: recoverable,
+    checkpoint: checkpointWithStash,
   });
 
   assert.equal(result.status, "complete");
   assert.equal((await readCheckpoint(root, "migrate-runtime")).status, "complete");
-  assert.equal(await git(root, "log", "-1", "--format=%s"), "chore: record execution");
+  assert.equal(await readFile(unrelatedPath, "utf8"), "preserve this change\n");
+  assert.equal(await git(root, "log", "-1", "--format=%s"), "chore(ai-work-flow): record migrate-runtime execution");
 
-  const resumed = await orchestrator.resume({
+  const resumed = await createExecutionOrchestrator().resume({
     repository: root,
     branch: "feat/migrate-runtime",
     specPath: ".scratch/migrate-runtime/spec.md",
@@ -290,9 +283,8 @@ test("reports an explicitly recorded but unavailable stash during merged cleanup
   const checkpointWithStash = markMerged(checkpoint, { executionHead: head, mainWorktree: root, mergedCommit: head, stashRef: unavailableStash });
   await writeCheckpoint(root, "migrate-runtime", checkpointWithStash);
 
-  const orchestrator = createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" });
   await assert.rejects(
-    orchestrator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
+    createExecutionOrchestrator().completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: checkpointWithStash }),
     new RegExp(`Checkpoint requires stash ${unavailableStash}, but that stash is unavailable`),
   );
   assert.equal((await readCheckpoint(root, "migrate-runtime")).integration.stash_ref, unavailableStash);
@@ -307,19 +299,10 @@ test("does not commit terminal records when their checkpoint fails integrity", a
   });
   await writeCheckpoint(root, "migrate-runtime", invalidComplete);
   const headBefore = await git(root, "rev-parse", "HEAD");
-  let generated = false;
-  const orchestrator = createExecutionOrchestrator({
-    generateCommitMessage: async () => {
-      generated = true;
-      return "chore: record execution";
-    },
-  });
-
   await assert.rejects(
-    orchestrator.completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: invalidComplete }),
+    createExecutionOrchestrator().completeMergedCleanup({ repository: root, mainWorktree: root, featureSlug: "migrate-runtime", executionPlan, checkpoint: invalidComplete }),
     /Checkpoint integrity failed/,
   );
-  assert.equal(generated, false);
   assert.equal(await git(root, "rev-parse", "HEAD"), headBefore);
 });
 
@@ -361,7 +344,7 @@ test("keeps undispatched tasks pending after the first serial blocked result", a
     adapter: {
       async executeTicket({ ticket }) {
         dispatched.push(ticket.id);
-        return { ticket_id: "01", status: "blocked", commits: [], tests: [], summary: "blocked", error: "stop" };
+        return { ticket_id: "01", status: "blocked", commits: [], checks: [], changed_paths: [], summary: "blocked", error: "stop" };
       },
     },
   });
@@ -396,11 +379,14 @@ test("rejects multi-in-progress and out-of-order completed checkpoints before re
   const checkpointFile = join(root, ".scratch", "migrate-runtime", "checkpoint.json");
 
   const multiInProgress = createCheckpoint({ executionPlan, baseline: head, branch: "feat/migrate-runtime", repository: root, worktree: executionWorktree });
-  multiInProgress.tickets = executionPlan.tickets.map((ticket) => ({
-    id: ticket.id,
-    status: "in_progress",
-    start_commit: head,
-    started_at: "2026-07-23T12:00:00+08:00",
+    multiInProgress.tickets = executionPlan.tickets.map((ticket) => ({
+      id: ticket.id,
+      status: "in_progress",
+      start_commit: head,
+      started_at: "2026-07-23T12:00:00+08:00",
+      claim_id: `claim-${ticket.id}`,
+      expected_role_id: "full-stack-coder",
+      session_id: "session",
   }));
   await writeCheckpoint(root, "migrate-runtime", multiInProgress);
   const multiBefore = await readFile(checkpointFile, "utf8");
@@ -420,6 +406,9 @@ test("rejects multi-in-progress and out-of-order completed checkpoints before re
     status: "done",
     start_commit: head,
     started_at: "2026-07-23T12:00:00+08:00",
+    claim_id: "claim-02",
+    expected_role_id: "full-stack-coder",
+    session_id: "session",
     end_commit: head,
     completed_at: "2026-07-23T12:00:00+08:00",
   };
@@ -448,7 +437,7 @@ test("rejects a caller plan that differs from the verified persisted plan before
   const orchestrator = createExecutionOrchestrator({
     directExecutor: async () => {
       delegated = true;
-      return { ticket_id: "01", status: "done", commits: [head], tests: [], summary: "done" };
+      return { ticket_id: "01", status: "done", commits: [head], checks: [], changed_paths: [], summary: "done" };
     },
     checkpointWriter: async (...args) => { writes += 1; return writeCheckpoint(...args); },
   });
@@ -500,7 +489,7 @@ test("does not mutate an invalid checkpoint while attempting a relocated resume"
 
 test("rejects a persisted review range whose review commit is missing", async () => {
   const { root, checkpoint: completed, executionWorktree, featureCommit } = await completedExecutionFixture();
-  const reviewing = beginReview(completed, { fixedPoint: completed.baseline, reviewCommit: featureCommit });
+  const reviewing = beginReview(completed, { fixedPoint: completed.baseline, reviewCommit: featureCommit, manifest: reviewManifest(completed.baseline, featureCommit) });
   reviewing.review.review_commit = "f".repeat(40);
   await writeCheckpoint(root, "migrate-runtime", reviewing);
 
@@ -517,8 +506,8 @@ test("rejects a persisted review range whose review commit is missing", async ()
 
 test("rejects a persisted review fix whose commit is missing", async () => {
   const { root, checkpoint: completed, executionWorktree, featureCommit } = await completedExecutionFixture();
-  let checkpoint = beginReview(completed, { fixedPoint: completed.baseline, reviewCommit: featureCommit });
-  checkpoint = recordReview(checkpoint, "requires a fix");
+  let checkpoint = beginReview(completed, { fixedPoint: completed.baseline, reviewCommit: featureCommit, manifest: reviewManifest(completed.baseline, featureCommit) });
+  checkpoint = recordReview(checkpoint, { manifestDigest: checkpoint.review.manifest.manifest_digest, coverage: { manifest_digest: checkpoint.review.manifest.manifest_digest, completed_shard_ids: [], incomplete_shard_ids: [] }, findingsSummary: "requires a fix" });
   checkpoint = decideReview(checkpoint, "fix");
   checkpoint = completeReviewFix(checkpoint, { fixCommit: "f".repeat(40), checks: ["npm test: pass"] });
   await writeCheckpoint(root, "migrate-runtime", checkpoint);

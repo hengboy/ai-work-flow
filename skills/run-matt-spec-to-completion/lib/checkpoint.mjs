@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { checkpointPath, sourceSpecPath } from "./paths.mjs";
 import { toShanghaiTimestamp } from "./time.mjs";
 import { assertCheckpoint } from "./validation.mjs";
+import { assertReviewCoverage, assertReviewManifest } from "./review-manifest.mjs";
 
 const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:[\\/]/;
 
@@ -83,9 +84,12 @@ function completeTransition(checkpoint) {
   return assertCheckpoint(checkpoint);
 }
 
-export function startTickets(checkpoint, ticketIds, startCommit, now = new Date()) {
+export function startTickets(checkpoint, ticketIds, startCommit, { claimId = "test-claim", expectedRoleId = "full-stack-coder", sessionId = "test-session" } = {}, now = new Date()) {
   now = toShanghaiTimestamp(now);
   if (ticketIds.length !== 1) throw new Error("Exactly one pending ticket can be started at a time");
+  if (![claimId, expectedRoleId, sessionId].every((value) => typeof value === "string" && value.length > 0)) {
+    throw new Error("Ticket claim requires claim ID, expected role ID, and session ID");
+  }
   const [ticketId] = ticketIds;
   if (checkpoint.tickets.some((ticket) => ticket.status === "in_progress")) {
     throw new Error("Cannot start a ticket while another ticket is in progress");
@@ -97,6 +101,9 @@ export function startTickets(checkpoint, ticketIds, startCommit, now = new Date(
   nextTicket.status = "in_progress";
   nextTicket.start_commit = startCommit;
   nextTicket.started_at = now;
+  nextTicket.claim_id = claimId;
+  nextTicket.expected_role_id = expectedRoleId;
+  nextTicket.session_id = sessionId;
   return completeTransition(next);
 }
 
@@ -130,7 +137,7 @@ export function relocateCheckpoint(checkpoint, worktree, now = new Date(), repos
   return completeTransition(next);
 }
 
-export function beginReview(checkpoint, { fixedPoint, reviewCommit }, now = new Date()) {
+export function beginReview(checkpoint, { fixedPoint, reviewCommit, manifest }, now = new Date()) {
   now = toShanghaiTimestamp(now);
   if (checkpoint.status !== "executing" || checkpoint.review.status !== "pending") {
     throw new Error("Review can only begin from a pending execution review");
@@ -139,9 +146,13 @@ export function beginReview(checkpoint, { fixedPoint, reviewCommit }, now = new 
     throw new Error("Cannot begin review while tickets are not done");
   }
   if (fixedPoint !== checkpoint.baseline) throw new Error("Review fixed point must match the execution baseline");
+  manifest = assertReviewManifest(manifest);
+  if (manifest.fixed_point !== fixedPoint || manifest.review_commit !== reviewCommit) {
+    throw new Error("ReviewManifest endpoints must match the frozen review endpoints");
+  }
   const next = revise(checkpoint, "reviewing", "final review started", now);
   next.status = "reviewing";
-  next.review = { status: "in_progress", fixed_point: fixedPoint, review_commit: reviewCommit, started_at: now };
+  next.review = { status: "in_progress", fixed_point: fixedPoint, review_commit: reviewCommit, manifest, started_at: now };
   return completeTransition(next);
 }
 
@@ -154,11 +165,13 @@ export function completeReview(checkpoint, findingsSummary, now = new Date()) {
   return completeTransition(next);
 }
 
-export function recordReview(checkpoint, findingsSummary, now = new Date()) {
+export function recordReview(checkpoint, { manifestDigest, coverage, findingsSummary }, now = new Date()) {
   now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "review-recorded", findingsSummary, now);
   if (!['in_progress', 'awaiting_user'].includes(next.review.status)) throw new Error("Review is not in progress");
-  next.review = { ...next.review, status: "awaiting_user", findings_summary: findingsSummary, completed_at: now };
+  if (manifestDigest !== next.review.manifest.manifest_digest) throw new Error("Review result manifest digest does not match the frozen ReviewManifest");
+  assertReviewCoverage(next.review.manifest, coverage);
+  next.review = { ...next.review, status: "awaiting_user", manifest_digest: manifestDigest, coverage, findings_summary: findingsSummary, completed_at: now };
   return completeTransition(next);
 }
 
@@ -214,6 +227,16 @@ export function beginStashOperation(checkpoint, operationId, now = new Date()) {
     throw new Error("A stash operation is already recorded");
   }
   next.integration = { ...next.integration, stash_operation_id: operationId };
+  return completeTransition(next);
+}
+
+export function authorizeStash(checkpoint, now = new Date()) {
+  now = toShanghaiTimestamp(now);
+  const next = revise(checkpoint, "stash-authorized", "explicit integrate --allow-stash true", now);
+  if (next.status !== "integrating" || next.integration.status !== "pending") {
+    throw new Error("A pending integration is required to authorize a stash operation");
+  }
+  next.integration = { ...next.integration, stash_authorized: true };
   return completeTransition(next);
 }
 

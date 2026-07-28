@@ -1,4 +1,4 @@
-import { beginStashOperation, beginStashRestoration, clearRestoredStashReference, completeIntegration, markMerged, markRestoredStashDropped, markStashRestored, recordStashReference } from "./checkpoint.mjs";
+import { authorizeStash, beginStashOperation, beginStashRestoration, clearRestoredStashReference, completeIntegration, markMerged, markRestoredStashDropped, markStashRestored, recordStashReference } from "./checkpoint.mjs";
 
 export function createIntegrationLifecycle({ now, newStashOperationId, requireIntegrity, persist, stash, executionRecordsHaveChanges, commitExecutionRecords, findMainWorktree, worktreeIsClean, currentHead, isAncestor, findExecutionWorktree, removeExecutionWorktree, readCheckpoint, git, gitSucceeds, unexpectedMainWorktreeChanges }) {
   const verifiedExecutionPlan = (executionPlan, integrity) => {
@@ -81,7 +81,6 @@ export function createIntegrationLifecycle({ now, newStashOperationId, requireIn
     }
     if (checkpoint.integration.stash_ref && checkpoint.integration.stash_restore_state !== "restored") {
       await requireIntegrity({ mainWorktree, featureSlug });
-      await git(mainWorktree, ["reset"]);
       checkpoint = await restoreRecordedStash({ mainWorktree, featureSlug, executionPlan, checkpoint });
     }
     checkpoint = await reconcileRestoredStash({ mainWorktree, featureSlug, checkpoint });
@@ -98,7 +97,7 @@ export function createIntegrationLifecycle({ now, newStashOperationId, requireIn
     return { status: "complete", worktree: mainWorktree, checkpoint: complete };
   };
 
-  const integrate = async ({ repository, worktree, featureSlug, executionPlan }) => {
+  const integrate = async ({ repository, worktree, featureSlug, executionPlan, allowStash = false }) => {
     const mainWorktree = await findMainWorktree(repository);
     if (!mainWorktree) throw new Error("Main worktree is unavailable");
     const integrity = await requireIntegrity({ mainWorktree, featureSlug, executionWorktree: worktree });
@@ -127,6 +126,11 @@ export function createIntegrationLifecycle({ now, newStashOperationId, requireIn
     if (!stashRef) {
       const paths = await unexpectedMainWorktreeChanges({ mainWorktree, featureSlug, executionPlan });
       if (paths.length > 0) {
+        if (!checkpoint.integration.stash_authorized) {
+          if (allowStash !== true) throw new Error("Main worktree has unrelated changes; integrate requires --allow-stash true before any mutation");
+          checkpoint = authorizeStash(checkpoint, now());
+          await persist(mainWorktree, featureSlug, checkpoint);
+        }
         if (!checkpoint.integration.stash_operation_id) {
           checkpoint = beginStashOperation(checkpoint, newStashOperationId(), now());
           await persist(mainWorktree, featureSlug, checkpoint);

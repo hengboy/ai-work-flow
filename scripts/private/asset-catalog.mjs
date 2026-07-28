@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -13,6 +14,18 @@ const POLICY_CAPABILITIES = {
   write_scope: new Set(['none', 'docs', 'plans', 'code', 'git']),
   delegation: new Set(['none', 'allowed', 'review-only'])
 };
+const ROLE_KINDS = new Set(['primary', 'subagent', 'reviewer']);
+const TOOL_REQUIREMENTS = {
+  Read: ['filesystem', new Set(['read', 'write'])],
+  Glob: ['filesystem', new Set(['read', 'write'])],
+  Grep: ['filesystem', new Set(['read', 'write'])],
+  Edit: ['filesystem', new Set(['write'])],
+  Write: ['filesystem', new Set(['write'])],
+  Bash: ['shell', new Set(['read', 'write', 'git'])],
+  WebSearch: ['network', new Set(['official'])],
+  WebFetch: ['network', new Set(['official'])],
+  Task: ['delegation', new Set(['allowed', 'review-only'])]
+};
 
 function unique(values) {
   return new Set(values).size === values.length;
@@ -27,10 +40,48 @@ function validateRole(role, errors) {
     if (typeof role[property] !== 'string' || !role[property]) errors.push(`Role ${role.id} must have a non-empty ${property}.`);
   }
   for (const property of Object.keys(role)) {
-    if (!['id', 'name', 'description', 'kind', 'policy', 'delegates', 'tools'].includes(property)) errors.push(`Role ${role.id} has unknown field: ${property}.`);
+    if (!['id', 'name', 'description', 'kind', 'policy', 'delegates', 'tools', 'routing_sections'].includes(property)) errors.push(`Role ${role.id} has unknown field: ${property}.`);
   }
   if (!Array.isArray(role.delegates)) errors.push(`Role ${role.id}.delegates must be an array.`);
   if (!Array.isArray(role.tools)) errors.push(`Role ${role.id}.tools must be an array.`);
+  if (!Array.isArray(role.routing_sections) || role.routing_sections.length === 0) errors.push(`Role ${role.id}.routing_sections must be a non-empty array.`);
+}
+
+function parseRoutingSections(source, errors) {
+  const sections = new Map();
+  const start = /^<!-- ai-work-flow:section id="([a-z0-9][a-z0-9-]*)" -->$/gm;
+  let match;
+  while ((match = start.exec(source))) {
+    const end = source.indexOf('<!-- ai-work-flow:section-end -->', start.lastIndex);
+    const nested = source.indexOf('<!-- ai-work-flow:section id="', start.lastIndex);
+    if (end === -1 || (nested !== -1 && nested < end)) {
+      errors.push(`Routing section ${match[1]} is missing a non-nested end marker.`);
+      continue;
+    }
+    if (sections.has(match[1])) errors.push(`Routing section id is duplicated: ${match[1]}.`);
+    else sections.set(match[1], source.slice(start.lastIndex, end).trim());
+    start.lastIndex = end + '<!-- ai-work-flow:section-end -->'.length;
+  }
+  if (!sections.size) errors.push('routing.md must contain at least one managed section.');
+  return sections;
+}
+
+function validateDelegateGraph(roles, errors) {
+  const byId = new Map(roles.map((role) => [role.id, role]));
+  const visiting = new Set();
+  const visited = new Set();
+  const visit = (id) => {
+    if (visiting.has(id)) {
+      errors.push(`Role delegation contains a cycle at: ${id}.`);
+      return;
+    }
+    if (visited.has(id)) return;
+    visiting.add(id);
+    for (const delegate of byId.get(id)?.delegates ?? []) visit(delegate);
+    visiting.delete(id);
+    visited.add(id);
+  };
+  for (const role of roles) visit(role.id);
 }
 
 function validatePolicy(name, policy, errors) {
@@ -63,11 +114,35 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
   }
   const ids = roles.map((role) => role?.id).filter(Boolean);
   if (!unique(ids)) errors.push('roles.json contains duplicate role ids.');
+  if (roles.filter((role) => role.kind === 'primary').length !== 1) errors.push('roles.json must contain exactly one primary role.');
   for (const role of roles) {
+    if (!ROLE_KINDS.has(role.kind)) errors.push(`Role ${role.id} has invalid kind: ${role.kind}.`);
+    if (!unique(role.delegates ?? [])) errors.push(`Role ${role.id} has duplicate delegates.`);
+    if (!unique(role.tools ?? [])) errors.push(`Role ${role.id} has duplicate tools.`);
     for (const delegate of role.delegates ?? []) {
       if (typeof delegate !== 'string' || !ids.includes(delegate)) errors.push(`Role ${role.id} delegates to an unknown role: ${delegate}.`);
     }
+    const policy = policyDocument?.policies?.[role.policy];
+    if (policy) {
+      if (policy.delegation === 'none' && ((role.delegates?.length ?? 0) > 0 || role.tools?.includes('Task'))) errors.push(`Role ${role.id} conflicts with delegation=none.`);
+      if (policy.delegation === 'review-only' && (role.delegates ?? []).some((id) => roles.find((candidate) => candidate.id === id)?.kind !== 'reviewer')) errors.push(`Role ${role.id} review-only delegation must target reviewers.`);
+      for (const tool of role.tools ?? []) {
+        const requirement = TOOL_REQUIREMENTS[tool];
+        if (!requirement) errors.push(`Role ${role.id} declares unknown tool: ${tool}.`);
+        else if (!requirement[1].has(policy[requirement[0]])) errors.push(`Role ${role.id} tool ${tool} conflicts with policy ${requirement[0]}=${policy[requirement[0]]}.`);
+      }
+    }
   }
+  validateDelegateGraph(roles, errors);
+
+  const routing = readFileSync(resolve(assetRoot, 'routing.md'), 'utf8');
+  const sections = parseRoutingSections(routing, errors);
+  const referenced = new Set();
+  for (const role of roles) for (const section of role.routing_sections ?? []) {
+    if (typeof section !== 'string' || !sections.has(section)) errors.push(`Role ${role.id} references an unknown routing section: ${section}.`);
+    else referenced.add(section);
+  }
+  for (const section of sections.keys()) if (!referenced.has(section)) errors.push(`Routing section is not referenced: ${section}.`);
 
   if (!isPlainObject(defaults) || defaults.version !== 1 || !isPlainObject(defaults.roles)) {
     errors.push('default-config.json must contain version: 1 and a roles object.');
@@ -98,20 +173,26 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
     if (!readFileSync(resolve(assetRoot, 'bodies', name), 'utf8').trim()) errors.push(`Body template is empty: ${name}.`);
   }
   if (errors.length) fail(`Agent asset catalog is invalid:\n${errors.join('\n')}`);
+  return { routing, sections };
 }
 
-export function loadAgentAssets() {
-  const root = resolve(import.meta.dirname, '..', 'agent-assets');
+export function loadAgentAssets(assetRoot = resolve(import.meta.dirname, '..', 'agent-assets')) {
+  const root = resolve(assetRoot);
   const catalog = readJson(resolve(root, 'roles.json'));
   const policyDocument = readJson(resolve(root, 'policies.json'));
   const defaults = readJson(resolve(root, 'default-config.json'));
   const bodyNames = readdirSync(resolve(root, 'bodies'), { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
     .map((entry) => entry.name);
-  validateAssetRelationships(catalog, policyDocument, defaults, bodyNames, root);
+  const { routing, sections } = validateAssetRelationships(catalog, policyDocument, defaults, bodyNames, root);
   const bodies = new Map(catalog.roles.map((role) => [
     role.id,
     readFileSync(resolve(root, 'bodies', `${role.id}.md`), 'utf8').trimEnd()
+  ]));
+  const routingDigest = createHash('sha256').update(routing).digest('hex');
+  const compiledBodies = new Map(catalog.roles.map((role) => [
+    role.id,
+    `<!-- ai-work-flow:routing-digest=${routingDigest} sections=${role.routing_sections.join(',')} -->\n\n${role.routing_sections.map((id) => sections.get(id)).join('\n\n')}\n\n${bodies.get(role.id)}`
   ]));
   return {
     root,
@@ -119,6 +200,7 @@ export function loadAgentAssets() {
     policies: policyDocument.policies,
     defaults,
     bodies,
-    routing: readFileSync(resolve(root, 'routing.md'), 'utf8')
+    compiledBodies,
+    routing
   };
 }

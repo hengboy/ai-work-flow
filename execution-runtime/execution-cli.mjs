@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import process from "node:process";
+import { randomUUID } from "node:crypto";
 import { createExecutionOrchestrator } from "../skills/run-matt-spec-to-completion/lib/execution-orchestrator.mjs";
 import { deriveSpecLocation } from "../skills/run-matt-spec-to-completion/lib/paths.mjs";
 import { findMainWorktree } from "../skills/run-matt-spec-to-completion/lib/worktree-lifecycle.mjs";
 import { blockTicket, beginReview, completeReviewFix, completeTicket, decideReview, recordReview, startTickets } from "../skills/run-matt-spec-to-completion/lib/checkpoint.mjs";
-import { currentHead, git, gitSucceeds, isAncestor } from "../skills/run-matt-spec-to-completion/lib/git.mjs";
+import { currentHead, git, gitOutput, gitSucceeds, isAncestor } from "../skills/run-matt-spec-to-completion/lib/git.mjs";
 import { selectTicketFrontier } from "../skills/run-matt-spec-to-completion/lib/ticket-frontier.mjs";
 import { assertCompletionResult, assertHandoffResult } from "../skills/run-matt-spec-to-completion/lib/validation.mjs";
+import { assertReviewCoverage, createReviewManifest } from "../skills/run-matt-spec-to-completion/lib/review-manifest.mjs";
 import { toShanghaiTimestamp } from "../skills/run-matt-spec-to-completion/lib/time.mjs";
 import { createRuntimeStateStore, withFeatureLock } from "./state-store.mjs";
 
@@ -34,6 +36,34 @@ async function stdinJson() {
   return JSON.parse(raw);
 }
 
+async function reviewManifestFromInput(worktree, fixedPoint, reviewCommit, input) {
+  if (!input || !["present", "absent"].includes(input.spec_status) || !Array.isArray(input.standards_source)) {
+    throw new Error("begin-review requires explicit spec_status and standards_source.");
+  }
+  if ((input.spec_status === "present") !== Boolean(input.spec_source)) {
+    throw new Error("begin-review spec_source must match explicit spec_status.");
+  }
+  const paths = (await git(worktree, ["diff", "--name-only", "-z", `${fixedPoint}...${reviewCommit}`])).split("\0").filter(Boolean);
+  const commitList = (await gitOutput(worktree, ["log", "--format=%H%x1f%s", `${fixedPoint}..${reviewCommit}`])).trim().split("\n").filter(Boolean).map((line) => {
+    const separator = line.indexOf("\x1f");
+    if (separator < 1) throw new Error("Could not create a structured review commit list");
+    return { sha: line.slice(0, separator), subject: line.slice(separator + 1) };
+  });
+  const diffCommand = ["git", "diff", "--no-ext-diff", `${fixedPoint}...${reviewCommit}`];
+  return createReviewManifest({
+    fixed_point: fixedPoint,
+    review_commit: reviewCommit,
+    commit_list: commitList,
+    changed_paths: paths.map((path) => ({ record_type: "1", index_status: "M", worktree_status: ".", path })),
+    checks: [`git diff --check ${fixedPoint}...${reviewCommit}`],
+    diff_command: diffCommand,
+    spec_status: input.spec_status,
+    spec_source: input.spec_source ?? null,
+    standards_source: input.standards_source,
+    shards: paths.map((path, index) => ({ id: `shard-${String(index + 1).padStart(4, "0")}`, paths: [path], diff_command: [...diffCommand, "--", path] })),
+  });
+}
+
 async function assertTicketCommits(worktree, ticket, commits) {
   for (const commit of commits) {
     if (!await gitSucceeds(worktree, ["rev-parse", "--verify", `${commit}^{commit}`])) throw new Error(`Completion result commit does not exist: ${commit}`);
@@ -47,8 +77,12 @@ async function assertTicketCommits(worktree, ticket, commits) {
 function completionFromHandoff(input) {
   const handoff = assertHandoffResult(input);
   const completion = assertCompletionResult(handoff.payload);
-  if (handoff.status !== completion.status) throw new Error("Handoff envelope status must match its Ticket Completion Result status.");
-  return completion;
+  for (const field of ["status", "summary", "checks", "error"]) {
+    if (JSON.stringify(handoff[field]) !== JSON.stringify(completion[field])) {
+      throw new Error(`Handoff envelope ${field} must match its Ticket Completion Result ${field}.`);
+    }
+  }
+  return { handoff, completion };
 }
 
 async function run(options) {
@@ -72,21 +106,27 @@ async function run(options) {
     return { command: "status", status: result.checkpoint.status, checkpoint: result.checkpoint, execution_plan: result.executionPlan };
   }
   if (options.command === "claim") {
+    const expectedRoleId = requireOption(options, "role_id");
+    const sessionId = requireOption(options, "session_id");
     const result = await stateStore.transition({ repository, featureSlug, executionWorktree: requireOption(options, "worktree"), async apply(current) {
       const frontier = selectTicketFrontier({ executionPlan: current.executionPlan, checkpoint: current.checkpoint });
       if (frontier.status !== "ready") throw new Error(frontier.reason ?? "No ticket is ready to claim.");
       const ticket = frontier.tickets[0];
-      const checkpoint = startTickets(current.checkpoint, [ticket.id], await currentHead(worktree), toShanghaiTimestamp(new Date()));
+      const checkpoint = startTickets(current.checkpoint, [ticket.id], await currentHead(worktree), { claimId: randomUUID(), expectedRoleId, sessionId }, toShanghaiTimestamp(new Date()));
       return checkpoint;
     } });
     const ticket = result.executionPlan.tickets.find((candidate) => candidate.id === result.checkpoint.tickets.find((state) => state.status === "in_progress")?.id);
-    return { command: "claim", status: "in_progress", ticket, checkpoint: result.checkpoint };
+    const ticketState = result.checkpoint.tickets.find((state) => state.id === ticket.id);
+    return { command: "claim", status: "in_progress", ticket: { ...ticket, claim_id: ticketState.claim_id, expected_role_id: ticketState.expected_role_id, session_id: ticketState.session_id }, checkpoint: result.checkpoint };
   }
   if (options.command === "record-ticket") {
-    const completion = completionFromHandoff(await stdinJson());
+    const { handoff, completion } = completionFromHandoff(await stdinJson());
     const result = await stateStore.transition({ repository, featureSlug, executionWorktree: requireOption(options, "worktree"), async apply(current) {
       const ticket = current.checkpoint.tickets.find((candidate) => candidate.id === completion.ticket_id);
       if (!ticket || ticket.status !== "in_progress") throw new Error(`Ticket ${completion.ticket_id} is not claimed.`);
+      if (handoff.role_id !== ticket.expected_role_id || handoff.session_id !== ticket.session_id || handoff.claim_id !== ticket.claim_id) {
+        throw new Error("Handoff claim identity does not match the current ticket claim.");
+      }
       if (completion.status === "done") await assertTicketCommits(worktree, ticket, completion.commits);
       return completion.status === "done"
         ? completeTicket(current.checkpoint, completion.ticket_id, completion.commits.at(-1), toShanghaiTimestamp(new Date()))
@@ -96,28 +136,35 @@ async function run(options) {
   }
   if (options.command === "begin-review") {
     const executionWorktree = requireOption(options, "worktree");
+    const input = await stdinJson();
     const result = await stateStore.transition({ repository, featureSlug, executionWorktree, async apply(current) {
+      if (current.checkpoint.status !== "executing" || current.checkpoint.review.status !== "pending") {
+        throw new Error("Review can only begin from a pending execution review");
+      }
       if (await git(executionWorktree, ["status", "--short"])) throw new Error("Execution worktree must be clean before review");
       const fixedPoint = current.checkpoint.baseline;
       const reviewCommit = await currentHead(executionWorktree);
       if (!await isAncestor(executionWorktree, fixedPoint, reviewCommit)) throw new Error("Review fixed point must be an ancestor of the review commit");
       if (await gitSucceeds(executionWorktree, ["diff", "--quiet", `${fixedPoint}...${reviewCommit}`])) throw new Error("Review diff must not be empty");
-      return beginReview(current.checkpoint, { fixedPoint, reviewCommit }, toShanghaiTimestamp(new Date()));
+      const manifest = await reviewManifestFromInput(executionWorktree, fixedPoint, reviewCommit, input);
+      return beginReview(current.checkpoint, { fixedPoint, reviewCommit, manifest }, toShanghaiTimestamp(new Date()));
     } });
     const { fixed_point: fixedPoint, review_commit: reviewCommit } = result.checkpoint.review;
     return {
       command: "begin-review",
       status: result.checkpoint.status,
       checkpoint: result.checkpoint,
-      diff_command: `git diff ${fixedPoint}...${reviewCommit}`,
-      commit_list_command: `git log ${fixedPoint}..${reviewCommit} --oneline`,
+      manifest: result.checkpoint.review.manifest,
     };
   }
   if (options.command === "record-review") {
     const input = await stdinJson();
     if (typeof input.findings_summary !== "string" || !input.findings_summary) throw new Error("findings_summary is required.");
     const result = await stateStore.transition({ repository, featureSlug, checkExecutionWorktree: false, async apply(current) {
-      return recordReview(current.checkpoint, input.findings_summary, toShanghaiTimestamp(new Date()));
+      if (!['in_progress', 'awaiting_user'].includes(current.checkpoint.review.status)) throw new Error("Review is not in progress");
+      if (input.manifest_digest !== current.checkpoint.review?.manifest?.manifest_digest) throw new Error("Review result manifest digest does not match the frozen ReviewManifest");
+      assertReviewCoverage(current.checkpoint.review.manifest, input.coverage);
+      return recordReview(current.checkpoint, { manifestDigest: input.manifest_digest, coverage: input.coverage, findingsSummary: input.findings_summary }, toShanghaiTimestamp(new Date()));
     } });
     return { command: "record-review", status: result.checkpoint.review.status, checkpoint: result.checkpoint };
   }
@@ -146,8 +193,7 @@ async function run(options) {
   if (options.command === "integrate") {
     return withFeatureLock(repository, featureSlug, async () => {
       const integrity = await stateStore.integrity({ repository, featureSlug, executionWorktree: requireOption(options, "worktree") });
-      const orchestrator = createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" });
-      const integrated = await orchestrator.integrate({ repository, worktree, featureSlug, executionPlan: integrity.executionPlan, checkpoint: integrity.checkpoint });
+      const integrated = await createExecutionOrchestrator().integrate({ repository, worktree, featureSlug, executionPlan: integrity.executionPlan, checkpoint: integrity.checkpoint, allowStash: options.allow_stash === "true" });
       return { command: "integrate", status: integrated.status, checkpoint: integrated.checkpoint };
     });
   }
@@ -156,8 +202,7 @@ async function run(options) {
       const mainWorktree = await findMainWorktree(repository);
       if (!mainWorktree) throw new Error("Main worktree is unavailable");
       const integrity = await stateStore.integrity({ repository: mainWorktree, featureSlug, checkExecutionWorktree: false });
-      const orchestrator = createExecutionOrchestrator({ generateCommitMessage: async () => "chore: record execution" });
-      const cleaned = await orchestrator.completeMergedCleanup({ repository, mainWorktree, featureSlug, executionPlan: integrity.executionPlan, checkpoint: integrity.checkpoint });
+      const cleaned = await createExecutionOrchestrator().completeMergedCleanup({ repository, mainWorktree, featureSlug, executionPlan: integrity.executionPlan, checkpoint: integrity.checkpoint });
       return { command: "cleanup", status: cleaned.status, checkpoint: cleaned.checkpoint };
     });
   }

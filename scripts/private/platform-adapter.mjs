@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { relative, resolve, sep } from 'node:path';
 
 import { fail, isPlainObject } from './shared.mjs';
@@ -8,18 +9,20 @@ import { updateManagedMarker } from './managed-content.mjs';
 const OBSOLETE_PRIMARY_AGENT_ID = ['coord', 'inator'].join('');
 const LEGACY_CODE_REVIEWER_AGENT = 'AGENT.md';
 const REVIEWER_ROLE_IDS = new Set(['code-reviewer', 'review-standards', 'review-spec']);
-const READ_ONLY_GIT_BASH = {
-  '*': 'deny',
-  'git status*': 'allow',
-  'git diff*': 'allow',
-  'git show*': 'allow',
-  'git log*': 'allow',
-  'git rev-parse*': 'allow',
-  'git merge-base*': 'allow',
-  'git branch*': 'allow',
-  'git ls-files*': 'allow',
-  'node --test*': 'allow',
-  'npm test*': 'allow'
+const OPENCODE_PERMISSION_KEYS = ['read', 'edit', 'glob', 'grep', 'bash', 'task', 'skill', 'webfetch', 'websearch', 'question', 'external_directory'];
+const OPENCODE_TOOL_KEYS = {
+  Read: 'read',
+  Edit: 'edit',
+  Write: 'edit',
+  Glob: 'glob',
+  Grep: 'grep',
+  Bash: 'bash',
+  Task: 'task',
+  Skill: 'skill',
+  WebFetch: 'webfetch',
+  WebSearch: 'websearch',
+  Question: 'question',
+  ExternalDirectory: 'external_directory'
 };
 
 // --- Shared functions ---
@@ -59,7 +62,7 @@ function codexRender(role, settings, body, policy) {
     `model = ${tomlString(settings.model)}`,
     `model_reasoning_effort = ${tomlString(settings.reasoning)}`,
     `sandbox_mode = ${tomlString(codexSandbox(policy))}`,
-    `developer_instructions = ${tomlString(body.replaceAll('\n', '\\n'))}`,
+    `developer_instructions = ${tomlString(body)}`,
     ''
   ].join('\n');
 }
@@ -113,15 +116,19 @@ function claudePermission(policy) {
   return policy.filesystem === 'none' || policy.filesystem === 'read' ? 'plan' : 'acceptEdits';
 }
 
+function yamlValue(value) {
+  return JSON.stringify(value);
+}
+
 function claudeRender(role, settings, body, policy) {
   return [
     '---',
-    `name: ${role.id}`,
-    `description: ${JSON.stringify(agentDescription(role))}`,
-    `model: ${settings.model}`,
-    `effort: ${settings.effort}`,
-    `tools: ${role.tools.join(', ') || 'Task'}`,
-    `permissionMode: ${claudePermission(policy)}`,
+    `name: ${yamlValue(role.id)}`,
+    `description: ${yamlValue(agentDescription(role))}`,
+    `model: ${yamlValue(settings.model)}`,
+    `effort: ${yamlValue(settings.effort)}`,
+    `tools: ${yamlValue(role.tools.length ? role.tools : ['Task'])}`,
+    `permissionMode: ${yamlValue(claudePermission(policy))}`,
     '---',
     '',
     body,
@@ -131,30 +138,40 @@ function claudeRender(role, settings, body, policy) {
 
 // --- OpenCode strategy ---
 
-function opencodePermission(role, policy) {
-  if (policy.filesystem === 'none') return { read: 'deny', edit: 'deny', bash: 'deny' };
-  if (REVIEWER_ROLE_IDS.has(role.id)) {
-    return {
-      read: 'allow',
-      edit: 'deny',
-      bash: READ_ONLY_GIT_BASH,
-      task: role.id === 'code-reviewer' ? 'allow' : 'deny'
-    };
+export function opencodePermission(role, policy) {
+  const permission = Object.fromEntries(OPENCODE_PERMISSION_KEYS.map((key) => [key, 'deny']));
+  for (const tool of role.tools) {
+    const key = OPENCODE_TOOL_KEYS[tool];
+    if (key) permission[key] = 'allow';
   }
-  if (policy.filesystem === 'read') return { read: 'allow', edit: 'deny', bash: 'deny' };
-  return { edit: 'allow' };
+  if (policy.filesystem === 'none') {
+    permission.read = 'deny';
+    permission.edit = 'deny';
+    permission.glob = 'deny';
+    permission.grep = 'deny';
+    permission.bash = 'deny';
+  }
+  if (policy.delegation === 'allowed') permission.task = 'allow';
+  if (policy.delegation === 'none') permission.task = 'deny';
+  if (REVIEWER_ROLE_IDS.has(role.id)) permission.bash = 'deny';
+  return permission;
+}
+
+export function evaluateOpenCodePermission(role, policy, key) {
+  if (!OPENCODE_PERMISSION_KEYS.includes(key)) return 'deny';
+  return opencodePermission(role, policy)[key];
 }
 
 function opencodeRender(role, settings, body, policy) {
   const frontmatter = [
     '---',
-    `description: ${JSON.stringify(agentDescription(role))}`,
-    `mode: ${role.kind === 'primary' ? 'primary' : 'subagent'}`,
-    `permission: ${JSON.stringify(opencodePermission(role, policy))}`
+    `description: ${yamlValue(agentDescription(role))}`,
+    `mode: ${yamlValue(role.kind === 'primary' ? 'primary' : 'subagent')}`,
+    `permission: ${yamlValue(opencodePermission(role, policy))}`
   ];
-  if (settings.model) frontmatter.splice(3, 0, `model: ${settings.model}`);
-  if (settings.variant) frontmatter.push(`variant: ${JSON.stringify(settings.variant)}`);
-  if (isPlainObject(settings.options) && Object.keys(settings.options).length) frontmatter.push(`options: ${JSON.stringify(settings.options)}`);
+  if (settings.model) frontmatter.splice(3, 0, `model: ${yamlValue(settings.model)}`);
+  if (settings.variant) frontmatter.push(`variant: ${yamlValue(settings.variant)}`);
+  if (isPlainObject(settings.options) && Object.keys(settings.options).length) frontmatter.push(`options: ${yamlValue(settings.options)}`);
   frontmatter.push('---', '', body, '');
   return frontmatter.join('\n');
 }
@@ -171,6 +188,32 @@ function opencodeUpdateConfig(source) {
   const agent = { ...(current.agent ?? {}) };
   if (agent.explore === false) delete agent.explore;
   return `${JSON.stringify({ ...current, agent, subagent_depth: Math.max(2, current.subagent_depth ?? 0), default_agent: 'orchestrator' }, null, 2)}\n`;
+}
+
+function digest(contents) {
+  return createHash('sha256').update(contents).digest('hex');
+}
+
+function agentFile(paths, platform, roleId) {
+  const strategy = strategies[platform];
+  return resolve(paths[strategy.agentDir], 'agents', `${roleId}.${strategy.extension}`);
+}
+
+function projectShadow(platform, roleId) {
+  const extension = strategies[platform].extension;
+  const agentPath = resolve(process.cwd(), `.${platform}`, 'agents', `${roleId}.${extension}`);
+  if (existsSync(agentPath)) return 'project-agent';
+  if (platform !== 'opencode') return null;
+  for (const configPath of [resolve(process.cwd(), 'opencode.json'), resolve(process.cwd(), '.opencode', 'opencode.json')]) {
+    if (!existsSync(configPath)) continue;
+    try {
+      const agent = JSON.parse(readFileSync(configPath, 'utf8')).agent;
+      if (agent && typeof agent === 'object' && Object.hasOwn(agent, roleId)) return 'project-inline-agent';
+    } catch {
+      return 'project-config-unreadable';
+    }
+  }
+  return null;
 }
 
 // --- Strategy map ---
@@ -217,8 +260,17 @@ function capabilityLevel(platform, role, capability, requested) {
     return 'instruction-only';
   }
   if (capability === 'network' || capability === 'browser') return 'unsupported';
-  if (platform === 'opencode' && REVIEWER_ROLE_IDS.has(role.id) && (capability === 'shell' || capability === 'git') && requested === 'read') return 'enforced';
+  if (platform === 'opencode' && capability === 'delegation' && requested === 'allowed') return 'enforced';
   return 'instruction-only';
+}
+
+export function capabilityEvidence(platform, role, policy) {
+  const levels = capabilityMatrix(platform, role, policy);
+  return Object.fromEntries(Object.entries(levels).map(([requested, level]) => [requested, {
+    requested: policy[requested],
+    level,
+    evidence: level === 'enforced' ? ['platform permission key'] : []
+  }]));
 }
 
 export function capabilityMatrix(platform, role, policy) {
@@ -269,6 +321,35 @@ export function planGeneration({ platform, paths, roles, policies, config, bodie
   }
 
   return plan;
+}
+
+export function generationStatus({ platforms, paths, roles, policies, config, bodies, managedPlatforms }) {
+  return platforms.flatMap((platform) => {
+    const strategy = strategies[platform];
+    return roles.map((role) => {
+      const expected = strategy.render(role, config.roles[role.id][platform], bodies.get(role.id), policies[role.policy]);
+      const target = agentFile(paths, platform, role.id);
+      const reasons = [];
+      let installedDigest;
+      if (!managedPlatforms.includes(platform)) reasons.push('manifest');
+      if (!existsSync(target)) reasons.push('missing');
+      else {
+        const installed = readFileSync(target, 'utf8');
+        installedDigest = digest(installed);
+        if (installed !== expected) reasons.push('bytes');
+      }
+      const shadow = projectShadow(platform, role.id);
+      if (shadow) reasons.push(shadow);
+      return {
+        platform,
+        role_id: role.id,
+        state: shadow ? 'shadowed' : reasons.length ? 'drifted' : 'in-sync',
+        reasons,
+        planned_digest: digest(expected),
+        ...(installedDigest ? { installed_digest: installedDigest } : {})
+      };
+    });
+  });
 }
 
 export function applyGenerationPlan(plan, dryRun, transaction) {

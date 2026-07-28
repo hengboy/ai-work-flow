@@ -16,7 +16,8 @@
         "git-committer",
         "code-reviewer"
       ],
-      "tools": []
+      "tools": [],
+      "routing_sections": ["core-governance"]
     },
     {
       "id": "file-explorer",
@@ -25,7 +26,8 @@
       "kind": "subagent",
       "policy": "discover",
       "delegates": [],
-      "tools": ["Read", "Glob", "Grep", "Bash"]
+      "tools": ["Read", "Glob", "Grep", "Bash"],
+      "routing_sections": ["core-governance"]
     },
     {
       "id": "researcher",
@@ -34,7 +36,8 @@
       "kind": "subagent",
       "policy": "research",
       "delegates": [],
-      "tools": ["WebSearch", "WebFetch"]
+      "tools": ["WebSearch", "WebFetch"],
+      "routing_sections": ["core-governance"]
     },
     {
       "id": "document-maintainer",
@@ -43,7 +46,8 @@
       "kind": "subagent",
       "policy": "write-docs",
       "delegates": [],
-      "tools": ["Read", "Edit", "Write", "Bash"]
+      "tools": ["Read", "Edit", "Write", "Bash"],
+      "routing_sections": ["core-governance"]
     },
     {
       "id": "planning-writer",
@@ -52,7 +56,8 @@
       "kind": "subagent",
       "policy": "write-plans",
       "delegates": [],
-      "tools": ["Read", "Edit", "Write", "Bash"]
+      "tools": ["Read", "Edit", "Write", "Bash"],
+      "routing_sections": ["core-governance"]
     },
     {
       "id": "full-stack-coder",
@@ -61,7 +66,8 @@
       "kind": "subagent",
       "policy": "write-code",
       "delegates": [],
-      "tools": ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
+      "tools": ["Read", "Edit", "Write", "Glob", "Grep", "Bash"],
+      "routing_sections": ["core-governance"]
     },
     {
       "id": "git-committer",
@@ -70,7 +76,8 @@
       "kind": "subagent",
       "policy": "commit",
       "delegates": [],
-      "tools": ["Read", "Bash"]
+      "tools": ["Read", "Bash"],
+      "routing_sections": ["core-governance"]
     },
     {
       "id": "code-reviewer",
@@ -79,7 +86,8 @@
       "kind": "subagent",
       "policy": "review",
       "delegates": ["review-standards", "review-spec"],
-      "tools": ["Read", "Glob", "Grep", "Bash", "Task"]
+      "tools": ["Read", "Glob", "Grep", "Bash", "Task"],
+      "routing_sections": ["core-governance"]
     },
     {
       "id": "review-standards",
@@ -88,7 +96,8 @@
       "kind": "reviewer",
       "policy": "review",
       "delegates": [],
-      "tools": ["Read", "Glob", "Grep", "Bash"]
+      "tools": ["Read", "Glob", "Grep", "Bash"],
+      "routing_sections": ["core-governance"]
     },
     {
       "id": "review-spec",
@@ -97,7 +106,8 @@
       "kind": "reviewer",
       "policy": "review",
       "delegates": [],
-      "tools": ["Read", "Glob", "Grep", "Bash"]
+      "tools": ["Read", "Glob", "Grep", "Bash"],
+      "routing_sections": ["core-governance"]
     }
   ]
 }

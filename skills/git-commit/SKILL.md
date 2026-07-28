@@ -10,16 +10,16 @@ description: 生成符合 Conventional Commits 1.0.0 的标准提交信息，并
 ## 必要输入
 
 - 已确认的实现范围。
-- Full Stack Coder 提供的 `base_commit`、初始 `git status --short` 和精确 `changed_paths`。
+- Full Stack Coder 提供的 `base_commit`、初始 `git status --porcelain=v2 -z` 和精确 `changed_paths: PathChange[]`。
 - 已成功执行的验证结果。
 
 ## 执行步骤
 
 1. 确认交接记录的初始 `git status --short` 为空、当前 `HEAD` 精确等于 `base_commit`，且交接中的验证命令全部通过。
-2. 使用 `git diff --name-only <base_commit>` 与 `git ls-files --others --exclude-standard` 的去重并集生成当前变更路径集。确认它与 `changed_paths` 完全一致；清单为空、存在未声明路径或当前状态与交接不一致时停止。
+2. 唯一使用 `git status --porcelain=v2 -z --untracked-files=all` 解析结构化 `PathChange[]`，并按全部字段比较当前集合与 `changed_paths`。不得以换行分割路径；rename/copy 同时保留目标 `path` 与 `source_path`。
 3. 按以下格式生成提交信息。
-4. 只能通过 `git add -- <changed_paths>` 暂存声明的路径。确认 `git diff --cached --name-only` 与声明清单完全一致，且暂存差异非空。
-5. 创建一个本地提交，并报告完整 `review_commit` SHA 与空的 `git status --short`。提交 hook 失败时停止并报告原始失败原因。
+4. 只能以参数数组和 `--` 暂存声明 PathChange 的目标/源路径。确认暂存结构化集合与声明清单完全一致，且暂存差异非空。
+5. 创建一个本地提交，并报告完整 `review_commit` SHA 与空的 porcelain 状态。提交 hook 失败时不 reset、clean 或重试；立即重读同一 porcelain `-z` 状态，分别交接真实 index/worktree PathChange 和原始失败原因。
 
 ## 提交信息格式
 

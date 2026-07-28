@@ -4,5 +4,9 @@
   "type": "module",
   "scripts": {
     "test": "node --test"
+  },
+  "devDependencies": {
+    "@iarna/toml": "^2.2.5",
+    "yaml": "^2.9.0"
   }
 }

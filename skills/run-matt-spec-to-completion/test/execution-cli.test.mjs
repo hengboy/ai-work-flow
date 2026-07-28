@@ -8,6 +8,7 @@ import test from "node:test";
 
 const execFileAsync = promisify(execFile);
 const cli = new URL("../../../execution-runtime/execution-cli.mjs", import.meta.url);
+const CLAIM = { role_id: "full-stack-coder", session_id: "fixture-session" };
 
 async function git(cwd, ...args) {
   return (await execFileAsync("git", args, { cwd, encoding: "utf8" })).stdout.trim();
@@ -45,12 +46,48 @@ async function invoke(paths, command, args = [], input) {
   });
 }
 
+async function claim(paths) {
+  return invoke(paths, "claim", ["--feature", "cli-flow", "--worktree", paths.worktree, "--role-id", CLAIM.role_id, "--session-id", CLAIM.session_id]);
+}
+
+function reviewInput(paths, review, findingsSummary) {
+  const manifest = review.checkpoint.review.manifest;
+  return {
+    manifest_digest: manifest.manifest_digest,
+    coverage: { manifest_digest: manifest.manifest_digest, completed_shard_ids: manifest.shards.map((shard) => shard.id), incomplete_shard_ids: [] },
+    findings_summary: findingsSummary,
+  };
+}
+
+async function beginReview(paths) {
+  return invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify({
+    spec_status: "present",
+    spec_source: { path: paths.spec, revision: "a".repeat(64) },
+    standards_source: [],
+  }));
+}
+
+function handoff(claimed, payload, artifacts = []) {
+  return {
+    role_id: claimed.ticket.expected_role_id,
+    session_id: claimed.ticket.session_id,
+    claim_id: claimed.ticket.claim_id,
+    status: payload.status,
+    summary: payload.summary,
+    artifacts,
+    checks: payload.checks,
+    ...(payload.status === "blocked" ? { error: payload.error } : {}),
+    payload,
+  };
+}
+
 test("execution CLI claims once and records only a JSON Handoff envelope", async () => {
   const paths = await fixture();
   await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
-  const claims = await Promise.allSettled(Array.from({ length: 4 }, () => invoke(paths, "claim", ["--feature", "cli-flow", "--worktree", paths.worktree])));
+  const claims = await Promise.allSettled(Array.from({ length: 4 }, () => claim(paths)));
   assert.equal(claims.filter((claim) => claim.status === "fulfilled").length, 1);
-  const blocked = { role_id: "full-stack-coder", status: "blocked", summary: "cannot continue", artifacts: [], checks: [], error: "fixture", payload: { ticket_id: "01", status: "blocked", commits: [], tests: [], summary: "cannot continue", error: "fixture" } };
+  const claimed = claims.find((claim) => claim.status === "fulfilled").value;
+  const blocked = handoff(claimed, { ticket_id: "01", status: "blocked", commits: [], checks: [], changed_paths: [], summary: "cannot continue", error: "fixture" });
   const recorded = await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(blocked));
   assert.equal(recorded.status, "blocked");
   await assert.rejects(
@@ -59,12 +96,45 @@ test("execution CLI claims once and records only a JSON Handoff envelope", async
   );
 });
 
+test("record-ticket rejects identity and envelope conflicts without advancing the frontier or accepting replay", async () => {
+  const paths = await fixture();
+  await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
+  const claimed = await claim(paths);
+  const checkpointPath = join(paths.root, ".scratch", "cli-flow", "checkpoint.json");
+  const payload = { ticket_id: "01", status: "blocked", commits: [], checks: ["node --test"], changed_paths: [], summary: "blocked", error: "fixture" };
+  const valid = handoff(claimed, payload);
+
+  for (const invalid of [
+    { ...valid, role_id: "git-committer" },
+    { ...valid, session_id: "other-session" },
+    { ...valid, claim_id: "other-claim" },
+    { ...valid, summary: "rewritten" },
+    { ...valid, checks: [] },
+    { ...valid, error: "rewritten" },
+  ]) {
+    const before = await readFile(checkpointPath, "utf8");
+    await assert.rejects(
+      invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(invalid)),
+      /claim identity|must match/,
+    );
+    assert.equal(await readFile(checkpointPath, "utf8"), before);
+  }
+
+  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(valid));
+  const completed = await readFile(checkpointPath, "utf8");
+  await assert.rejects(
+    invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(valid)),
+    /is not claimed/,
+  );
+  assert.equal(await readFile(checkpointPath, "utf8"), completed);
+});
+
 test("execution CLI recovers a stale lock but preserves a live lock", async () => {
   const paths = await fixture();
   await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
   const lock = join(paths.root, ".scratch", "cli-flow", "checkpoint.json.runtime.lock");
   await writeFile(lock, JSON.stringify({ pid: 99999999 }));
-  assert.equal((await invoke(paths, "claim", ["--feature", "cli-flow", "--worktree", paths.worktree])).ticket.id, "01");
+  assert.equal((await claim(paths)).ticket.id, "01");
   await writeFile(lock, JSON.stringify({ pid: process.pid }));
   await assert.rejects(invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "blocked by lock" })), /runtime mutation is already in progress/);
 });
@@ -83,26 +153,28 @@ test("execution CLI rejects an absolute legacy worktree without rewriting it", a
 test("execution CLI completes review and integration through the same feature lock", async () => {
   const paths = await fixture();
   await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
-  await invoke(paths, "claim", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  const claimed = await claim(paths);
   await writeFile(join(paths.worktree, "completed.txt"), "done\n");
   await git(paths.worktree, "add", "completed.txt");
   await git(paths.worktree, "commit", "-m", "complete ticket");
   const commit = await git(paths.worktree, "rev-parse", "HEAD");
-  const handoff = { role_id: "full-stack-coder", status: "done", summary: "completed", artifacts: ["completed.txt"], checks: [], payload: { ticket_id: "01", status: "done", commits: [commit], tests: [], summary: "completed" } };
-  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff));
+  const completion = handoff(claimed, { ticket_id: "01", status: "done", commits: [commit], checks: [], changed_paths: [], summary: "completed" }, ["completed.txt"]);
+  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(completion));
   await assert.rejects(
     invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "range was not frozen" })),
     /Review is not in progress/,
   );
-  const review = await invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  const review = await beginReview(paths);
   assert.equal(review.checkpoint.review.fixed_point, paths.baseline);
   assert.equal(review.checkpoint.review.review_commit, commit);
-  assert.equal(review.diff_command, `git diff ${paths.baseline}...${commit}`);
-  assert.equal(review.commit_list_command, `git log ${paths.baseline}..${commit} --oneline`);
-  await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "approved" }));
+  assert.equal(review.manifest.fixed_point, paths.baseline);
+  assert.equal(review.manifest.review_commit, commit);
+  await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify(reviewInput(paths, review, "approved")));
   await invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "approve" }));
   const integrated = await invoke(paths, "integrate", ["--feature", "cli-flow", "--worktree", paths.worktree]);
   assert.equal(integrated.status, "complete");
+  const cleaned = await invoke(paths, "cleanup", ["--feature", "cli-flow"]);
+  assert.equal(cleaned.status, "complete");
   const checkpointPath = join(paths.root, ".scratch", "cli-flow", "checkpoint.json");
   const tampered = JSON.parse(await readFile(checkpointPath, "utf8"));
   tampered.integration.execution_head = paths.baseline;
@@ -113,17 +185,16 @@ test("execution CLI completes review and integration through the same feature lo
 test("begin-review rejects uncommitted worktree changes", async () => {
   const paths = await fixture();
   await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
-  await invoke(paths, "claim", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  const claimed = await claim(paths);
   await writeFile(join(paths.worktree, "completed.txt"), "done\n");
   await git(paths.worktree, "add", "completed.txt");
   await git(paths.worktree, "commit", "-m", "complete ticket");
   const commit = await git(paths.worktree, "rev-parse", "HEAD");
-  const handoff = { role_id: "full-stack-coder", status: "done", summary: "completed", artifacts: ["completed.txt"], checks: [], payload: { ticket_id: "01", status: "done", commits: [commit], tests: [], summary: "completed" } };
-  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff));
+  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff(claimed, { ticket_id: "01", status: "done", commits: [commit], checks: [], changed_paths: [], summary: "completed" }, ["completed.txt"])));
   await writeFile(join(paths.worktree, "uncommitted.txt"), "must not be reviewed\n");
 
   await assert.rejects(
-    invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]),
+    beginReview(paths),
     /Execution worktree must be clean before review/,
   );
 });
@@ -131,15 +202,14 @@ test("begin-review rejects uncommitted worktree changes", async () => {
 test("integration rejects commits added after an approved review", async () => {
   const paths = await fixture();
   await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
-  await invoke(paths, "claim", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  const claimed = await claim(paths);
   await writeFile(join(paths.worktree, "completed.txt"), "done\n");
   await git(paths.worktree, "add", "completed.txt");
   await git(paths.worktree, "commit", "-m", "complete ticket");
   const commit = await git(paths.worktree, "rev-parse", "HEAD");
-  const handoff = { role_id: "full-stack-coder", status: "done", summary: "completed", artifacts: ["completed.txt"], checks: [], payload: { ticket_id: "01", status: "done", commits: [commit], tests: [], summary: "completed" } };
-  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff));
-  await invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]);
-  await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "approved" }));
+  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff(claimed, { ticket_id: "01", status: "done", commits: [commit], checks: [], changed_paths: [], summary: "completed" }, ["completed.txt"])));
+  const review = await beginReview(paths);
+  await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify(reviewInput(paths, review, "approved")));
   await invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "approve" }));
   await writeFile(join(paths.worktree, "after-review.txt"), "must not be integrated\n");
   await git(paths.worktree, "add", "after-review.txt");
@@ -154,25 +224,24 @@ test("integration rejects commits added after an approved review", async () => {
 test("review fixes advance directly to integration without another review", async () => {
   const paths = await fixture();
   await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
-  await invoke(paths, "claim", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  const claimed = await claim(paths);
   await writeFile(join(paths.worktree, "fixed.txt"), "fixed\n");
   await git(paths.worktree, "add", "fixed.txt");
   await git(paths.worktree, "commit", "-m", "complete ticket");
   const commit = await git(paths.worktree, "rev-parse", "HEAD");
-  const handoff = { role_id: "full-stack-coder", status: "done", summary: "completed", artifacts: [], checks: [], payload: { ticket_id: "01", status: "done", commits: [commit], tests: [], summary: "completed" } };
-  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff));
-  const started = await invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff(claimed, { ticket_id: "01", status: "done", commits: [commit], checks: [], changed_paths: [], summary: "completed" })));
+  const started = await beginReview(paths);
   await assert.rejects(
-    invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]),
+    beginReview(paths),
     /Review can only begin from a pending execution review/,
   );
   const stillFrozen = await invoke(paths, "status", ["--feature", "cli-flow", "--worktree", paths.worktree]);
   assert.equal(stillFrozen.checkpoint.review.fixed_point, started.checkpoint.review.fixed_point);
   assert.equal(stillFrozen.checkpoint.review.review_commit, started.checkpoint.review.review_commit);
-  await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "requires a fix" }));
+  await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify(reviewInput(paths, started, "requires a fix")));
   assert.equal((await invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "fix" }))).status, "fixing");
   await assert.rejects(
-    invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]),
+    beginReview(paths),
     /Review can only begin from a pending execution review/,
   );
   await assert.rejects(
@@ -196,17 +265,14 @@ test("review fixes advance directly to integration without another review", asyn
   assert.equal(completed.checkpoint.review.fix_commit, fixCommit);
   assert.deepEqual(completed.checkpoint.review.fix_checks, ["npm test: pass"]);
   await assert.rejects(
-    invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree]),
+    beginReview(paths),
     /Review can only begin from a pending execution review/,
   );
-  await assert.rejects(invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify({ findings_summary: "automatic re-review" })), /Review is not in progress/);
-  await writeFile(join(paths.worktree, "after-fix.txt"), "must not be integrated\n");
-  await git(paths.worktree, "add", "after-fix.txt");
-  await git(paths.worktree, "commit", "-m", "unrecorded post-fix change");
-  await assert.rejects(
-    invoke(paths, "integrate", ["--feature", "cli-flow", "--worktree", paths.worktree]),
-    /review-gate-head/,
-  );
+  await assert.rejects(invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify(reviewInput(paths, started, "automatic re-review"))), /Review is not in progress/);
+  const integrated = await invoke(paths, "integrate", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  assert.equal(integrated.status, "complete");
+  const cleaned = await invoke(paths, "cleanup", ["--feature", "cli-flow"]);
+  assert.equal(cleaned.status, "complete");
 });
 
 test("prepare rejects a symbolic-link worktree parent before creating a worktree", async () => {

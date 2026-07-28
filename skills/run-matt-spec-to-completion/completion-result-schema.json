@@ -4,7 +4,7 @@
   "title": "run-matt-spec-to-completion Completion Result",
   "description": "Completion Adapter 返回给编排器的单个 Ticket 终态结果。",
   "type": "object",
-  "required": ["ticket_id", "status", "commits", "tests", "summary"],
+  "required": ["ticket_id", "status", "commits", "checks", "summary", "changed_paths"],
   "additionalProperties": false,
   "properties": {
     "ticket_id": {
@@ -23,13 +23,17 @@
         "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
       }
     },
-    "tests": {
+    "checks": {
       "type": "array",
       "items": {
         "type": "string",
         "minLength": 1
       },
-      "description": "已运行测试的记录；空数组表示 TESTS: none。"
+      "description": "已运行检查的记录。"
+    },
+    "changed_paths": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/path-change" }
     },
     "summary": {
       "type": "string",
@@ -38,6 +42,24 @@
     "error": {
       "type": "string",
       "minLength": 1
+    }
+  },
+  "$defs": {
+    "path-change": {
+      "type": "object",
+      "required": ["record_type", "index_status", "worktree_status", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "record_type": { "enum": ["1", "2", "u", "?", "!"] },
+        "index_status": { "enum": [".", "M", "T", "A", "D", "R", "C", "U"] },
+        "worktree_status": { "enum": [".", "M", "T", "A", "D", "R", "C", "U"] },
+        "path": { "type": "string", "minLength": 1, "not": { "pattern": "\\u0000" } },
+        "source_path": { "type": "string", "minLength": 1, "not": { "pattern": "\\u0000" } }
+      },
+      "allOf": [
+        { "if": { "properties": { "record_type": { "const": "2" } }, "required": ["record_type"] }, "then": { "required": ["source_path"], "properties": { "source_path": true } } },
+        { "if": { "properties": { "record_type": { "not": { "const": "2" } } }, "required": ["record_type"] }, "then": { "not": { "required": ["source_path"] } } }
+      ]
     }
   },
   "allOf": [

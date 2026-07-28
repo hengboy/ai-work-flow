@@ -36,6 +36,27 @@ test("merges the verified execution commit instead of the mutable branch referen
   assert.deepEqual(mergeArgs, ["merge", "--no-edit", reviewGateHead]);
 });
 
+test("blocks unrelated main changes without explicit stash authorization before any mutation", async () => {
+  const checkpoint = { status: "integrating", branch: "feat/example", review: { review_commit: "a".repeat(40) }, integration: { status: "pending" } };
+  let mutated = false;
+  const lifecycle = createIntegrationLifecycle({
+    requireIntegrity: async () => ({ checkpoint, executionPlan: { revision: "revision" } }),
+    findMainWorktree: async () => "/main",
+    worktreeIsClean: async () => true,
+    unexpectedMainWorktreeChanges: async () => [{ path: "user-file" }],
+    persist: async () => { mutated = true; },
+    stash: { save: async () => { mutated = true; } },
+    git: async () => { mutated = true; },
+    gitSucceeds: async () => false,
+  });
+
+  await assert.rejects(
+    lifecycle.integrate({ repository: "/repo", worktree: "/execution", featureSlug: "example", executionPlan: { revision: "revision" } }),
+    /requires --allow-stash true/,
+  );
+  assert.equal(mutated, false);
+});
+
 test("does not report a stash patch as applied when its async reverse check is false or fails", async () => {
   const calls = [];
   const stash = createPreMergeStash({
