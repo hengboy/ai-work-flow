@@ -167,7 +167,11 @@ node "$runtime" record-ticket --repository <repo> --feature <feature> --worktree
 
 ### `$git-commit`
 
-根据 Full Stack Coder 的 `base_commit`、初始状态和精确 `changed_paths` 创建一个仅本地的实现提交。它只暂存声明的路径，在提交前核对暂存清单与非空差异，并禁止 push、amend、reset、clean、stash 和扩大暂存范围。已确认方案的实现阶段无需为该提交重复请求用户授权。
+根据 Full Stack Coder 的 `base_commit`、空的初始状态、精确 `changed_paths` 和通过的验证结果创建一个仅本地的实现提交。它只暂存声明的路径，在提交前核对当前 HEAD、完整路径集合、暂存清单与非空差异，并禁止 push、amend、reset、clean、stash 和扩大暂存范围。成功时返回完整 `review_commit` SHA 和空工作树；已确认方案的实现阶段无需为该提交重复请求用户授权。
+
+### 自动提交与审查
+
+确认实现后，角色按 **Full Stack Coder -> Git Committer -> Code Reviewer -> Review Standards + Review Spec** 自动推进。Code Reviewer 只审查提交后的固定 SHA 范围，绝不读取未提交内容。大差异会按固定端点的文件和行窗口分片，两个审查轴使用相同清单；中断时只重试未完成分片，端点不会变化。
 
 ## AI Work Flow 评审与执行契约
 

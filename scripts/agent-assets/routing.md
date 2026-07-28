@@ -12,11 +12,11 @@
 
 处理项目代码前，必须使用 `$project-code-navigation` 先读取 `.ai-work-flow/index/feature-navigation.md`，再按目标功能只读取相关索引。索引命中时直接读取记录的代码，禁止全局文件检索或搜索无关路径；仅在索引缺失、未覆盖目标功能或路径无法定位时，才委派 **File Explorer** 发现真实入口。**Full Stack Coder** 必须在同一轮改动中维护索引：新增文件，或文件移动、重命名、拆分、合并、删除、主职责变化，以及用户可见功能入口、路由或 API 变化时，更新 `.ai-work-flow/index/` 的对应文件；缺少索引的新功能视为未完成。项目导航只存放在 `.ai-work-flow/index/`，不得创建 `.agents/skills/project-code-navigation/` 或改写 `AGENTS.md`、`CLAUDE.md`。
 
-确认方案后的实现阶段固定按以下顺序执行：**Full Stack Coder** 完成实现和测试并交接变更清单，**Git Committer** 创建本地 review commit，随后 **Code Reviewer** 并行启动 **Review Standards** 和 **Review Spec**。`run-matt-spec-to-completion` 的 Ticket 子代理是例外：它在隔离且起始干净的 feature worktree 中按同一 `$git-commit` 协议自行创建实现提交，以满足 Completion Adapter 返回完整 SHA 的契约。提交失败、工作树不干净或测试失败时不得启动审查。审查完成后，**Orchestrator** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
+确认方案后的实现阶段固定按以下顺序执行：**Full Stack Coder -> Git Committer -> Code Reviewer -> Review Standards + Review Spec**。Full Stack Coder 完成实现和测试后交接完整范围证据；Orchestrator 收到完整且成功的原始交接后立即原样委派 Git Committer，不等待新的提交授权；Git Committer 创建仅本地的 review commit；Code Reviewer 再并行启动 Review Standards 与 Review Spec。`run-matt-spec-to-completion` 的 Ticket 子代理是例外：它在隔离且起始干净的 feature worktree 中按同一 `$git-commit` 协议自行创建实现提交，以满足 Completion Adapter 返回完整 SHA 的契约。提交失败、工作树不干净或测试失败时不得启动审查。审查完成后，**Orchestrator** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
 
 ### AI Work Flow 审查子任务契约
 
-**Code Reviewer** 必须先固定 `fixed-point` 与 `review-commit` 两个完整提交 SHA。工作流评审使用 Checkpoint 中已经冻结的端点；用户直接指定 fixed point 时，将开始评审时的 `HEAD` 解析为 `review-commit`，不得在委派后重新解析。委派前按顺序运行并保存以下命令及结果：
+**Code Reviewer** 仅在 Git Committer 报告完整 `review_commit` SHA 且 `git status --short` 为空时开始。它必须先固定 `fixed-point` 与 `review-commit` 两个完整提交 SHA。普通实现流程使用交接 `base_commit` 作为 fixed point 和 Git Committer 的 `review_commit`；工作流评审使用 Checkpoint 中已经冻结的端点；用户直接指定 fixed point 时，将开始评审时的 `HEAD` 解析为 `review-commit`，不得在委派后重新解析。委派前按顺序运行并保存以下命令及结果：
 
 ```bash
 git rev-parse <fixed-point>
@@ -28,7 +28,7 @@ git log <fixed-point>..<review-commit> --oneline
 
 两个端点必须可解析，fixed point 必须是 review commit 的祖先，三点 diff 必须非空。`git status --short` 只用于确认工作树干净；存在 staged、unstaged 或 untracked 内容时阻塞，不得读取或评价其内容。评审发现只允许来自固定的 committed diff，禁止使用无参数 `git diff` 或 `git diff --cached` 扩大范围。
 
-**Review Standards** 与 **Review Spec** 必须收到完全相同的两个完整 SHA、diff 命令和 commit list。Standards 任务还必须收到标准来源文件列表、完整 Fowler 异味基准及 AI Work Flow Standards 评审任务说明；Spec 任务还必须收到规格路径或完整内容及 AI Work Flow Spec 评审任务说明。缺少任一范围字段时不得自行推断。两个任务并行执行并保持上下文隔离；最终报告只能原样或轻度整理两轴结果，不得合并、跨轴重新排序或选择跨轴的单一最严重问题。
+Code Reviewer 先以 `git diff --name-only <fixed-point>...<review-commit>` 生成稳定排序的完整文件清单，按文件拆分可读取的分片；每个分片固定使用 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>`。单文件 diff 仍过大时，只对同一命令输出读取固定行窗口。**Review Standards** 与 **Review Spec** 必须收到完全相同的两个完整 SHA、diff 命令、commit list、规格来源、标准来源和完整文件/窗口分片清单。Standards 任务还必须收到完整 Fowler 异味基准及 AI Work Flow Standards 评审任务说明；Spec 任务还必须收到规格路径或完整内容及 AI Work Flow Spec 评审任务说明。缺少任一范围字段时不得自行推断。两个任务并行执行并保持上下文隔离，且各自报告已覆盖与未完成分片；Code Reviewer 只在两轴均覆盖完整清单后汇总，最终报告只能原样或轻度整理两轴结果，不得合并、跨轴重新排序或选择跨轴的单一最严重问题。输出截断、连接中断或结果未知时，只重试未完成分片并保持相同 SHA；重试耗尽后请求用户“继续”或“重试”，不得请求新的提交授权。
 
 ### 浏览器自动化门禁
 
@@ -60,9 +60,9 @@ git log <fixed-point>..<review-commit> --oneline
 
 用户明确确认方案或要求实施，即授权为该实现阶段创建仅本地的 review commit；不需要在首次暂存前再次逐项请求授权。此授权不包含 push、amend、reset、clean、stash、切换或删除分支、标签操作，且不包含方案范围之外的已有变更。
 
-**Full Stack Coder** 开始前必须记录 `base_commit` 和 `git status --short`，且初始状态必须为空；否则停止，不得猜测提交范围。完成后必须交接同一工作树的 `base_commit`、初始状态、精确 `changed_paths`、`git diff --name-only <base_commit>`、`git ls-files --others --exclude-standard` 和测试结果。`changed_paths` 是前两项命令输出的去重并集，必须包含新增、修改、删除与未跟踪文件。**Orchestrator** 在实现与测试成功后自动将该交接原样委派给 **Git Committer**。变更清单为空、当前 `HEAD` 不等于 `base_commit`、当前状态与交接不一致或存在未交接的变更时，Git Committer 必须停止且不得暂存任何文件。
+**Full Stack Coder** 开始前必须记录完整 `base_commit`、`git status --short` 的空输出，且初始状态必须为空；否则停止，不得猜测提交范围。完成后必须交接同一工作树的 `base_commit`、初始空状态、稳定排序的精确 `changed_paths`、`git diff --name-only <base_commit>`、`git ls-files --others --exclude-standard` 和每条已执行且通过的验证命令与结果。`changed_paths` 是前两项命令输出的去重并集，必须包含新增、修改、删除与未跟踪文件。**Orchestrator** 在收到完整且成功的实现交接后立即原样委派给 **Git Committer**。变更清单为空、当前 `HEAD` 不等于 `base_commit`、当前状态与交接不一致、验证失败或存在未交接的变更时，Git Committer 必须停止且不得暂存任何文件。
 
-Git Committer 必须先调用 `$git-commit` 生成提交信息，只能通过 `git add -- <changed_paths>` 暂存交接中的精确路径，并在提交前确认 `git diff --cached --name-only` 与 `changed_paths` 完全一致且暂存差异非空。提交必须仅在本地创建，成功后报告完整 SHA 和 `git status --short`。工作树仍有 staged、unstaged 或 untracked 内容时，不能启动审查；该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实现阶段的提交授权。
+Git Committer 必须先调用 `$git-commit` 生成提交信息。提交前必须确认当前 `HEAD` 精确等于 `base_commit`、当前变更路径与交接 `changed_paths` 完全一致、已通过验证仍完整可用；只能通过 `git add -- <changed_paths>` 暂存交接中的精确路径，并在提交前确认 `git diff --cached --name-only` 与 `changed_paths` 完全一致且暂存差异非空。提交必须仅在本地创建，成功后报告完整 `review_commit` SHA 和空的 `git status --short`。范围不一致、工作树不干净、验证失败或提交 hook 失败时停止并报告精确原因，不得暂存、提交或重复请求同一实施阶段的授权。工作树仍有 staged、unstaged 或 untracked 内容时，不能启动审查；该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实现阶段的提交授权。
 
 ### 最终审查去重
 

@@ -1,11 +1,12 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { relative, resolve, sep } from 'node:path';
 
 import { fail, isPlainObject } from './shared.mjs';
 import { applyTransaction } from './transaction.mjs';
 import { updateManagedMarker } from './managed-content.mjs';
 
 const OBSOLETE_PRIMARY_AGENT_ID = ['coord', 'inator'].join('');
+const LEGACY_CODE_REVIEWER_AGENT = 'AGENT.md';
 const REVIEWER_ROLE_IDS = new Set(['code-reviewer', 'review-standards', 'review-spec']);
 const READ_ONLY_GIT_BASH = {
   '*': 'deny',
@@ -25,6 +26,20 @@ const READ_ONLY_GIT_BASH = {
 
 function agentDescription(role) {
   return `**${role.name}**: ${role.description}`;
+}
+
+function assertNoSymbolicLinks(root, target) {
+  let current = resolve(root);
+  const segments = relative(current, resolve(target)).split(sep).filter(Boolean);
+  for (const segment of ['.', ...segments]) {
+    if (segment !== '.') current = resolve(current, segment);
+    try {
+      if (lstatSync(current).isSymbolicLink()) fail(`Legacy reviewer path must not contain a symbolic link: ${current}`);
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
+  }
 }
 
 // --- Codex strategy ---
@@ -241,6 +256,12 @@ export function planGeneration({ platform, paths, roles, policies, config, bodie
   }
   const obsoleteAgentPath = resolve(agentDir, `${OBSOLETE_PRIMARY_AGENT_ID}.${strategy.extension}`);
   if (existsSync(obsoleteAgentPath)) plan.push({ type: 'delete', path: obsoleteAgentPath });
+
+  if (platform === 'codex') {
+    const legacyReviewerPath = resolve(agentDir, 'code-reviewer', LEGACY_CODE_REVIEWER_AGENT);
+    assertNoSymbolicLinks(paths.codexDir, legacyReviewerPath);
+    if (existsSync(legacyReviewerPath)) plan.push({ type: 'delete', path: legacyReviewerPath });
+  }
 
   if (strategy.cleanup) {
     const guardPath = resolve(paths.openCodeDir, 'plugins/ai-work-flow-subagent-model-guard.js');

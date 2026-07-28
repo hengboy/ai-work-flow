@@ -12,6 +12,8 @@
 
 共同的委派、审查、确认、重试和 Git 授权规则只定义在 `$XDG_CONFIG_HOME/ai-work-flow/routing.md`（未设置时为 `~/.config/ai-work-flow/routing.md`）。本角色不复制这些流程规则。
 
+已确认实现的自动顺序是 **Full Stack Coder -> Git Committer -> Code Reviewer -> Review Standards + Review Spec**。收到包含 `base_commit`、空初始状态、精确 `changed_paths`、两项范围输出和通过验证的完整成功交接后，立即原样委派 **Git Committer**，不等待新的提交授权。只有收到完整 `review_commit` SHA 且工作树干净时，才将固定 `fixed-point`、`review-commit`、commit list、规格来源、标准来源和同一分片清单委派给 **Code Reviewer**；不得让其查看 `HEAD`、缓存区或未提交内容。大差异按固定 SHA 的文件和行窗口分片；中断时只重试未完成分片并保持相同 SHA，重试耗尽后请求用户“继续”或“重试”。
+
 ## 回复格式
 
 返回前简洁汇报已委派的角色、已收到的结果和结论。正常回答按需使用以下标签；无内容的标签省略。

@@ -103,11 +103,18 @@ function agentPath(paths, platform, name, extension) {
   return resolve(base, 'agents', `${name}.${extension}`);
 }
 
-test('repository-owned artifacts use AI Work Flow terminology', () => {
-  const borrowedBrand = ['M', 'att'].join('');
+function repositoryOwnedArtifactPaths() {
   const tracked = spawnSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
   assert.equal(tracked.status, 0, tracked.stderr);
-  const paths = tracked.stdout.split('\n').filter(Boolean).filter((path) => existsSync(resolve(root, path)));
+  return tracked.stdout.split('\n')
+    .filter(Boolean)
+    .filter((path) => !/(^|\/)test(s)?\//.test(path))
+    .filter((path) => existsSync(resolve(root, path)));
+}
+
+test('repository-owned artifacts use AI Work Flow terminology', () => {
+  const borrowedBrand = ['M', 'att'].join('');
+  const paths = repositoryOwnedArtifactPaths();
   const brandedPath = paths.find((path) => (
     new RegExp(`(^|[-_/])${borrowedBrand}([-_/]|$)`, 'i').test(path.replaceAll(executionSkill, ''))
   ));
@@ -119,6 +126,12 @@ test('repository-owned artifacts use AI Work Flow terminology', () => {
     return new RegExp(`(^|[^a-z0-9_])${borrowedBrand}([^a-z0-9_]|$)|${borrowedBrand}pocock`, 'i').test(contents.toString('utf8').replaceAll(executionSkill, ''));
   });
   assert.equal(brandedContent, undefined, brandedContent);
+});
+
+test('terminology detection excludes test assertions but still scans managed artifacts', () => {
+  const paths = repositoryOwnedArtifactPaths();
+  assert.ok(!paths.includes('test/agent-workflow.test.mjs'));
+  assert.ok(paths.includes('scripts/agent-assets/routing.md'));
 });
 
 test('every role has one shared body template without platform formatting', () => {
@@ -303,6 +316,26 @@ test('implementation commits precede the committed-range dual-axis review', () =
   assert.match(skill, /\*\*结果：\*\*/);
   assert.match(skill, /\*\*状态：\*\*/);
   assert.doesNotMatch(skill, /\*\*提交结果：\*\*/);
+});
+
+test('generated orchestrators preserve the automatic commit and fixed-range review contract', () => {
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  const assertions = [
+    /Full Stack Coder -> Git Committer -> Code Reviewer -> Review Standards \+ Review Spec/,
+    /不等待新的提交授权/,
+    /base_commit/,
+    /changed_paths/,
+    /固定 `fixed-point`、`review-commit`/,
+    /文件和行窗口分片/,
+    /只重试未完成分片并保持相同 SHA/
+  ];
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const generated = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
+    for (const assertion of assertions) assert.match(generated, assertion, platform);
+  }
 });
 
 test('managed marker updates preserve user content outside the marker byte-for-byte', () => {
@@ -797,6 +830,53 @@ test('generation deletes obsolete primary agents on every platform', () => {
     assert.ok(!existsSync(agentPath(paths, platform, obsoletePrimaryAgentId, extension)));
     assert.ok(existsSync(agentPath(paths, platform, 'orchestrator', extension)));
   }
+});
+
+test('Codex generation transaction removes only the legacy reviewer file and rejects symbolic links', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const legacyDirectory = resolve(paths.home, '.codex/agents/code-reviewer');
+  const legacyAgent = resolve(legacyDirectory, 'AGENT.md');
+  const transaction = resolve(paths.home, '.codex/.legacy-reviewer-transaction.json');
+
+  assert.equal(run(paths, 'generate', '--platform', 'codex').status, 0);
+  assert.ok(!existsSync(legacyAgent));
+  assert.ok(existsSync(agentPath(paths, 'codex', 'code-reviewer', 'toml')));
+
+  mkdirSync(legacyDirectory, { recursive: true });
+  writeFileSync(legacyAgent, 'legacy reviewer\n');
+  const generated = run(paths, 'generate', '--platform', 'codex');
+  assert.equal(generated.status, 0, generated.stderr);
+  assert.ok(!existsSync(legacyAgent));
+  assert.ok(existsSync(agentPath(paths, 'codex', 'code-reviewer', 'toml')));
+
+  writeFileSync(legacyAgent, 'restore after rollback\n');
+  assert.throws(() => applyTransaction([
+    { type: 'delete', path: legacyAgent },
+    { type: 'write', path: resolve(paths.home, '.codex/agents/rollback.txt'), contents: 'never committed\n' }
+  ], { transactionPath: transaction, roots: [paths.home], failAfterStep: 1 }), /Injected transaction failure/);
+  assert.equal(readFileSync(legacyAgent, 'utf8'), 'restore after rollback\n');
+  assert.ok(!existsSync(transaction));
+
+  const outside = resolve(paths.base, 'legacy-reviewer-target');
+  writeFileSync(outside, 'preserve\n');
+  rmSync(legacyAgent);
+  symlinkSync(outside, legacyAgent);
+  const rejected = run(paths, 'generate', '--platform', 'codex');
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /Legacy reviewer path must not contain a symbolic link/);
+  assert.equal(readFileSync(outside, 'utf8'), 'preserve\n');
+  assert.ok(existsSync(agentPath(paths, 'codex', 'code-reviewer', 'toml')));
+
+  rmSync(legacyAgent);
+  rmSync(legacyDirectory, { recursive: true, force: true });
+  const outsideDirectory = resolve(paths.base, 'legacy-reviewer-directory');
+  mkdirSync(outsideDirectory);
+  symlinkSync(outsideDirectory, legacyDirectory);
+  const parentRejected = run(paths, 'generate', '--platform', 'codex');
+  assert.equal(parentRejected.status, 1);
+  assert.match(parentRejected.stderr, /Legacy reviewer path must not contain a symbolic link/);
+  assert.ok(existsSync(agentPath(paths, 'codex', 'code-reviewer', 'toml')));
 });
 
 test('installation removes obsolete managed templates and execution modules', () => {
