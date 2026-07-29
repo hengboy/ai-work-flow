@@ -29,7 +29,7 @@ const defaultSkillPrompts = new Map([
   ['generate-ai-work-flow-agents', '使用 `$generate-ai-work-flow-agents` 验证全局配置并生成代理。'],
   ['switch-ai-work-flow-env', '使用 `$switch-ai-work-flow-env` 切换到指定环境并重新生成代理。'],
   ['project-code-navigation', '使用 `$project-code-navigation` 为当前项目创建或更新 `.ai-work-flow/index/` 代码导航索引。'],
-  ['git-commit', '使用 `$git-commit` 生成符合 Conventional Commits 的提交信息并创建受控本地提交。']
+  ['git-commit', '使用 `$git-commit` 生成中文 Conventional Commits 提交信息并创建受控本地提交。']
 ]);
 
 function assertPromptLayout(source, name) {
@@ -313,6 +313,7 @@ test('implementation commits precede the committed-range dual-axis review', () =
   assert.match(skill, /<type>\[optional scope\]\[optional !\]: <description>/);
   assert.match(skill, /使用 `feat` 表示新增功能，使用 `fix` 表示修复 bug/);
   assert.match(skill, /`build`、`chore`、`ci`、`docs`、`style`、`refactor`、`perf` 或 `test`/);
+  assert.match(skill, /描述、正文、破坏性变更说明和 trailer value 必须使用中文/);
   assert.match(skill, /BREAKING CHANGE:/);
   assert.match(skill, /Co-Authored-By/);
   assert.doesNotMatch(skill, /Gitmoji|:sparkles:/);

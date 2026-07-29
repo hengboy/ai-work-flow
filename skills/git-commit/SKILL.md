@@ -1,11 +1,11 @@
 ---
 name: git-commit
-description: 生成符合 Conventional Commits 1.0.0 的标准提交信息，并在实现验证后创建一个受控的本地 Git 提交。
+description: 生成符合 Conventional Commits 1.0.0 且使用中文说明的标准提交信息，并在实现验证后创建一个受控的本地 Git 提交。
 ---
 
 # 受控本地提交
 
-生成符合 Conventional Commits 1.0.0 的标准提交信息，然后仅对实现交接中的精确路径创建一个本地提交。本技能只允许必要且范围受控的 Git 操作，并禁止破坏性或影响远程仓库的操作。
+生成符合 Conventional Commits 1.0.0 且使用中文说明的标准提交信息，然后仅对实现交接中的精确路径创建一个本地提交。本技能只允许必要且范围受控的 Git 操作，并禁止破坏性或影响远程仓库的操作。
 
 ## 必要输入
 
@@ -35,7 +35,7 @@ description: 生成符合 Conventional Commits 1.0.0 的标准提交信息，并
 
 - 每个提交必须以类型开头，随后可选范围、可选 `!`、英文半角冒号和一个空格。使用 `feat` 表示新增功能，使用 `fix` 表示修复 bug。
 - 需要时使用 `build`、`chore`、`ci`、`docs`、`style`、`refactor`、`perf` 或 `test` 等类型。范围必须是圆括号包围的代码区域名，例如 `feat(parser): 支持数组解析`。
-- 描述必须紧跟 `: `，简要概括改动，并使用仓库既有语言。正文可选，必须与描述之间空一行，用于说明上下文或行为变化。
+- `type`、`scope`、`BREAKING CHANGE` 和 trailer token 等 Conventional Commits 语法元素保持英文；描述、正文、破坏性变更说明和 trailer value 必须使用中文。描述必须紧跟 `: `，简要概括改动。正文可选，必须与描述之间空一行，用于说明上下文或行为变化。
 - 页脚可选，必须在正文后空一行。每行页脚使用 trailer 格式：`Token: value` 或 `Token #value`。例如 `Refs: #123`。
 - 破坏性变更必须使用类型/范围后的 `!`，或在页脚使用大写 `BREAKING CHANGE: <description>`。使用 `!` 时，描述应说明破坏性变更。
 - 不得添加 `Co-Authored-By` 等工具归属信息。
