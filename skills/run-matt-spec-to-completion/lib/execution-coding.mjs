@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { checkpointPath, deriveSpecLocation, executionPlanPath } from "./paths.mjs";
-import { createCheckpoint, markMerged, readCheckpoint, recordStashReference, relocateCheckpoint, resolveRepositoryPath } from "./checkpoint.mjs";
+import { createCheckpoint, markMerged, readCheckpoint, recordStashReference, relocateCheckpoint, resolveRepositoryPath, requiresReviewGateMigration, restartForReviewGateMigration } from "./checkpoint.mjs";
 import { requireCheckpointIntegrity } from "./checkpoint-integrity.mjs";
 import { currentHead, git, gitOutput, gitPathChanges, gitSucceeds, gitSucceedsWithInput, isAncestor } from "./git.mjs";
 import { assertSpecArtifactsInMainWorktree, materializeSpec, verifyExecutionPlan, writeExecutionPlan } from "./spec-intake.mjs";
@@ -118,8 +118,8 @@ export function createExecutionCoding({ adapter, directExecutor, materialize = m
   const stash = createPreMergeStash({ git, gitSucceeds, gitOutput, gitSucceedsWithInput });
   const stateStore = createRuntimeStateStore();
 
-  const requireIntegrity = async ({ mainWorktree, featureSlug, executionWorktree, checkExecutionWorktree = true, allowWorktreeRelocation = false }) => {
-    return requireCheckpointIntegrity({ worktree: mainWorktree, executionWorktree, featureSlug, checkExecutionWorktree, allowWorktreeRelocation });
+  const requireIntegrity = async ({ mainWorktree, featureSlug, executionWorktree, checkExecutionWorktree = true, allowWorktreeRelocation = false, allowLegacyReviewMigration = false }) => {
+    return requireCheckpointIntegrity({ worktree: mainWorktree, executionWorktree, featureSlug, checkExecutionWorktree, allowWorktreeRelocation, allowLegacyReviewMigration });
   };
 
   const persist = async (worktree, featureSlug, checkpoint, { verify = true } = {}) => {
@@ -179,8 +179,14 @@ export function createExecutionCoding({ adapter, directExecutor, materialize = m
       if (!_locked) {
         return withFeatureLock(mainWorktree, featureSlug, () => this.resume({ repository, branch, specPath, worktreePath, _locked: true }));
       }
-      const preflight = await requireIntegrity({ mainWorktree, featureSlug, checkExecutionWorktree: false });
-      const mainCheckpoint = preflight.checkpoint;
+      let preflight = await requireIntegrity({ mainWorktree, featureSlug, checkExecutionWorktree: false, allowLegacyReviewMigration: true });
+      let mainCheckpoint = preflight.checkpoint;
+      if (requiresReviewGateMigration(mainCheckpoint)) {
+        mainCheckpoint = restartForReviewGateMigration(mainCheckpoint, now());
+        await persist(mainWorktree, featureSlug, mainCheckpoint, { verify: false });
+        preflight = await requireIntegrity({ mainWorktree, featureSlug, checkExecutionWorktree: false });
+        mainCheckpoint = preflight.checkpoint;
+      }
       if (mainCheckpoint.integration.status === "done") {
         const executionPlan = preflight.executionPlan;
         if (await executionRecordsHaveChanges({ mainWorktree, featureSlug, executionPlan })) {
@@ -249,8 +255,13 @@ export function createExecutionCoding({ adapter, directExecutor, materialize = m
       return { checkpoint, results: [result] };
     },
 
-    async startReview({ mainWorktree, featureSlug, worktree, executionPlan }) {
-      await canonicalTransition("sync-main", { mainWorktree, featureSlug, worktree });
+    async startReview({ mainWorktree, featureSlug, worktree, executionPlan, checkpoint }) {
+      checkpoint ??= await readCheckpoint(mainWorktree, featureSlug);
+      if (checkpoint.sync?.status === "pending") {
+        checkpoint = (await canonicalTransition("sync-main", { mainWorktree, featureSlug, worktree })).checkpoint;
+      }
+      if (checkpoint.sync?.status === "conflicted") return checkpoint;
+      if (checkpoint.sync?.status !== "complete") throw new Error("Main synchronization must complete before review");
       const standardsSource = await frozenStandardsSource(worktree);
       return (await canonicalTransition("begin-review", { mainWorktree, featureSlug, worktree }, {
         spec_status: "present",
@@ -285,13 +296,17 @@ export function createExecutionCoding({ adapter, directExecutor, materialize = m
       const readTicket = issueTracker.read.bind(issueTracker);
       if (checkpoint.status === "executing" && checkpoint.tickets.every((ticket) => ticket.status === "done")) {
         for (const ticket of checkpoint.tickets) await issueTracker.markComplete(ticket.id);
-        checkpoint = await this.startReview({ mainWorktree, featureSlug, worktree, executionPlan });
+        checkpoint = await this.startReview({ mainWorktree, featureSlug, worktree, executionPlan, checkpoint });
+        if (checkpoint.sync?.status === "conflicted") return { status: "sync_conflicted", worktree, executionPlan, checkpoint, unmerged_paths: checkpoint.sync.unmerged_paths };
       }
       while (checkpoint.status === "executing") {
         const result = await this.executeFrontier({ worktree, mainWorktree, featureSlug, executionPlan, checkpoint, readTicket });
         if (result.status === "blocked") return result;
         checkpoint = result.checkpoint;
-        if (checkpoint.tickets.every((ticket) => ticket.status === "done")) checkpoint = await this.startReview({ mainWorktree, featureSlug, worktree, executionPlan });
+        if (checkpoint.tickets.every((ticket) => ticket.status === "done")) {
+          checkpoint = await this.startReview({ mainWorktree, featureSlug, worktree, executionPlan, checkpoint });
+          if (checkpoint.sync?.status === "conflicted") return { status: "sync_conflicted", worktree, executionPlan, checkpoint, unmerged_paths: checkpoint.sync.unmerged_paths };
+        }
       }
       if (checkpoint.status === "reviewing") {
         if (!review) return { status: "reviewing", worktree, executionPlan, checkpoint };

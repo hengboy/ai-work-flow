@@ -7,7 +7,7 @@ import { join, relative } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { beginReview, completeIntegration, completeReview, completeReviewFix, completeTicket, createCheckpoint, decideReview, markMerged, readCheckpoint, recordReview, startTickets, writeCheckpoint } from "../lib/checkpoint.mjs";
+import { beginReview, completeIntegration, completeReviewFix, completeTicket, createCheckpoint, decideReview, markMerged, readCheckpoint, recordReview, startTickets, writeCheckpoint } from "../lib/checkpoint.mjs";
 import { createExecutionCoding } from "../lib/execution-coding.mjs";
 import { materializeSpec, verifyExecutionPlan, writeExecutionPlan } from "../lib/spec-intake.mjs";
 import { assertCheckpoint, assertExecutionPlan } from "../lib/validation.mjs";
@@ -158,6 +158,57 @@ test("resumes a pre-integration checkpoint whose completed ticket commit exists 
 
   assert.equal(resumed.status, "resumed");
   assert.equal(resumed.checkpoint.tickets[0].end_commit, featureCommit);
+});
+
+test("migrates a legacy non-terminal review before it can integrate", async () => {
+  const { root, executionPlan, checkpoint: completed, executionWorktree, featureCommit } = await completedExecutionFixture();
+  let legacy = beginReview(completed, { fixedPoint: completed.baseline, reviewCommit: featureCommit, manifest: reviewManifest(completed.baseline, featureCommit, ["execution.txt"]) });
+  legacy = completeReviewWithManifest(legacy, "legacy approval");
+  delete legacy.review.result;
+  await writeCheckpoint(root, "migrate-runtime", legacy);
+
+  await assert.rejects(
+    createExecutionCoding().integrate({ repository: root, worktree: executionWorktree, featureSlug: "migrate-runtime", executionPlan }),
+    /review-gate-migration-required/,
+  );
+
+  const resumed = await createExecutionCoding().resume({
+    repository: root,
+    branch: "feat/migrate-runtime",
+    specPath: ".scratch/migrate-runtime/spec.md",
+    worktreePath: executionWorktree,
+  });
+
+  assert.equal(resumed.checkpoint.status, "executing");
+  assert.deepEqual(resumed.checkpoint.review, { status: "pending" });
+  assert.deepEqual(resumed.checkpoint.sync, { status: "pending" });
+  assert.equal(resumed.checkpoint.review_attempts.at(-1).review_commit, featureCommit);
+});
+
+test("returns a synchronization conflict without attempting a new review", async () => {
+  const { root, executionWorktree } = await completedExecutionFixture();
+  await writeFile(join(root, "execution.txt"), "main change\n");
+  await git(root, "add", "execution.txt");
+  await git(root, "commit", "-m", "main change");
+
+  const first = await createExecutionCoding().run({
+    repository: root,
+    branch: "feat/migrate-runtime",
+    specPath: ".scratch/migrate-runtime/spec.md",
+    worktreePath: executionWorktree,
+  });
+  assert.equal(first.status, "sync_conflicted");
+  assert.deepEqual(first.unmerged_paths, ["execution.txt"]);
+  assert.equal(first.checkpoint.sync.status, "conflicted");
+
+  const resumed = await createExecutionCoding().run({
+    repository: root,
+    branch: "feat/migrate-runtime",
+    specPath: ".scratch/migrate-runtime/spec.md",
+    worktreePath: executionWorktree,
+  });
+  assert.equal(resumed.status, "sync_conflicted");
+  assert.deepEqual(resumed.unmerged_paths, ["execution.txt"]);
 });
 
 test("records review through the canonical runtime after all tickets complete", async () => {

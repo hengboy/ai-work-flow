@@ -233,6 +233,23 @@ export function restartForResync(checkpoint, now = new Date()) {
   return completeTransition(next);
 }
 
+export function requiresReviewGateMigration(checkpoint) {
+  return ["fixing", "integrating"].includes(checkpoint.status)
+    && checkpoint.integration.status === "pending"
+    && (checkpoint.sync?.status !== "complete" || !checkpoint.review.result);
+}
+
+export function restartForReviewGateMigration(checkpoint, now = new Date()) {
+  now = toShanghaiTimestamp(now);
+  if (!requiresReviewGateMigration(checkpoint)) throw new Error("Checkpoint does not require review gate migration");
+  const next = revise(checkpoint, "review-gate-migrated", "legacy review evidence requires synchronization and structured review", now);
+  next.review_attempts = [...(next.review_attempts ?? []), next.review];
+  next.review = { status: "pending" };
+  next.sync = { status: "pending" };
+  next.status = "executing";
+  return completeTransition(next);
+}
+
 export function beginSync(checkpoint, mainCommit, now = new Date()) {
   now = toShanghaiTimestamp(now);
   if (checkpoint.status !== "executing" || checkpoint.review.status !== "pending") {

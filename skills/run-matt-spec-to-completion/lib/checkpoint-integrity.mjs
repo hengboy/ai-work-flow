@@ -1,5 +1,5 @@
 import { readExecutionPlan, verifyExecutionPlan } from "./spec-intake.mjs";
-import { readCheckpoint, resolveRepositoryPath, verifyCheckpointShape } from "./checkpoint.mjs";
+import { readCheckpoint, requiresReviewGateMigration, resolveRepositoryPath, verifyCheckpointShape } from "./checkpoint.mjs";
 import { git, gitSucceeds, isAncestor } from "./git.mjs";
 import { sourceSpecPath } from "./paths.mjs";
 import { assertReviewCoverage, assertReviewManifest } from "./review-manifest.mjs";
@@ -16,7 +16,7 @@ async function worktreeIdentity(worktree) {
   return { root, commonDir };
 }
 
-export async function verifyCheckpointIntegrity({ worktree, executionWorktree, featureSlug, checkExecutionWorktree = true, allowWorktreeRelocation = false }) {
+export async function verifyCheckpointIntegrity({ worktree, executionWorktree, featureSlug, checkExecutionWorktree = true, allowWorktreeRelocation = false, allowLegacyReviewMigration = false }) {
   const diagnostics = [];
   let executionPlan;
   let checkpoint;
@@ -78,6 +78,10 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
   } else if (!await isAncestor(worktree, checkpoint.baseline)) {
     diagnostics.push(diagnostic("baseline-not-ancestor", checkpoint.baseline));
   }
+  const reviewGateMigrationRequired = requiresReviewGateMigration(checkpoint);
+  if (reviewGateMigrationRequired && !allowLegacyReviewMigration) {
+    diagnostics.push(diagnostic("review-gate-migration-required", "Synchronize main and record a structured review result before integration"));
+  }
   const reviewWorktree = executionWorktree || worktree;
   if (checkpoint.review.status !== "pending") {
     const fixedPoint = checkpoint.review.fixed_point;
@@ -103,6 +107,7 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
         if (checkpoint.review.manifest_digest !== manifest.manifest_digest) diagnostics.push(diagnostic("review-manifest-digest", checkpoint.review.manifest_digest));
         assertReviewCoverage(manifest, checkpoint.review.coverage);
         if (checkpoint.review.result) assertReviewResult(checkpoint.review.result, manifest.manifest_digest);
+        else if (!reviewGateMigrationRequired && !integrationRecord) diagnostics.push(diagnostic("review-result-missing", "Structured Review Result is required before integration"));
       }
     } catch (error) {
       diagnostics.push(diagnostic("review-manifest", error.message));
