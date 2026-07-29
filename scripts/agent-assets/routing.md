@@ -84,9 +84,9 @@ Git Committer 必须先调用 `$git-commit` 生成提交信息。提交前必须
 
 Planning 不得直接枚举、读取、搜索或检查工作区文件。所有仓库事实、现有实现、配置、测试、路径和同名计划检查必须委派 **File Explorer**；用户已经直接提供的内容可以使用。可通过文件检索回答的问题不得转问用户，File Explorer 无法确认时才向用户报告不确定性。
 
-Planning 只能委派 **File Explorer**，只能写入 `.ai-work-flow/plans/<planId>.md`。它必须逐个解决会影响计划的用户决定，每次提供推荐答案、理由和主要取舍；所有决定收敛后先总结共享理解和 `planId`，等待用户明确确认，之后才生成并保存最终计划。同名计划未经明确确认不得覆盖。
+Planning 只能委派 **File Explorer**，只能写入 `.ai-work-flow/plans/<planId>.md`。Codex 无法强制路径级写入限制时，该边界由策略和提示词约束；Claude Code 与 OpenCode 使用平台代理的路径权限阻断其他写入。
 
-Planning 收到编码、修改源码或实施请求时必须拒绝，并引导用户改用 **Orchestrator** 或实施代理。最终回复必须先报告计划路径，再输出与文件一致的完整计划内容。
+Planning 收到编码、修改源码或实施请求时必须拒绝，并引导用户改用 **Orchestrator** 或实施代理。
 
 <!-- ai-work-flow:section-end -->
 

@@ -69,6 +69,20 @@ function assertRegularFileIfPresent(path, label) {
   }
 }
 
+function assertStepPathIfPresent(path, type, label) {
+  try {
+    const entry = lstatSync(path);
+    if (entry.isSymbolicLink()) fail(`${label} must not be a symbolic link: ${path}`);
+    if (type === 'tree' ? !entry.isDirectory() : !entry.isFile()) {
+      fail(`${label} must be a ${type === 'tree' ? 'directory' : 'regular file'}: ${path}`);
+    }
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
 function backupPath(path, id, index) {
   return resolve(dirname(path), `.${id}.${index}.ai-work-flow-backup`);
 }
@@ -85,13 +99,25 @@ function validateSteps(steps, roots) {
   if (!Array.isArray(steps) || !steps.length) fail('Transaction must contain at least one step.');
   const targets = new Set();
   return steps.map((step, index) => {
-    if (!step || typeof step !== 'object' || !['write', 'delete'].includes(step.type)) fail(`Invalid transaction step at index ${index}.`);
+    if (!step || typeof step !== 'object' || !['write', 'delete', 'tree'].includes(step.type)) fail(`Invalid transaction step at index ${index}.`);
     if (step.type === 'write' && typeof step.contents !== 'string') fail(`Transaction write step ${index} must have string contents.`);
     const path = assertTrustedPath(step.path, roots);
-    assertRegularFileIfPresent(path, 'Transaction target');
+    assertStepPathIfPresent(path, step.type, 'Transaction target');
     if (targets.has(path)) fail(`Transaction contains duplicate target: ${path}`);
     targets.add(path);
-    return { type: step.type, path, contents: step.contents };
+    if (step.type !== 'tree') return { type: step.type, path, contents: step.contents };
+    if (!Array.isArray(step.entries)) fail(`Transaction tree step ${index} must contain entries.`);
+    const entryPaths = new Set();
+    const entries = step.entries.map((entry, entryIndex) => {
+      if (!entry || typeof entry.path !== 'string' || !entry.path || typeof entry.contents !== 'string') fail(`Transaction tree step ${index} entry ${entryIndex} is invalid.`);
+      const target = resolve(path, entry.path);
+      if (!isWithin(path, target) || target === path) fail(`Transaction tree step ${index} entry escapes its target: ${entry.path}`);
+      const relativePath = relative(path, target);
+      if (entryPaths.has(relativePath)) fail(`Transaction tree step ${index} contains duplicate entry: ${entry.path}`);
+      entryPaths.add(relativePath);
+      return { path: relativePath, contents: entry.contents };
+    });
+    return { type: step.type, path, entries };
   });
 }
 
@@ -102,15 +128,15 @@ function validateJournal(value, roots) {
   if (!Array.isArray(value.steps) || !value.steps.length) fail('Transaction journal must contain a complete plan.');
   const targets = new Set();
   const steps = value.steps.map((step, index) => {
-    if (!step || typeof step !== 'object' || Object.keys(step).some((key) => !['type', 'path', 'backup', 'existed'].includes(key)) || !['write', 'delete'].includes(step.type) || typeof step.existed !== 'boolean') fail(`Transaction journal step ${index} is invalid.`);
+    if (!step || typeof step !== 'object' || Object.keys(step).some((key) => !['type', 'path', 'backup', 'existed'].includes(key)) || !['write', 'delete', 'tree'].includes(step.type) || typeof step.existed !== 'boolean') fail(`Transaction journal step ${index} is invalid.`);
     const path = assertTrustedPath(step.path, roots);
-    assertRegularFileIfPresent(path, 'Transaction target');
+    assertStepPathIfPresent(path, step.type, 'Transaction target');
     if (targets.has(path)) fail(`Transaction journal contains duplicate target: ${path}`);
     targets.add(path);
     const backup = backupPath(path, value.id, index);
     if (step.backup !== backup) fail(`Transaction journal step ${index} has an invalid backup path.`);
     assertTrustedPath(backup, roots);
-    assertRegularFileIfPresent(backup, 'Transaction backup');
+    assertStepPathIfPresent(backup, step.type, 'Transaction backup');
     return { ...step, path, backup };
   });
   return { ...value, steps };
@@ -150,6 +176,10 @@ function releaseLock(path) {
   if (existsSync(path)) unlinkSync(path);
 }
 
+function removeStepPath(path, type) {
+  rmSync(path, { recursive: type === 'tree', force: true });
+}
+
 function recoverJournal(transactionPath, roots) {
   if (!existsSync(transactionPath)) return false;
   assertTrustedPath(transactionPath, roots);
@@ -158,17 +188,17 @@ function recoverJournal(transactionPath, roots) {
   if (journal.phase === 'committed') {
     for (const step of journal.steps) {
       assertTrustedPath(step.backup, roots);
-      if (existsSync(step.backup)) rmSync(step.backup, { force: true });
+      if (existsSync(step.backup)) removeStepPath(step.backup, step.type);
     }
   } else {
     for (const step of [...journal.steps].reverse()) {
       assertTrustedPath(step.path, roots);
       assertTrustedPath(step.backup, roots);
       if (existsSync(step.backup)) {
-        if (existsSync(step.path)) rmSync(step.path, { force: true });
+        if (existsSync(step.path)) removeStepPath(step.path, step.type);
         renameSync(step.backup, step.path);
       } else if (!step.existed && existsSync(step.path)) {
-        rmSync(step.path, { force: true });
+        removeStepPath(step.path, step.type);
       }
     }
   }
@@ -228,6 +258,15 @@ export function applyTransaction(steps, { transactionPath, roots, dryRun = false
         throw error;
       }
       if (step.type === 'write') writeAtomic(step.path, step.contents);
+      if (step.type === 'tree') {
+        mkdirSync(step.path, { recursive: true });
+        for (const entry of step.entries) {
+          const target = resolve(step.path, entry.path);
+          mkdirSync(dirname(target), { recursive: true });
+          writeFileSync(target, entry.contents);
+        }
+        fsyncPath(step.path);
+      }
       if (interruptAfterStep === index + 1) {
         const error = new Error(`Injected transaction interruption after step ${index + 1}`);
         error.transactionInterrupted = true;

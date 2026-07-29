@@ -121,14 +121,28 @@ function yamlValue(value) {
 }
 
 function claudeRender(role, settings, body, policy) {
-  return [
+  const frontmatter = [
     '---',
     `name: ${yamlValue(role.id)}`,
     `description: ${yamlValue(agentDescription(role))}`,
     `model: ${yamlValue(settings.model)}`,
     `effort: ${yamlValue(settings.effort)}`,
     `tools: ${yamlValue(role.tools.length ? role.tools : ['Task'])}`,
-    `permissionMode: ${yamlValue(claudePermission(policy))}`,
+    `permissionMode: ${yamlValue(claudePermission(policy))}`
+  ];
+  if (policy.write_scope === 'plans') {
+    frontmatter.push(`hooks: ${yamlValue({
+      PreToolUse: [{
+        matcher: 'Write',
+        hooks: [{
+          type: 'command',
+          command: 'node "${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/private/claude-plan-write-guard.mjs"'
+        }]
+      }]
+    })}`);
+  }
+  return [
+    ...frontmatter,
     '---',
     '',
     body,
@@ -151,14 +165,29 @@ export function opencodePermission(role, policy) {
     permission.grep = 'deny';
     permission.bash = 'deny';
   }
+  if (policy.write_scope === 'plans') {
+    permission.edit = {
+      '*': 'deny',
+      '.ai-work-flow/plans/*.md': 'allow'
+    };
+  }
   if (policy.delegation === 'allowed') permission.task = 'allow';
   if (policy.delegation === 'none') permission.task = 'deny';
   return permission;
 }
 
-export function evaluateOpenCodePermission(role, policy, key) {
+function wildcardMatch(pattern, value) {
+  const expression = pattern.replace(/[|\\{}()[\]^$+?.]/g, '\\$&').replaceAll('*', '.*');
+  return new RegExp(`^${expression}$`).test(value);
+}
+
+export function evaluateOpenCodePermission(role, policy, key, value = '*') {
   if (!OPENCODE_PERMISSION_KEYS.includes(key)) return 'deny';
-  return opencodePermission(role, policy)[key];
+  const permission = opencodePermission(role, policy)[key];
+  if (typeof permission === 'string') return permission;
+  let result = 'deny';
+  for (const [pattern, action] of Object.entries(permission)) if (wildcardMatch(pattern, value)) result = action;
+  return result;
 }
 
 function opencodeRender(role, settings, body, policy) {
@@ -301,6 +330,7 @@ function capabilityLevel(platform, role, capability, requested) {
     if (platform === 'opencode' && role.delegates.length === 0 && requested !== 'allowed' && !role.tools.includes('Task')) return 'enforced';
     return 'instruction-only';
   }
+  if (capability === 'write_scope' && requested === 'plans' && (platform === 'claude' || platform === 'opencode')) return 'enforced';
   if (capability === 'network' || capability === 'browser') return 'unsupported';
   if (platform === 'opencode' && capability === 'delegation') return 'enforced';
   return 'instruction-only';

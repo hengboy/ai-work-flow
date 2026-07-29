@@ -513,6 +513,28 @@ test('a failed install plan leaves planning migration, runtime, assets, and agen
   assert.ok(!existsSync(agentPath(paths, 'codex', 'planning', 'toml')));
 });
 
+test('install validates managed skill trees before committing planning migration or agents', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  delete configuration.roles.planning;
+  const before = `${JSON.stringify(configuration, null, 2)}\n`;
+  writeFileSync(defaultEnvironmentPath(paths), before);
+
+  const outside = resolve(paths.base, 'not-a-directory');
+  writeFileSync(outside, 'preserved\n');
+  mkdirSync(resolve(paths.home, '.codex'), { recursive: true });
+  symlinkSync(outside, resolve(paths.home, '.codex/skills'));
+
+  const result = install(paths);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /symbolic link|not a directory/);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+  assert.equal(readFileSync(outside, 'utf8'), 'preserved\n');
+  assert.ok(!existsSync(resolve(paths.config, 'ai-work-flow/agent-workflow.mjs')));
+  assert.ok(!existsSync(agentPath(paths, 'codex', 'planning', 'toml')));
+});
+
 test('routing is the sole source for shared discovery governance', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const source = readFileSync(resolve(agentAssets, 'bodies/orchestrator.md'), 'utf8');
@@ -722,6 +744,7 @@ test('planning is an opt-in primary that can only delegate repository discovery 
 
 test('planning prompt converges one decision at a time and emits the complete fixed plan template', () => {
   const body = readFileSync(resolve(agentAssets, 'bodies/planning.md'), 'utf8');
+  const prompt = loadAgentAssets().compiledBodies.get('planning');
   const expectedSections = [
     'Plan Metadata',
     'Problem Statement',
@@ -749,40 +772,44 @@ test('planning prompt converges one decision at a time and emits the complete fi
   assert.match(body, /推荐答案.*理由.*取舍/);
   assert.match(body, /目标、成功标准、受众、范围、约束、现状、接口、数据流、失败处理、测试、兼容、迁移和发布策略/);
   assert.match(body, /具体场景.*边界/);
-  assert.match(body, /仓库事实.*委派 \*\*File Explorer\*\*/);
-  assert.match(body, /可通过仓库检索回答的问题不得询问用户/);
+  assert.match(prompt, /仓库事实.*委派 \*\*File Explorer\*\*/);
+  assert.match(prompt, /可通过文件检索回答的问题不得转问用户/);
   assert.match(body, /用户明确确认.*共享理解/);
   assert.match(body, /\.ai-work-flow\/plans\/<planId>\.md/);
   assert.match(body, /同名.*完整更新.*更换 ID/);
   assert.match(body, /未经.*确认.*覆盖/);
   assert.match(body, /先报告计划文件路径/);
   assert.match(body, /输出完整计划/);
-  assert.match(body, /编码、修改源码或实施请求.*拒绝/);
-  assert.match(body, /Orchestrator/);
-  assert.doesNotMatch(body, /https?:\/\/|github\.com/i);
+  assert.match(prompt, /编码、修改源码或实施请求.*拒绝/);
+  assert.match(prompt, /Orchestrator/);
+  assert.doesNotMatch(prompt, /https?:\/\/|github\.com/i);
 });
 
 test('planning assets and generated prompts contain no outside planning references', () => {
   const restrictedTerms = [
-    ['M', 'att'].join(''),
     ['gr', 'ill-me'].join(''),
     ['gr', 'ill-with-docs'].join(''),
     ['writing-', 'great-skills'].join('')
   ];
   const paths = environment();
   assert.equal(install(paths).status, 0);
-  const sources = [
-    readFileSync(resolve(agentAssets, 'bodies/planning.md'), 'utf8'),
-    readFileSync(resolve(agentAssets, 'routing.md'), 'utf8'),
-    ...[['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']].map(([platform, extension]) => (
-      generatedBody(paths, platform, 'planning', extension)
-    ))
-  ];
+  const sourcePaths = repositoryOwnedArtifactPaths().filter((path) => (
+    path.startsWith('scripts/agent-assets/')
+    || path.startsWith('scripts/private/')
+    || path === 'README.md'
+    || path === '.ai-work-flow/index/feature-navigation.md'
+  ));
+  const sources = sourcePaths.map((path) => readFileSync(resolve(root, path), 'utf8'));
+  sources.push(readFileSync(resolve(root, 'test/agent-workflow.test.mjs'), 'utf8'));
+  for (const role of catalog.roles) {
+    for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+      sources.push(generatedBody(paths, platform, role.id, extension));
+    }
+  }
 
   for (const source of sources) {
-    const planningSource = source.replaceAll(executionSkill, '');
-    assert.doesNotMatch(planningSource, /https?:\/\/|github\.com/i);
-    for (const term of restrictedTerms) assert.ok(!planningSource.toLowerCase().includes(term.toLowerCase()), term);
+    assert.doesNotMatch(source, /https?:\/\/|github\.com/i);
+    for (const term of restrictedTerms) assert.ok(!source.toLowerCase().includes(term.toLowerCase()), term);
   }
 });
 
@@ -799,11 +826,48 @@ test('all platforms generate planning without changing the default primary', () 
   assert.equal(openCodePlanning.permission.glob, 'deny');
   assert.equal(openCodePlanning.permission.grep, 'deny');
   assert.equal(openCodePlanning.permission.bash, 'deny');
-  assert.equal(openCodePlanning.permission.edit, 'allow');
+  assert.deepEqual(openCodePlanning.permission.edit, {
+    '*': 'deny',
+    '.ai-work-flow/plans/*.md': 'allow'
+  });
   assert.equal(openCodePlanning.permission.task, 'allow');
+  const planning = catalog.roles.find((role) => role.id === 'planning');
+  assert.equal(evaluateOpenCodePermission(planning, policies[planning.policy], 'edit', '.ai-work-flow/plans/ready-plan.md'), 'allow');
+  assert.equal(evaluateOpenCodePermission(planning, policies[planning.policy], 'edit', 'src/app.js'), 'deny');
+
+  const claudePlanning = parseFrontmatter(readFileSync(agentPath(paths, 'claude', 'planning', 'md'), 'utf8'));
+  assert.deepEqual(claudePlanning.tools, ['Write', 'Task']);
+  assert.equal(claudePlanning.hooks.PreToolUse[0].matcher, 'Write');
+  assert.match(claudePlanning.hooks.PreToolUse[0].hooks[0].command, /claude-plan-write-guard\.mjs/);
+  assert.equal(capabilityMatrix('codex', planning, policies[planning.policy]).write_scope, 'instruction-only');
+  assert.equal(capabilityMatrix('claude', planning, policies[planning.policy]).write_scope, 'enforced');
+  assert.equal(capabilityMatrix('opencode', planning, policies[planning.policy]).write_scope, 'enforced');
 
   const openCode = JSON.parse(readFileSync(resolve(paths.config, 'opencode/opencode.json'), 'utf8'));
   assert.equal(openCode.default_agent, 'orchestrator');
+});
+
+test('Claude planning write guard allows one plan file and rejects every other path', () => {
+  const project = fixture();
+  const guard = resolve(root, 'scripts/private/claude-plan-write-guard.mjs');
+  const check = (filePath) => spawnSync(process.execPath, [guard], {
+    cwd: project,
+    encoding: 'utf8',
+    input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: filePath } })
+  });
+
+  assert.equal(check('.ai-work-flow/plans/ready-plan.md').status, 0);
+  for (const filePath of ['src/app.js', '.ai-work-flow/plans/not valid.md', '.ai-work-flow/plans/nested/plan.md', '../escape.md']) {
+    const result = check(filePath);
+    assert.equal(result.status, 2, filePath);
+    assert.match(result.stderr, /Planning may only write/);
+  }
+
+  const outside = resolve(project, 'outside');
+  mkdirSync(resolve(project, '.ai-work-flow'), { recursive: true });
+  mkdirSync(outside);
+  symlinkSync(outside, resolve(project, '.ai-work-flow/plans'));
+  assert.equal(check('.ai-work-flow/plans/ready-plan.md').status, 2);
 });
 
 test('OpenCode derives its default agent from the role catalog', () => {
@@ -959,7 +1023,14 @@ test('platform generation enforces the declared workspace access where supported
     } else {
       assert.match(codex, /sandbox_mode = "workspace-write"/, role.id);
       assert.equal(claude.permissionMode, 'acceptEdits', role.id);
-      assert.equal(openCode.permission.edit, role.tools.some((tool) => tool === 'Edit' || tool === 'Write') ? 'allow' : 'deny', role.id);
+      if (policy.write_scope === 'plans') {
+        assert.deepEqual(openCode.permission.edit, {
+          '*': 'deny',
+          '.ai-work-flow/plans/*.md': 'allow'
+        }, role.id);
+      } else {
+        assert.equal(openCode.permission.edit, role.tools.some((tool) => tool === 'Edit' || tool === 'Write') ? 'allow' : 'deny', role.id);
+      }
     }
     if (policy.filesystem === 'none') {
       assert.equal(openCode.permission.read, 'deny', role.id);
@@ -1557,6 +1628,31 @@ test('generation transaction rolls back failures and recovers interrupted writes
   ], { transactionPath: transaction, roots: [directory], interruptAfterRecord: 1 }), /Injected transaction interruption/);
   assert.equal(recoverTransaction(transaction, { roots: [directory] }), true);
   assert.equal(readFileSync(first, 'utf8'), 'before\n');
+});
+
+test('generation transaction restores a managed directory when a later step fails', () => {
+  const directory = fixture();
+  const managed = resolve(directory, 'managed-skill');
+  const transaction = resolve(directory, 'transaction.json');
+  mkdirSync(managed);
+  writeFileSync(resolve(managed, 'old.txt'), 'old\n');
+
+  assert.throws(() => applyTransaction([
+    {
+      type: 'tree',
+      path: managed,
+      entries: [
+        { path: 'nested/new.txt', contents: 'new\n' },
+        { path: 'SKILL.md', contents: 'managed\n' }
+      ]
+    },
+    { type: 'write', path: resolve(directory, 'later.txt'), contents: 'later\n' }
+  ], { transactionPath: transaction, roots: [directory], failAfterStep: 1 }), /Injected transaction failure/);
+
+  assert.equal(readFileSync(resolve(managed, 'old.txt'), 'utf8'), 'old\n');
+  assert.ok(!existsSync(resolve(managed, 'SKILL.md')));
+  assert.ok(!existsSync(resolve(directory, 'later.txt')));
+  assert.ok(!existsSync(transaction));
 });
 
 test('a forged transaction journal cannot write outside its trusted root', () => {
