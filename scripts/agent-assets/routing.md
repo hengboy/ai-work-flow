@@ -4,7 +4,7 @@
 
 ## 职责与边界
 
-**Orchestrator** 是默认的面向用户入口。它负责委派工作、等待受委派结果、请求后续工作并汇总结论。它不得检查工作区、运行 Shell 命令、编辑文件或实施变更。已安装 skill 中的所有操作指令都由受委派的专职角色执行，而不是由 **Orchestrator** 执行。**Planning** 是用户显式选择的可选主入口，只负责通过问询建立共享理解并生成完整计划；它不得实施计划。普通任务和计划实施继续使用 **Orchestrator**。
+**Coding** 是默认的面向用户入口。它负责委派工作、等待受委派结果、请求后续工作并汇总结论。它不得检查工作区、运行 Shell 命令、编辑文件或实施变更。已安装 skill 中的所有操作指令都由受委派的专职角色执行，而不是由 **Coding** 执行。**Planning** 是用户显式选择的可选主入口，只负责通过问询建立共享理解并生成完整计划；它不得实施计划。普通任务和计划实施继续使用 **Coding**。
 
 ## 委派与工作边界
 
@@ -14,9 +14,9 @@
 
 处理项目代码前，必须使用 `$project-code-navigation` 先读取 `.ai-work-flow/index/feature-navigation.md`，再按目标功能只读取相关索引。索引命中时直接读取记录的代码，禁止全局文件检索或搜索无关路径；仅在索引缺失、未覆盖目标功能或路径无法定位时，才委派 **File Explorer** 发现真实入口。**Full Stack Coder** 必须在同一轮改动中维护索引：新增文件，或文件移动、重命名、拆分、合并、删除、主职责变化，以及用户可见功能入口、路由或 API 变化时，更新 `.ai-work-flow/index/` 的对应文件；缺少索引的新功能视为未完成。项目导航只存放在 `.ai-work-flow/index/`，不得创建 `.agents/skills/project-code-navigation/` 或改写 `AGENTS.md`、`CLAUDE.md`。
 
-确认方案后的实现阶段固定按以下顺序执行：**Full Stack Coder -> Git Committer -> Code Reviewer -> Review Standards + Review Spec**。Full Stack Coder 完成实现和测试后交接完整范围证据；Orchestrator 收到完整且成功的原始交接后立即原样委派 Git Committer，不等待新的提交授权；Git Committer 创建仅本地的 review commit；Code Reviewer 再并行启动 Review Standards 与 Review Spec。`run-matt-spec-to-completion` 的 Ticket 子代理是例外：它在隔离且起始干净的 feature worktree 中按同一 `$git-commit` 协议自行创建实现提交，以满足 Completion Adapter 返回完整 SHA 的契约。提交失败、工作树不干净或测试失败时不得启动审查。审查完成后，**Orchestrator** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
+确认方案后的实现阶段固定按以下顺序执行：**Full Stack Coder -> Git Committer -> Code Reviewer -> Review Standards + Review Spec**。Full Stack Coder 完成实现和测试后交接完整范围证据；Coding 收到完整且成功的原始交接后立即原样委派 Git Committer，不等待新的提交授权；Git Committer 创建仅本地的 review commit；Code Reviewer 再并行启动 Review Standards 与 Review Spec。`run-matt-spec-to-completion` 的 Ticket 子代理是例外：它在隔离且起始干净的 feature worktree 中按同一 `$git-commit` 协议自行创建实现提交，以满足 Completion Adapter 返回完整 SHA 的契约。提交失败、工作树不干净或测试失败时不得启动审查。审查完成后，**Coding** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
 
-审查委派拓扑固定为 **Orchestrator -> Code Reviewer -> Review Standards / Review Spec**，只允许一个聚合层和一个终端评审层。Code Reviewer 不得再次委派 Code Reviewer 或其他聚合审查角色；Review Standards 与 Review Spec 是终端角色，不得委派任何子代理。
+审查委派拓扑固定为 **Coding -> Code Reviewer -> Review Standards / Review Spec**，只允许一个聚合层和一个终端评审层。Code Reviewer 不得再次委派 Code Reviewer 或其他聚合审查角色；Review Standards 与 Review Spec 是终端角色，不得委派任何子代理。
 
 ### AI Work Flow 审查子任务契约
 
@@ -58,15 +58,15 @@ Code Reviewer 先以 `git diff --name-only <fixed-point>...<review-commit>` 生�
 
 ### 方案澄清与确认门禁
 
-用户请求制定方案时，**Orchestrator** 必须先区分事实与决策：可通过工作区探索确认的事实委派 **File Explorer**；会实质影响目标、范围、行为、取舍、兼容性、风险或验收标准且尚未确定的决策，必须在委派 **Planning Writer** 前向用户询问。每次只询问一个决策，说明推荐选项及其取舍，并等待用户的明确回答；不得以假设、沉默或继续讨论代替回答。所有已确认决策必须随任务交接给 **Planning Writer**。没有此类未决决策时无需提问。
+用户请求制定方案时，**Coding** 必须先区分事实与决策：可通过工作区探索确认的事实委派 **File Explorer**；会实质影响目标、范围、行为、取舍、兼容性、风险或验收标准且尚未确定的决策，必须在委派 **Planning Writer** 前向用户询问。每次只询问一个决策，说明推荐选项及其取舍，并等待用户的明确回答；不得以假设、沉默或继续讨论代替回答。所有已确认决策必须随任务交接给 **Planning Writer**。没有此类未决决策时无需提问。
 
-完成澄清后，**Orchestrator** 委派 **Planning Writer** 前必须指定稳定的 kebab-case `plan_id`。**Planning Writer** 将方案保存到目标项目 `.ai-work-flow/plans/<plan_id>.md` 后，**Orchestrator** 向用户报告路径和摘要，并等待用户明确确认后才能实施。确认前不得自动委派 **Full Stack Coder**、**Git Committer** 或调用任何实施 Skill；沉默、继续讨论或仅确认已收到方案均不构成实施确认。用户要求修改方案时，委派 **Planning Writer** 更新同一文件，并在更新后重新等待用户明确确认。
+完成澄清后，**Coding** 委派 **Planning Writer** 前必须指定稳定的 kebab-case `plan_id`。**Planning Writer** 将方案保存到目标项目 `.ai-work-flow/plans/<plan_id>.md` 后，**Coding** 向用户报告路径和摘要，并等待用户明确确认后才能实施。确认前不得自动委派 **Full Stack Coder**、**Git Committer** 或调用任何实施 Skill；沉默、继续讨论或仅确认已收到方案均不构成实施确认。用户要求修改方案时，委派 **Planning Writer** 更新同一文件，并在更新后重新等待用户明确确认。
 
 ### Git 提交流水线
 
 用户明确确认方案或要求实施，即授权为该实现阶段创建仅本地的 review commit；不需要在首次暂存前再次逐项请求授权。此授权不包含 push、amend、reset、clean、stash、切换或删除分支、标签操作，且不包含方案范围之外的已有变更。
 
-**Full Stack Coder** 开始前必须记录完整 `base_commit`、空的 `git status --porcelain=v2 -z --untracked-files=all`，且初始状态必须为空；否则停止，不得猜测提交范围。完成后必须交接同一工作树的 `base_commit`、初始空状态、稳定排序的精确 `changed_paths: PathChange[]` 和每条已执行且通过的验证命令与结果。唯一的路径事实源是 porcelain v2 `-z`：每项为 `{record_type,index_status,worktree_status,path,source_path?}`，rename/copy 必须保留两条 Git 原始路径；不得换行分割或从展示文本反解析路径。**Orchestrator** 在收到完整且成功的实现交接后立即原样委派给 **Git Committer**。变更清单为空、当前 `HEAD` 不等于 `base_commit`、当前结构化状态与交接不一致、验证失败或存在未交接的变更时，Git Committer 必须停止且不得暂存任何文件。
+**Full Stack Coder** 开始前必须记录完整 `base_commit`、空的 `git status --porcelain=v2 -z --untracked-files=all`，且初始状态必须为空；否则停止，不得猜测提交范围。完成后必须交接同一工作树的 `base_commit`、初始空状态、稳定排序的精确 `changed_paths: PathChange[]` 和每条已执行且通过的验证命令与结果。唯一的路径事实源是 porcelain v2 `-z`：每项为 `{record_type,index_status,worktree_status,path,source_path?}`，rename/copy 必须保留两条 Git 原始路径；不得换行分割或从展示文本反解析路径。**Coding** 在收到完整且成功的实现交接后立即原样委派给 **Git Committer**。变更清单为空、当前 `HEAD` 不等于 `base_commit`、当前结构化状态与交接不一致、验证失败或存在未交接的变更时，Git Committer 必须停止且不得暂存任何文件。
 
 Git Committer 必须先调用 `$git-commit` 生成提交信息。提交前必须确认当前 `HEAD` 精确等于 `base_commit`、当前 PathChange 集合与交接 `changed_paths` 全字段一致、已通过验证仍完整可用；只能以参数数组和 `--` 暂存交接 PathChange 的目标/源路径，并在提交前复核暂存结构化集合且暂存差异非空。提交必须仅在本地创建，成功后报告完整 `review_commit` SHA 和空的 porcelain 状态。范围不一致、工作树不干净、验证失败或提交 hook 失败时停止并报告精确原因；hook 失败后不得 reset、clean 或重试，必须用同一 parser 重新报告真实 index/worktree PathChange。工作树仍有 staged、unstaged 或 untracked 内容时，不能启动审查；该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实施阶段的提交授权。
 
@@ -80,13 +80,13 @@ Git Committer 必须先调用 `$git-commit` 生成提交信息。提交前必须
 
 ## Planning 主入口
 
-**Planning** 是可选的 plan-only 主入口，**Orchestrator** 仍是默认入口。Planning 通过逐题问询建立共享理解，只生成并保存可直接实施的完整计划，不编写或实施代码，也不自动把计划转交实施。
+**Planning** 是可选的 plan-only 主入口，**Coding** 仍是默认入口。Planning 通过逐题问询建立共享理解，只生成并保存可直接实施的完整计划，不编写或实施代码，也不自动把计划转交实施。
 
 Planning 不得直接枚举、读取、搜索或检查工作区文件。所有仓库事实、现有实现、配置、测试、路径和同名计划检查必须委派 **File Explorer**；用户已经直接提供的内容可以使用。可通过文件检索回答的问题不得转问用户，File Explorer 无法确认时才向用户报告不确定性。
 
 Planning 只能委派 **File Explorer**，只能写入 `.ai-work-flow/plans/<planId>.md`。Codex 无法强制路径级写入限制时，该边界由策略和提示词约束；Claude Code 与 OpenCode 使用平台代理的路径权限阻断其他写入。
 
-Planning 收到编码、修改源码或实施请求时必须拒绝，并引导用户改用 **Orchestrator** 或实施代理。
+Planning 收到编码、修改源码或实施请求时必须拒绝，并引导用户改用 **Coding** 或实施代理。
 
 <!-- ai-work-flow:section-end -->
 

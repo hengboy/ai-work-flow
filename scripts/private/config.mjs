@@ -192,13 +192,16 @@ function readEnvironmentMarker(paths) {
   return name;
 }
 
-export function loadResolvedConfiguration({ paths, roles, platforms, environmentName = null, defaultConfiguration = null }) {
+export function loadResolvedConfiguration({ paths, roles, platforms, environmentName = null, defaultConfiguration = null, environmentConfigurations = null }) {
   assertSafeEnvironmentPaths(paths);
   const base = defaultConfiguration ?? readVerifiedEnvironment(paths.defaultEnvironment, paths);
   const markerName = readEnvironmentMarker(paths);
   const name = environmentName ?? markerName;
   if (name !== 'default') assertEnvironmentName(name);
-  const overlay = name === 'default' ? null : readVerifiedEnvironment(environmentPath(paths, name), paths);
+  const overlayPath = name === 'default' ? null : environmentPath(paths, name);
+  const overlay = overlayPath === null
+    ? null
+    : environmentConfigurations?.get(overlayPath) ?? readVerifiedEnvironment(overlayPath, paths);
   const validation = validateConfiguration({ base, overlay, roles, platforms });
   if (validation.errors.length) fail(validation.errors.join('\n'));
   return { ...validation, name, base, overlay };

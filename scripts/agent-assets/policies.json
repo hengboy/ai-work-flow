@@ -1,7 +1,7 @@
 {
   "version": 1,
   "policies": {
-    "orchestrate": { "filesystem": "none", "shell": "none", "network": "none", "browser": "none", "git": "none", "write_scope": "none", "delegation": "allowed" },
+    "coding": { "filesystem": "none", "shell": "none", "network": "none", "browser": "none", "git": "none", "write_scope": "none", "delegation": "allowed" },
     "discover": { "filesystem": "read", "shell": "read", "network": "none", "browser": "none", "git": "read", "write_scope": "none", "delegation": "none" },
     "research": { "filesystem": "none", "shell": "none", "network": "official", "browser": "none", "git": "none", "write_scope": "none", "delegation": "none" },
     "write-docs": { "filesystem": "write", "shell": "write", "network": "none", "browser": "none", "git": "read", "write_scope": "docs", "delegation": "none" },

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
 import { randomUUID } from "node:crypto";
-import { createExecutionOrchestrator } from "../skills/run-matt-spec-to-completion/lib/execution-orchestrator.mjs";
+import { createExecutionCoding } from "../skills/run-matt-spec-to-completion/lib/execution-coding.mjs";
 import { deriveSpecLocation } from "../skills/run-matt-spec-to-completion/lib/paths.mjs";
 import { findMainWorktree } from "../skills/run-matt-spec-to-completion/lib/worktree-lifecycle.mjs";
 import { blockTicket, beginReview, completeReviewFix, completeTicket, decideReview, recordReview, startTickets } from "../skills/run-matt-spec-to-completion/lib/checkpoint.mjs";
@@ -98,12 +98,12 @@ async function run(options) {
   const stateStore = createRuntimeStateStore();
   if (options.command === "prepare") {
     const args = { repository, branch: requireOption(options, "branch"), specPath: requireOption(options, "spec"), worktreePath: requireOption(options, "worktree") };
-    const orchestrator = createExecutionOrchestrator();
+    const coding = createExecutionCoding();
     const { featureSlug } = deriveSpecLocation(repository, args.specPath);
     const result = await withFeatureLock(repository, featureSlug, async () => (
       await gitSucceeds(repository, ["show-ref", "--verify", "--quiet", `refs/heads/${args.branch}`])
-        ? orchestrator.resume(args)
-        : orchestrator.initialize(args)
+        ? coding.resume(args)
+        : coding.initialize(args)
     ));
     return { command: "prepare", status: result.status ?? "initialized", feature_slug: result.executionPlan?.spec.feature_slug, checkpoint: result.checkpoint };
   }
@@ -201,7 +201,7 @@ async function run(options) {
   if (options.command === "integrate") {
     return withFeatureLock(repository, featureSlug, async () => {
       const integrity = await stateStore.integrity({ repository, featureSlug, executionWorktree: requireOption(options, "worktree") });
-      const integrated = await createExecutionOrchestrator().integrate({ repository, worktree, featureSlug, executionPlan: integrity.executionPlan, checkpoint: integrity.checkpoint, allowStash: options.allow_stash === "true" });
+      const integrated = await createExecutionCoding().integrate({ repository, worktree, featureSlug, executionPlan: integrity.executionPlan, checkpoint: integrity.checkpoint, allowStash: options.allow_stash === "true" });
       return { command: "integrate", status: integrated.status, checkpoint: integrated.checkpoint };
     });
   }
@@ -210,7 +210,7 @@ async function run(options) {
       const mainWorktree = await findMainWorktree(repository);
       if (!mainWorktree) throw new Error("Main worktree is unavailable");
       const integrity = await stateStore.integrity({ repository: mainWorktree, featureSlug, checkExecutionWorktree: false });
-      const cleaned = await createExecutionOrchestrator().completeMergedCleanup({ repository, mainWorktree, featureSlug, executionPlan: integrity.executionPlan, checkpoint: integrity.checkpoint });
+      const cleaned = await createExecutionCoding().completeMergedCleanup({ repository, mainWorktree, featureSlug, executionPlan: integrity.executionPlan, checkpoint: integrity.checkpoint });
       return { command: "cleanup", status: cleaned.status, checkpoint: cleaned.checkpoint };
     });
   }

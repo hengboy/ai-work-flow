@@ -85,7 +85,7 @@ async function sourceRefWithin(worktree, path) {
 }
 
 function executionModeFor() {
-  // New plans always delegate. The legacy orchestrator mode remains readable for recovery.
+  // New plans always delegate. Legacy execution plans are rejected by the schema.
   return "delegated";
 }
 
@@ -170,8 +170,8 @@ export function verifyExecutionPlan(executionPlan) {
   if (executionPlan.spec.ref !== sourceSpecPath(executionPlan.spec.feature_slug)) {
     throw new Error("Execution plan reference does not match its feature_slug");
   }
-  if (executionPlan.execution_mode === "orchestrator" && executionPlan.tickets.length !== 1) {
-    throw new Error("Orchestrator execution is only available for a single-ticket spec");
+  if (executionPlan.execution_mode === "coding" && executionPlan.tickets.length !== 1) {
+    throw new Error("Coding execution is only available for a single-ticket spec");
   }
   verifyTicketDependencies(executionPlan.tickets);
   const { revision, ...facts } = executionPlan;

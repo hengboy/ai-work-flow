@@ -13,7 +13,7 @@ import { applyTransaction, recoverTransaction } from './transaction.mjs';
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const SKILLS_ROOT = resolve(ROOT, 'skills');
 const PLATFORMS = new Set(['codex', 'claude', 'opencode']);
-const OBSOLETE_PRIMARY_AGENT_ID = ['coord', 'inator'].join('');
+const LEGACY_PRIMARY_AGENT_ID = 'orchestrator';
 
 function usage() {
   return `Usage:
@@ -133,8 +133,8 @@ function planCoreRuntime(assets, lifecycle, paths) {
   addSourceTree(plan, resolve(import.meta.dirname), resolve(paths.dir, 'private'));
   addSourceTree(plan, assets.root, resolve(paths.dir, 'agent-assets'));
   addSourceTree(plan, resolve(ROOT, 'execution-runtime'), resolve(paths.dir, 'execution-runtime'));
-  const obsoleteBody = resolve(paths.dir, 'agent-assets', 'bodies', `${OBSOLETE_PRIMARY_AGENT_ID}.md`);
-  if (existsSync(obsoleteBody)) plan.push({ type: 'delete', path: obsoleteBody });
+  const legacyBody = resolve(paths.dir, 'agent-assets', 'bodies', `${LEGACY_PRIMARY_AGENT_ID}.md`);
+  if (existsSync(legacyBody)) plan.push({ type: 'delete', path: legacyBody });
   return plan;
 }
 
@@ -175,11 +175,42 @@ function loadConfig(assets, allowDefaults = false, platforms = [...PLATFORMS]) {
   return { ...loadResolvedConfiguration({ paths, roles: assets.roles, platforms }), paths };
 }
 
+function planLegacyPrimaryRoleMigration(paths) {
+  if (!existsSync(paths.environments)) return { configurations: new Map(), writes: new Map() };
+  const files = readdirSync(paths.environments, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+    .map((entry) => entry.name)
+    .sort();
+  const configurations = new Map();
+  const writes = new Map();
+  for (const file of files) {
+    const name = file.slice(0, -'.json'.length);
+    const path = environmentPath(paths, name);
+    assertSafeEnvironmentPaths({ ...paths, defaultEnvironment: path });
+    const configuration = readJson(path);
+    if (!isPlainObject(configuration?.roles) || !Object.hasOwn(configuration.roles, LEGACY_PRIMARY_AGENT_ID)) continue;
+    if (Object.hasOwn(configuration.roles, 'coding')) {
+      fail(`Configuration contains both roles.${LEGACY_PRIMARY_AGENT_ID} and roles.coding: ${path}`);
+    }
+    const roles = Object.fromEntries(Object.entries(configuration.roles).map(([roleId, value]) => [
+      roleId === LEGACY_PRIMARY_AGENT_ID ? 'coding' : roleId,
+      value
+    ]));
+    const migrated = { ...configuration, roles };
+    configurations.set(path, migrated);
+    writes.set(path, `${JSON.stringify(migrated, null, 2)}\n`);
+  }
+  return { configurations, writes };
+}
+
 function loadInstallConfig(assets, platforms) {
   const paths = globalPaths();
   assertSafeEnvironmentPaths(paths);
   const exists = existsSync(paths.defaultEnvironment);
-  let base = exists ? readJson(paths.defaultEnvironment) : structuredClone(assets.defaults);
+  const migration = planLegacyPrimaryRoleMigration(paths);
+  let base = exists
+    ? migration.configurations.get(paths.defaultEnvironment) ?? readJson(paths.defaultEnvironment)
+    : structuredClone(assets.defaults);
   if (exists && isPlainObject(base?.roles) && !Object.hasOwn(base.roles, 'planning')) {
     base = structuredClone(base);
     base.roles.planning = structuredClone(assets.defaults.roles.planning);
@@ -188,12 +219,15 @@ function loadInstallConfig(assets, platforms) {
     paths,
     roles: assets.roles,
     platforms,
-    defaultConfiguration: base
+    defaultConfiguration: base,
+    environmentConfigurations: migration.configurations
   });
+  const environmentContents = new Map(migration.writes);
+  environmentContents.set(paths.defaultEnvironment, `${JSON.stringify(base, null, 2)}\n`);
   return {
     ...resolved,
     paths,
-    defaultContents: `${JSON.stringify(base, null, 2)}\n`
+    environmentContents
   };
 }
 
@@ -446,7 +480,7 @@ export function runCli(argv) {
       ...planSupplementalRuntime(paths),
       ...planCoreRuntime(assets, lifecycle, paths)
     ];
-    addWriteStep(plan, paths.defaultEnvironment, installation.defaultContents);
+    for (const [path, contents] of installation.environmentContents) addWriteStep(plan, path, contents);
     addWriteStep(plan, paths.routing, assets.routing);
     plan.push(...generation.plan);
     const manifest = managedPlatformsStep(paths, options.platforms);

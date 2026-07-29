@@ -104,6 +104,12 @@ function defaultEnvironmentPath(paths) {
   return resolve(paths.config, 'ai-work-flow/environments/default.json');
 }
 
+function environmentPath(paths, name) {
+  return resolve(paths.config, 'ai-work-flow/environments', `${name}.json`);
+}
+
+const legacyPrimaryAgentId = 'orchestrator';
+
 function agentPath(paths, platform, name, extension) {
   const base = platform === 'codex'
     ? resolve(paths.home, '.codex')
@@ -176,7 +182,7 @@ test('managed prompt documents use the Markdown layout', () => {
 
 test('role bodies derive their common structure and reply sections from the catalog', () => {
   const replyLabels = {
-    orchestrator: ['协调状态', '已委派', '已收到', '结论', '阻塞'],
+    coding: ['协调状态', '已委派', '已收到', '结论', '阻塞'],
     planning: ['状态', '计划文件', '计划内容', '阻塞'],
     'file-explorer': ['发现', '代码地图', '交接', '阻塞'],
     researcher: ['发现', '来源', '交接', '阻塞'],
@@ -252,7 +258,7 @@ test('installation and platform generation retain the managed prompt content', (
 
 test('routing defines automatic scoped local commits after confirmed implementation', () => {
   const gitCommitter = readFileSync(resolve(agentAssets, 'bodies/git-committer.md'), 'utf8');
-  const orchestrator = readFileSync(resolve(agentAssets, 'bodies/orchestrator.md'), 'utf8');
+  const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const compiled = loadAgentAssets().compiledBodies;
   const paths = environment();
@@ -273,8 +279,8 @@ test('routing defines automatic scoped local commits after confirmed implementat
   assert.match(gitCommitter, /受管治理内容在生成时从 routing section 编译/);
   assert.match(gitCommitter, /\$git-commit/);
   assert.match(compiled.get('git-committer'), /不得再次向用户请求/);
-  assert.match(orchestrator, /受管治理内容在生成时从 routing section 编译/);
-  for (const body of [gitCommitter, orchestrator]) {
+  assert.match(coding, /受管治理内容在生成时从 routing section 编译/);
+  for (const body of [gitCommitter, coding]) {
     assert.doesNotMatch(body, /首次范围检查/);
     assert.doesNotMatch(body, /一次性白名单/);
   }
@@ -283,9 +289,9 @@ test('routing defines automatic scoped local commits after confirmed implementat
 
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generatedCommitter = readFileSync(agentPath(paths, platform, 'git-committer', extension), 'utf8');
-    const generatedOrchestrator = readFileSync(agentPath(paths, platform, 'orchestrator', extension), 'utf8');
+    const generatedCoding = readFileSync(agentPath(paths, platform, 'coding', extension), 'utf8');
     assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedCommitter) : generatedBody(paths, platform, 'git-committer', extension), /不得再次向用户请求/, platform);
-    assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedOrchestrator) : generatedBody(paths, platform, 'orchestrator', extension), /确认方案后的实现阶段固定/, platform);
+    assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedCoding) : generatedBody(paths, platform, 'coding', extension), /确认方案后的实现阶段固定/, platform);
   }
 });
 
@@ -330,7 +336,7 @@ test('implementation commits precede the committed-range dual-axis review', () =
   assert.doesNotMatch(skill, /\*\*提交结果：\*\*/);
 });
 
-test('generated orchestrators preserve the automatic commit and fixed-range review contract', () => {
+test('generated codings preserve the automatic commit and fixed-range review contract', () => {
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -345,7 +351,7 @@ test('generated orchestrators preserve the automatic commit and fixed-range revi
     /只重试未完成分片并保持相同 SHA/
   ];
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
-    const generated = generatedBody(paths, platform, 'orchestrator', extension);
+    const generated = generatedBody(paths, platform, 'coding', extension);
     for (const assertion of assertions) assert.match(generated, assertion, platform);
   }
 });
@@ -394,7 +400,7 @@ test('root installer installs every skill globally and generates every platform 
   assert.equal(readdirSync(resolve(paths.home, '.codex/agents')).filter((name) => name.endsWith('.toml')).length, catalog.roles.length);
   assert.equal(readdirSync(resolve(paths.home, '.claude/agents')).filter((name) => name.endsWith('.md')).length, catalog.roles.length);
   assert.equal(readdirSync(resolve(paths.config, 'opencode/agents')).filter((name) => name.endsWith('.md')).length, catalog.roles.length);
-  assert.match(generatedBody(paths, 'codex', 'orchestrator', 'toml'), /ai-work-flow:routing-digest=/);
+  assert.match(generatedBody(paths, 'codex', 'coding', 'toml'), /ai-work-flow:routing-digest=/);
 });
 
 test('init creates the default environment without creating a legacy config', () => {
@@ -409,7 +415,7 @@ test('init creates the default environment without creating a legacy config', ()
 test('init ignores a legacy config when creating the default environment', () => {
   const paths = environment();
   const legacyConfig = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
-  legacyConfig.roles.orchestrator.codex.model = 'legacy-config-model';
+  legacyConfig.roles.coding.codex.model = 'legacy-config-model';
   legacyConfig.version = 0;
   mkdirSync(resolve(paths.config, 'ai-work-flow'), { recursive: true });
   writeFileSync(legacyConfigPath(paths), `${JSON.stringify(legacyConfig, null, 2)}\n`);
@@ -418,7 +424,7 @@ test('init ignores a legacy config when creating the default environment', () =>
   assert.equal(result.status, 0, result.stderr);
 
   const defaultConfig = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
-  assert.notEqual(defaultConfig.roles.orchestrator.codex.model, 'legacy-config-model');
+  assert.notEqual(defaultConfig.roles.coding.codex.model, 'legacy-config-model');
   assert.equal(readFileSync(legacyConfigPath(paths), 'utf8'), `${JSON.stringify(legacyConfig, null, 2)}\n`);
   const validation = run(paths, 'validate');
   assert.equal(validation.status, 0, validation.stderr);
@@ -443,14 +449,14 @@ test('install migrates only a completely missing planning role and preserves spa
   const paths = environment();
   assert.equal(run(paths, 'init').status, 0);
   const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
-  configuration.roles.orchestrator.codex.model = 'preserved-model';
+  configuration.roles.coding.codex.model = 'preserved-model';
   delete configuration.roles.planning;
   writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(configuration, null, 2)}\n`);
 
   const overlayPath = resolve(paths.config, 'ai-work-flow/environments/sparse.json');
   const overlay = `${JSON.stringify({
     version: 1,
-    roles: { orchestrator: { codex: { reasoning: 'low' } } }
+    roles: { coding: { codex: { reasoning: 'low' } } }
   }, null, 2)}\n`;
   writeFileSync(overlayPath, overlay);
   writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'sparse');
@@ -460,10 +466,73 @@ test('install migrates only a completely missing planning role and preserves spa
   const migrated = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
   const defaults = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
   assert.deepEqual(migrated.roles.planning, defaults.roles.planning);
-  assert.equal(migrated.roles.orchestrator.codex.model, 'preserved-model');
+  assert.equal(migrated.roles.coding.codex.model, 'preserved-model');
   assert.equal(readFileSync(overlayPath, 'utf8'), overlay);
   assert.match(readFileSync(agentPath(paths, 'codex', 'planning', 'toml'), 'utf8'), /model = "gpt-5\.6-sol"/);
-  assert.match(readFileSync(agentPath(paths, 'codex', 'orchestrator', 'toml'), 'utf8'), /model = "preserved-model"/);
+  assert.match(readFileSync(agentPath(paths, 'codex', 'coding', 'toml'), 'utf8'), /model = "preserved-model"/);
+});
+
+test('install atomically migrates the legacy primary role in default and sparse environments', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const defaultConfig = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  defaultConfig.roles[legacyPrimaryAgentId] = defaultConfig.roles.coding;
+  delete defaultConfig.roles.coding;
+  defaultConfig.roles[legacyPrimaryAgentId].codex.model = 'migrated-default-model';
+  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(defaultConfig, null, 2)}\n`);
+
+  const sparseOverlay = {
+    version: 1,
+    roles: {
+      [legacyPrimaryAgentId]: { codex: { reasoning: 'low' } },
+      'full-stack-coder': { opencode: { model: null, options: { temperature: 0 } } }
+    }
+  };
+  const overlayPath = environmentPath(paths, 'sparse');
+  writeFileSync(overlayPath, `${JSON.stringify(sparseOverlay, null, 2)}\n`);
+
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  const migratedDefault = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  const migratedOverlay = JSON.parse(readFileSync(overlayPath, 'utf8'));
+  assert.equal(migratedDefault.roles.coding.codex.model, 'migrated-default-model');
+  assert.equal(migratedDefault.roles[legacyPrimaryAgentId], undefined);
+  assert.deepEqual(migratedOverlay.roles.coding, sparseOverlay.roles[legacyPrimaryAgentId]);
+  assert.deepEqual(migratedOverlay.roles['full-stack-coder'], sparseOverlay.roles['full-stack-coder']);
+  assert.equal(migratedOverlay.roles[legacyPrimaryAgentId], undefined);
+});
+
+test('install rejects conflicting primary role configuration without writing any file', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const config = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  config.roles[legacyPrimaryAgentId] = structuredClone(config.roles.coding);
+  const before = `${JSON.stringify(config, null, 2)}\n`;
+  writeFileSync(defaultEnvironmentPath(paths), before);
+  const sentinel = resolve(paths.config, 'ai-work-flow/agent-workflow.mjs');
+  mkdirSync(resolve(sentinel, '..'), { recursive: true });
+  writeFileSync(sentinel, 'preserved runtime\n');
+
+  const result = install(paths);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /contains both roles\.orchestrator and roles\.coding/);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+  assert.equal(readFileSync(sentinel, 'utf8'), 'preserved runtime\n');
+});
+
+test('install dry-run plans legacy primary migration without modifying configuration', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const config = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  config.roles[legacyPrimaryAgentId] = config.roles.coding;
+  delete config.roles.coding;
+  const before = `${JSON.stringify(config, null, 2)}\n`;
+  writeFileSync(defaultEnvironmentPath(paths), before);
+
+  const result = run(paths, '--dry-run');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+  assert.ok(!existsSync(agentPath(paths, 'codex', 'coding', 'toml')));
 });
 
 test('install rejects an existing partial planning role without modifying global files', () => {
@@ -473,7 +542,7 @@ test('install rejects an existing partial planning role without modifying global
   delete configuration.roles.planning.claude;
   const before = `${JSON.stringify(configuration, null, 2)}\n`;
   writeFileSync(defaultEnvironmentPath(paths), before);
-  const sentinel = agentPath(paths, 'codex', 'orchestrator', 'toml');
+  const sentinel = agentPath(paths, 'codex', 'coding', 'toml');
   mkdirSync(resolve(sentinel, '..'), { recursive: true });
   writeFileSync(sentinel, 'preserved agent\n');
 
@@ -537,7 +606,7 @@ test('install validates managed skill trees before committing planning migration
 
 test('routing is the sole source for shared discovery governance', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
-  const source = readFileSync(resolve(agentAssets, 'bodies/orchestrator.md'), 'utf8');
+  const source = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -550,12 +619,12 @@ test('routing is the sole source for shared discovery governance', () => {
     assert.match(content, /不得将发现阶段.*后续执行角色/);
   }
   assert.equal(
-    readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/orchestrator.md'), 'utf8'),
+    readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/coding.md'), 'utf8'),
     source
   );
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
-    const generated = generatedBody(paths, platform, 'orchestrator', extension);
+    const generated = generatedBody(paths, platform, 'coding', extension);
     assert.match(generated, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/, platform);
     assert.match(generated, /ai-work-flow:routing-digest=/, platform);
   }
@@ -625,14 +694,14 @@ test('review roles declare one non-recursive aggregation hop', () => {
   const reviewer = readFileSync(resolve(agentAssets, 'bodies/code-reviewer.md'), 'utf8');
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
 
-  assert.match(byId.get('code-reviewer').description, /仅由 Orchestrator 调用/);
+  assert.match(byId.get('code-reviewer').description, /仅由 Coding 调用/);
   assert.match(byId.get('code-reviewer').description, /双轴审查编排/);
   for (const role of ['review-standards', 'review-spec']) {
     assert.match(byId.get(role).description, /仅由 Code Reviewer 调用/);
     assert.match(byId.get(role).description, /终端/);
   }
   assert.match(reviewer, /不得将整个双轴审查任务再次委派给另一个 Code Reviewer 或其他聚合审查角色/);
-  assert.match(routing, /Orchestrator -> Code Reviewer -> Review Standards \/ Review Spec/);
+  assert.match(routing, /Coding -> Code Reviewer -> Review Standards \/ Review Spec/);
   assert.match(routing, /Code Reviewer 不得再次委派 Code Reviewer/);
   assert.match(routing, /Review Standards 与 Review Spec 是终端角色/);
 });
@@ -684,7 +753,7 @@ test('planning workflow resolves material user decisions before writing a plan a
   assert.equal(result.status, 0, result.stderr);
 
   const planningWriter = readFileSync(resolve(agentAssets, 'bodies/planning-writer.md'), 'utf8');
-  const orchestrator = readFileSync(resolve(agentAssets, 'bodies/orchestrator.md'), 'utf8');
+  const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
 
   assert.match(planningWriter, /\.ai-work-flow\/plans\/<plan_id>\.md/);
@@ -710,22 +779,22 @@ test('planning workflow resolves material user decisions before writing a plan a
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generatedPlanningWriter = readFileSync(agentPath(paths, platform, 'planning-writer', extension), 'utf8');
-    const generatedOrchestrator = generatedBody(paths, platform, 'orchestrator', extension);
+    const generatedCoding = generatedBody(paths, platform, 'coding', extension);
     assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedPlanningWriter) : generatedBody(paths, platform, 'planning-writer', extension), /\.ai-work-flow\/plans\/<plan_id>\.md/, platform);
     assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedPlanningWriter) : generatedBody(paths, platform, 'planning-writer', extension), /不得实施/, platform);
-    assert.match(generatedOrchestrator, /每次只询问一个决策/, platform);
+    assert.match(generatedCoding, /每次只询问一个决策/, platform);
   }
-  assert.match(orchestrator, /受管治理内容在生成时从 routing section 编译/);
-  assert.doesNotMatch(orchestrator, /每次只询问一个决策/);
+  assert.match(coding, /受管治理内容在生成时从 routing section 编译/);
+  assert.doesNotMatch(coding, /每次只询问一个决策/);
 });
 
 test('planning is an opt-in primary that can only delegate repository discovery and write plans', () => {
   const planning = catalog.roles.find((role) => role.id === 'planning');
-  const orchestrator = catalog.roles.find((role) => role.id === 'orchestrator');
+  const coding = catalog.roles.find((role) => role.id === 'coding');
   assert.equal(planning.kind, 'primary');
   assert.equal(planning.default_primary, undefined);
-  assert.equal(orchestrator.kind, 'primary');
-  assert.equal(orchestrator.default_primary, true);
+  assert.equal(coding.kind, 'primary');
+  assert.equal(coding.default_primary, true);
   assert.deepEqual(planning.delegates, ['file-explorer']);
   assert.deepEqual(planning.tools, ['Write', 'Task']);
   assert.deepEqual(policies[planning.policy], {
@@ -781,7 +850,7 @@ test('planning prompt converges one decision at a time and emits the complete fi
   assert.match(body, /先报告计划文件路径/);
   assert.match(body, /输出完整计划/);
   assert.match(prompt, /编码、修改源码或实施请求.*拒绝/);
-  assert.match(prompt, /Orchestrator/);
+  assert.match(prompt, /Coding/);
   assert.doesNotMatch(prompt, /https?:\/\/|github\.com/i);
 });
 
@@ -856,7 +925,7 @@ test('all platforms generate planning without changing the default primary', () 
   assert.equal(openCodePlanningWriter.permission.edit, 'allow');
 
   const openCode = JSON.parse(readFileSync(resolve(paths.config, 'opencode/opencode.json'), 'utf8'));
-  assert.equal(openCode.default_agent, 'orchestrator');
+  assert.equal(openCode.default_agent, 'coding');
 });
 
 test('Claude planning write guard allows one plan file and rejects every other path', () => {
@@ -887,7 +956,7 @@ test('OpenCode derives its default agent from the role catalog', () => {
   assert.equal(install(paths).status, 0);
   const rolePath = resolve(paths.config, 'ai-work-flow/agent-assets/roles.json');
   const installedCatalog = JSON.parse(readFileSync(rolePath, 'utf8'));
-  installedCatalog.roles.find((role) => role.id === 'orchestrator').default_primary = false;
+  installedCatalog.roles.find((role) => role.id === 'coding').default_primary = false;
   installedCatalog.roles.find((role) => role.id === 'planning').default_primary = true;
   writeFileSync(rolePath, `${JSON.stringify(installedCatalog, null, 2)}\n`);
 
@@ -899,7 +968,7 @@ test('OpenCode derives its default agent from the role catalog', () => {
 
 test('code review approval satisfies the final independent review', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
-  const orchestrator = readFileSync(resolve(agentAssets, 'bodies/orchestrator.md'), 'utf8');
+  const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -922,11 +991,11 @@ test('code review approval satisfies the final independent review', () => {
     for (const assertion of assertions) assert.match(content, assertion);
   }
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
-    const generated = generatedBody(paths, platform, 'orchestrator', extension);
+    const generated = generatedBody(paths, platform, 'coding', extension);
     assert.match(generated, /同一稳定差异的已完成审查不得再次委派/, platform);
   }
-  assert.match(orchestrator, /受管治理内容在生成时从 routing section 编译/);
-  assert.doesNotMatch(orchestrator, /同一稳定差异的已完成审查不得再次委派/);
+  assert.match(coding, /受管治理内容在生成时从 routing section 编译/);
+  assert.doesNotMatch(coding, /同一稳定差异的已完成审查不得再次委派/);
 });
 
 test('review agents preserve the AI Work Flow committed-range contract', () => {
@@ -978,7 +1047,7 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
 
 test('routing is the sole source for retry and stop-lock governance', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
-  const source = readFileSync(resolve(agentAssets, 'bodies/orchestrator.md'), 'utf8');
+  const source = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -1006,12 +1075,12 @@ test('routing is the sole source for retry and stop-lock governance', () => {
     for (const assertion of assertions) assert.match(content, assertion);
   }
   assert.equal(
-    readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/orchestrator.md'), 'utf8'),
+    readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/coding.md'), 'utf8'),
     source
   );
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
-    const generated = generatedBody(paths, platform, 'orchestrator', extension);
+    const generated = generatedBody(paths, platform, 'coding', extension);
     assert.match(generated, /最多重试 2 次，共 3 次/, platform);
   }
   assert.match(source, /受管治理内容在生成时从 routing section 编译/);
@@ -1071,8 +1140,8 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
   assert.match(routing, /`delegation` 只表示角色能否发起委派/);
   assert.match(routing, /`delegation_targets` 单独表示目标角色白名单是否由平台强制/);
   assert.match(routing, /不得用 Task 开关代替目标白名单的能力证据/);
-  assert.match(result.stdout, /CAPABILITY codex\/orchestrator:.*filesystem=unsupported.*delegation=instruction-only/);
-  assert.match(result.stderr, /WARNING codex\/orchestrator:.*delegation=instruction-only/);
+  assert.match(result.stdout, /CAPABILITY codex\/coding:.*filesystem=unsupported.*delegation=instruction-only/);
+  assert.match(result.stderr, /WARNING codex\/coding:.*delegation=instruction-only/);
   const status = run(paths, 'env', 'status');
   assert.equal(status.status, 0, status.stderr);
   assert.match(status.stdout, /CAPABILITY opencode\/full-stack-coder:.*filesystem=enforced/);
@@ -1087,9 +1156,9 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
       }
     }
   }
-  assert.equal(capabilityMatrix('codex', catalog.roles[0], policies.orchestrate).delegation, 'instruction-only');
-  assert.equal(capabilityMatrix('codex', catalog.roles[0], policies.orchestrate).delegation_targets, 'instruction-only');
-  assert.equal(capabilityMatrix('codex', catalog.roles[0], policies.orchestrate).filesystem, 'unsupported');
+  assert.equal(capabilityMatrix('codex', catalog.roles[0], policies.coding).delegation, 'instruction-only');
+  assert.equal(capabilityMatrix('codex', catalog.roles[0], policies.coding).delegation_targets, 'instruction-only');
+  assert.equal(capabilityMatrix('codex', catalog.roles[0], policies.coding).filesystem, 'unsupported');
   const openCodeReviewer = capabilityMatrix('opencode', catalog.roles.find((role) => role.id === 'code-reviewer'), policies.review);
   assert.equal(openCodeReviewer.delegation, 'enforced');
   assert.equal(openCodeReviewer.delegation_targets, 'instruction-only');
@@ -1100,11 +1169,11 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
   assert.equal(openCodeLeaf.delegation_targets, 'enforced');
   assert.equal(openCodeLeaf.shell, 'instruction-only');
 
-  const generated = agentPath(paths, 'codex', 'orchestrator', 'toml');
+  const generated = agentPath(paths, 'codex', 'coding', 'toml');
   const before = readFileSync(generated, 'utf8');
   const policyPath = resolve(paths.config, 'ai-work-flow/agent-assets/policies.json');
   const invalid = JSON.parse(readFileSync(policyPath, 'utf8'));
-  invalid.policies.orchestrate.unknown_capability = 'none';
+  invalid.policies.coding.unknown_capability = 'none';
   writeFileSync(policyPath, JSON.stringify(invalid));
   const failed = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
   assert.equal(failed.status, 1);
@@ -1178,7 +1247,7 @@ test('generation preserves unrelated global configuration and agents', () => {
   assert.equal(opencode.agent.explore, undefined);
   assert.deepEqual(opencode.agent.custom, {});
   assert.equal(opencode.subagent_depth, 4);
-  assert.equal(opencode.default_agent, 'orchestrator');
+  assert.equal(opencode.default_agent, 'coding');
 });
 
 test('OpenCode uses subagent frontmatter for configured model constraints', () => {
@@ -1214,22 +1283,26 @@ test('OpenCode generation removes the obsolete subagent model guard', () => {
   assert.ok(!existsSync(pluginPath));
 });
 
-test('generation deletes obsolete primary agents on every platform', () => {
+test('generation removes only managed legacy primary agents on every platform', () => {
   const paths = environment();
   assert.equal(run(paths, 'init').status, 0);
-  const obsoletePrimaryAgentId = ['coord', 'inator'].join('');
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
-    const path = agentPath(paths, platform, obsoletePrimaryAgentId, extension);
+    const path = agentPath(paths, platform, legacyPrimaryAgentId, extension);
     mkdirSync(resolve(path, '..'), { recursive: true });
-    writeFileSync(path, 'obsolete agent\n');
+    writeFileSync(path, '<!-- ai-work-flow:routing-digest=legacy -->\nmanaged agent\n');
   }
 
   const result = run(paths, 'generate');
   assert.equal(result.status, 0, result.stderr);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
-    assert.ok(!existsSync(agentPath(paths, platform, obsoletePrimaryAgentId, extension)));
-    assert.ok(existsSync(agentPath(paths, platform, 'orchestrator', extension)));
+    assert.ok(!existsSync(agentPath(paths, platform, legacyPrimaryAgentId, extension)));
+    assert.ok(existsSync(agentPath(paths, platform, 'coding', extension)));
   }
+
+  const custom = agentPath(paths, 'codex', legacyPrimaryAgentId, 'toml');
+  writeFileSync(custom, 'custom agent\n');
+  assert.equal(run(paths, 'generate', '--platform', 'codex').status, 0);
+  assert.equal(readFileSync(custom, 'utf8'), 'custom agent\n');
 });
 
 test('Codex generation transaction removes only the legacy reviewer file and rejects symbolic links', () => {
@@ -1282,13 +1355,12 @@ test('Codex generation transaction removes only the legacy reviewer file and rej
 test('installation removes obsolete managed templates and execution modules', () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
-  const obsoletePrimaryAgentId = ['coord', 'inator'].join('');
-  const obsoleteBody = resolve(paths.config, 'ai-work-flow/agent-assets/bodies', `${obsoletePrimaryAgentId}.md`);
+  const obsoleteBody = resolve(paths.config, 'ai-work-flow/agent-assets/bodies', `${legacyPrimaryAgentId}.md`);
   writeFileSync(obsoleteBody, 'obsolete body\n');
   for (const platformRoot of [resolve(paths.home, '.codex'), resolve(paths.home, '.claude'), resolve(paths.config, 'opencode')]) {
     const skillRoot = resolve(platformRoot, 'skills/run-matt-spec-to-completion');
-    writeFileSync(resolve(skillRoot, 'lib', `execution-${obsoletePrimaryAgentId}.mjs`), 'obsolete module\n');
-    writeFileSync(resolve(skillRoot, 'test', `execution-${obsoletePrimaryAgentId}.test.mjs`), 'obsolete test\n');
+    writeFileSync(resolve(skillRoot, 'lib', `execution-${legacyPrimaryAgentId}.mjs`), 'obsolete module\n');
+    writeFileSync(resolve(skillRoot, 'test', `execution-${legacyPrimaryAgentId}.test.mjs`), 'obsolete test\n');
   }
 
   const result = install(paths);
@@ -1296,9 +1368,9 @@ test('installation removes obsolete managed templates and execution modules', ()
   assert.ok(!existsSync(obsoleteBody));
   for (const platformRoot of [resolve(paths.home, '.codex'), resolve(paths.home, '.claude'), resolve(paths.config, 'opencode')]) {
     const skillRoot = resolve(platformRoot, 'skills/run-matt-spec-to-completion');
-    assert.ok(!existsSync(resolve(skillRoot, 'lib', `execution-${obsoletePrimaryAgentId}.mjs`)));
-    assert.ok(!existsSync(resolve(skillRoot, 'test', `execution-${obsoletePrimaryAgentId}.test.mjs`)));
-    assert.ok(existsSync(resolve(skillRoot, 'lib/execution-orchestrator.mjs')));
+    assert.ok(!existsSync(resolve(skillRoot, 'lib', `execution-${legacyPrimaryAgentId}.mjs`)));
+    assert.ok(!existsSync(resolve(skillRoot, 'test', `execution-${legacyPrimaryAgentId}.test.mjs`)));
+    assert.ok(existsSync(resolve(skillRoot, 'lib/execution-coding.mjs')));
   }
 });
 
@@ -1342,11 +1414,11 @@ test('invalid configuration and dry runs never write global files', () => {
   assert.equal(extended.status, 0, extended.stderr);
   const dryGenerate = run(paths, 'generate', '--dry-run');
   assert.equal(dryGenerate.status, 0, dryGenerate.stderr);
-  assert.ok(!existsSync(agentPath(paths, 'codex', 'orchestrator', 'toml')));
+  assert.ok(!existsSync(agentPath(paths, 'codex', 'coding', 'toml')));
 
   const opencodeOnly = run(paths, 'generate', '--platform', 'opencode');
   assert.equal(opencodeOnly.status, 0, opencodeOnly.stderr);
-  assert.ok(existsSync(agentPath(paths, 'opencode', 'orchestrator', 'md')));
+  assert.ok(existsSync(agentPath(paths, 'opencode', 'coding', 'md')));
   assert.ok(!existsSync(resolve(paths.home, '.codex')));
 });
 
@@ -1391,7 +1463,7 @@ test('sparse environments are safely merged and platform generation validates on
   assert.equal(install(paths).status, 0);
   const config = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
   const completeConfig = structuredClone(config);
-  const codexAgent = agentPath(paths, 'codex', 'orchestrator', 'toml');
+  const codexAgent = agentPath(paths, 'codex', 'coding', 'toml');
   const codexBefore = readFileSync(codexAgent, 'utf8');
   delete config.roles.researcher.claude;
   writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config)}\n`);
@@ -1401,29 +1473,29 @@ test('sparse environments are safely merged and platform generation validates on
   assert.equal(readFileSync(codexAgent, 'utf8'), codexBefore);
 
   Object.assign(config, completeConfig);
-  config.roles.orchestrator.claude.model = 'unsafe\npermissionMode: acceptEdits';
+  config.roles.coding.claude.model = 'unsafe\npermissionMode: acceptEdits';
   writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config)}\n`);
   const rejected = run(paths, 'generate', '--platform', 'claude');
   assert.equal(rejected.status, 1);
   assert.match(rejected.stderr, /control character/);
 
-  config.roles.orchestrator.claude.model = 'safe-claude';
-  config.roles.orchestrator.claude.effort = 'invalid';
+  config.roles.coding.claude.model = 'safe-claude';
+  config.roles.coding.claude.effort = 'invalid';
   writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config)}\n`);
   const codexOnly = run(paths, 'generate', '--platform', 'codex');
   assert.equal(codexOnly.status, 0, codexOnly.stderr);
   assert.equal(run(paths, 'validate').status, 1);
 
-  config.roles.orchestrator.claude.effort = 'medium';
+  config.roles.coding.claude.effort = 'medium';
   writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config)}\n`);
   writeFileSync(resolve(paths.config, 'ai-work-flow/environments/sparse.json'), JSON.stringify({
     version: 1,
-    roles: { orchestrator: { codex: { reasoning: 'low' }, opencode: { model: null, options: { temperature: 0 } } } }
+    roles: { coding: { codex: { reasoning: 'low' }, opencode: { model: null, options: { temperature: 0 } } } }
   }));
   assert.equal(run(paths, 'env', 'use', 'sparse').status, 0);
   assert.equal(run(paths, 'generate', '--platform', 'codex,opencode').status, 0);
-  const codex = readFileSync(agentPath(paths, 'codex', 'orchestrator', 'toml'), 'utf8');
-  const openCode = readFileSync(agentPath(paths, 'opencode', 'orchestrator', 'md'), 'utf8');
+  const codex = readFileSync(agentPath(paths, 'codex', 'coding', 'toml'), 'utf8');
+  const openCode = readFileSync(agentPath(paths, 'opencode', 'coding', 'md'), 'utf8');
   assert.match(codex, /model_reasoning_effort = "low"/);
   assert.doesNotMatch(openCode, /^model:/m);
   assert.match(openCode, /options: \{"temperature":0\}/);
@@ -1433,35 +1505,36 @@ test('validation and generation reject the obsolete primary role configuration',
   const paths = environment();
   assert.equal(run(paths, 'init').status, 0);
   const config = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
-  const obsoletePrimaryAgentId = ['coord', 'inator'].join('');
-  config.roles[obsoletePrimaryAgentId] = config.roles.orchestrator;
-  delete config.roles.orchestrator;
-  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(config, null, 2)}\n`);
+  config.roles[legacyPrimaryAgentId] = config.roles.coding;
+  delete config.roles.coding;
+  const before = `${JSON.stringify(config, null, 2)}\n`;
+  writeFileSync(defaultEnvironmentPath(paths), before);
 
   const validation = run(paths, 'validate');
   assert.equal(validation.status, 1);
-  assert.match(validation.stderr, new RegExp(`Unknown role: ${obsoletePrimaryAgentId}`));
-  assert.match(validation.stderr, /Missing configuration for role: orchestrator/);
+  assert.match(validation.stderr, new RegExp(`Unknown role: ${legacyPrimaryAgentId}`));
+  assert.match(validation.stderr, /Missing configuration for role: coding/);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
   const generation = run(paths, 'generate');
   assert.equal(generation.status, 1);
-  assert.match(generation.stderr, new RegExp(`Unknown role: ${obsoletePrimaryAgentId}`));
-  assert.ok(!existsSync(agentPath(paths, 'codex', 'orchestrator', 'toml')));
+  assert.match(generation.stderr, new RegExp(`Unknown role: ${legacyPrimaryAgentId}`));
+  assert.ok(!existsSync(agentPath(paths, 'codex', 'coding', 'toml')));
 });
 
 test('the installed asset catalog rejects inconsistent templates before generation writes', () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
-  const generated = agentPath(paths, 'codex', 'orchestrator', 'toml');
+  const generated = agentPath(paths, 'codex', 'coding', 'toml');
   writeFileSync(generated, 'preserved agent\n');
-  writeFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/orchestrator.md'), '');
+  writeFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/coding.md'), '');
 
   const validation = runInstalledWorkflow(paths, 'validate');
   assert.equal(validation.status, 1);
-  assert.match(validation.stderr, /Agent asset catalog is invalid:[\s\S]*Body template is empty: orchestrator\.md/);
+  assert.match(validation.stderr, /Agent asset catalog is invalid:[\s\S]*Body template is empty: coding\.md/);
 
   const generation = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
   assert.equal(generation.status, 1);
-  assert.match(generation.stderr, /Body template is empty: orchestrator\.md/);
+  assert.match(generation.stderr, /Body template is empty: coding\.md/);
   assert.equal(readFileSync(generated, 'utf8'), 'preserved agent\n');
 });
 
@@ -1477,9 +1550,9 @@ test('a platform planning failure prevents writes for every requested platform',
   const result = run(paths, 'generate');
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Cannot safely update workflow marker/);
-  assert.ok(!existsSync(agentPath(paths, 'codex', 'orchestrator', 'toml')));
-  assert.ok(!existsSync(agentPath(paths, 'claude', 'orchestrator', 'md')));
-  assert.ok(!existsSync(agentPath(paths, 'opencode', 'orchestrator', 'md')));
+  assert.ok(!existsSync(agentPath(paths, 'codex', 'coding', 'toml')));
+  assert.ok(!existsSync(agentPath(paths, 'claude', 'coding', 'md')));
+  assert.ok(!existsSync(agentPath(paths, 'opencode', 'coding', 'md')));
 });
 
 test('install completes lifecycle and platform planning before any global write', () => {
@@ -1521,7 +1594,7 @@ test('environment merge overrides only specified roles from base config', () => 
   const envConfig = {
     version: 1,
     roles: {
-      orchestrator: {
+      coding: {
         codex: { model: 'env-codex', reasoning: 'low' },
         claude: { model: 'env-claude', effort: 'low' },
         opencode: { model: 'env-opencode', variant: 'low', options: {} }
@@ -1534,9 +1607,9 @@ test('environment merge overrides only specified roles from base config', () => 
   const result = run(paths, 'generate', '--platform', 'codex');
   assert.equal(result.status, 0, result.stderr);
   
-  const orchestratorAgent = readFileSync(agentPath(paths, 'codex', 'orchestrator', 'toml'), 'utf8');
-  assert.match(orchestratorAgent, /model = "env-codex"/);
-  assert.match(orchestratorAgent, /model_reasoning_effort = "low"/);
+  const codingAgent = readFileSync(agentPath(paths, 'codex', 'coding', 'toml'), 'utf8');
+  assert.match(codingAgent, /model = "env-codex"/);
+  assert.match(codingAgent, /model_reasoning_effort = "low"/);
   
   const fileExplorerAgent = readFileSync(agentPath(paths, 'codex', 'file-explorer', 'toml'), 'utf8');
   const baseConfig = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
@@ -1718,13 +1791,13 @@ test('environment activation commits generated agents, marker, and managed platf
   assert.equal(install(paths).status, 0);
   writeFileSync(resolve(paths.config, 'ai-work-flow/environments/staging.json'), JSON.stringify({
     version: 1,
-    roles: { orchestrator: { codex: { reasoning: 'low' } } }
+    roles: { coding: { codex: { reasoning: 'low' } } }
   }));
   const result = run(paths, 'env', 'use', 'staging');
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'utf8'), 'staging');
   assert.deepEqual(JSON.parse(readFileSync(resolve(paths.config, 'ai-work-flow/.managed-platforms.json'), 'utf8')).platforms, ['claude', 'codex', 'opencode']);
-  assert.match(readFileSync(agentPath(paths, 'codex', 'orchestrator', 'toml'), 'utf8'), /model_reasoning_effort = "low"/);
+  assert.match(readFileSync(agentPath(paths, 'codex', 'coding', 'toml'), 'utf8'), /model_reasoning_effort = "low"/);
   assert.ok(!existsSync(resolve(paths.config, 'ai-work-flow/.generation-transaction.json')));
 });
 
@@ -1768,20 +1841,20 @@ function copiedAssets() {
 
 test('catalog compiles referenced routing sections and rejects invalid governance relationships', () => {
   const assets = loadAgentAssets();
-  const compiled = assets.compiledBodies.get('orchestrator');
+  const compiled = assets.compiledBodies.get('coding');
   assert.match(compiled, /ai-work-flow:routing-digest=/);
-  assert.match(compiled, /\*\*Orchestrator\*\* 是默认的面向用户入口/);
-  assert.doesNotMatch(assets.bodies.get('orchestrator'), /\*\*Orchestrator\*\* 是默认的面向用户入口/);
+  assert.match(compiled, /\*\*Coding\*\* 是默认的面向用户入口/);
+  assert.doesNotMatch(assets.bodies.get('coding'), /\*\*Coding\*\* 是默认的面向用户入口/);
 
   for (const mutate of [
     (catalog) => { for (const role of catalog.roles) role.kind = 'subagent'; },
-    (catalog) => { delete catalog.roles.find((role) => role.id === 'orchestrator').default_primary; },
+    (catalog) => { delete catalog.roles.find((role) => role.id === 'coding').default_primary; },
     (catalog) => { catalog.roles.find((role) => role.id === 'planning').default_primary = true; },
     (catalog) => {
-      catalog.roles.find((role) => role.id === 'orchestrator').default_primary = false;
+      catalog.roles.find((role) => role.id === 'coding').default_primary = false;
       catalog.roles.find((role) => role.id === 'file-explorer').default_primary = true;
     },
-    (catalog) => { catalog.roles.find((role) => role.id === 'file-explorer').delegates = ['orchestrator']; },
+    (catalog) => { catalog.roles.find((role) => role.id === 'file-explorer').delegates = ['coding']; },
     (catalog) => { catalog.roles.find((role) => role.id === 'researcher').tools = ['Read']; },
     (catalog) => { catalog.roles[0].routing_sections = ['missing-section']; }
   ]) {
@@ -1805,7 +1878,7 @@ test('catalog rejects declared delegation paths deeper than the platform limit',
 
   assert.throws(
     () => loadAgentAssets(root),
-    /Role delegation exceeds max depth 2: orchestrator -> code-reviewer -> review-standards -> review-spec/
+    /Role delegation exceeds max depth 2: coding -> code-reviewer -> review-standards -> review-spec/
   );
 });
 
@@ -1819,7 +1892,7 @@ test('three platform renderers round-trip dynamic metadata and compiled bodies',
   const paths = environment();
   assert.equal(run(paths, 'init').status, 0);
   const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
-  const role = configuration.roles.orchestrator;
+  const role = configuration.roles.coding;
   role.codex.model = 'provider/quo"te:中文';
   role.claude.model = 'provider/quo"te:中文';
   role.opencode = {
@@ -1832,25 +1905,25 @@ test('three platform renderers round-trip dynamic metadata and compiled bodies',
   assert.equal(result.status, 0, result.stderr);
 
   const assets = loadAgentAssets();
-  const compiled = assets.compiledBodies.get('orchestrator');
-  const codex = parseToml(readFileSync(agentPath(paths, 'codex', 'orchestrator', 'toml'), 'utf8'));
-  const claude = parseFrontmatter(readFileSync(agentPath(paths, 'claude', 'orchestrator', 'md'), 'utf8'));
-  const opencode = parseFrontmatter(readFileSync(agentPath(paths, 'opencode', 'orchestrator', 'md'), 'utf8'));
+  const compiled = assets.compiledBodies.get('coding');
+  const codex = parseToml(readFileSync(agentPath(paths, 'codex', 'coding', 'toml'), 'utf8'));
+  const claude = parseFrontmatter(readFileSync(agentPath(paths, 'claude', 'coding', 'md'), 'utf8'));
+  const opencode = parseFrontmatter(readFileSync(agentPath(paths, 'opencode', 'coding', 'md'), 'utf8'));
   assert.equal(codex.model, role.codex.model);
   assert.equal(codex.developer_instructions, compiled);
   assert.equal(claude.model, role.claude.model);
   assert.equal(opencode.model, role.opencode.model);
   assert.deepEqual(opencode.options, role.opencode.options);
-  assert.equal(readFileSync(agentPath(paths, 'codex', 'orchestrator', 'toml'), 'utf8').includes('\\\\n'), false);
+  assert.equal(readFileSync(agentPath(paths, 'codex', 'coding', 'toml'), 'utf8').includes('\\\\n'), false);
 });
 
 test('OpenCode permissions deny every ungranted independent key', () => {
   const byId = new Map(catalog.roles.map((role) => [role.id, role]));
-  const orchestrator = byId.get('orchestrator');
+  const coding = byId.get('coding');
   const reviewer = byId.get('review-standards');
-  assert.equal(evaluateOpenCodePermission(orchestrator, policies[orchestrator.policy], 'task'), 'allow');
+  assert.equal(evaluateOpenCodePermission(coding, policies[coding.policy], 'task'), 'allow');
   for (const key of ['read', 'edit', 'glob', 'grep', 'bash', 'skill', 'webfetch', 'websearch', 'question', 'external_directory', 'unknown']) {
-    assert.equal(evaluateOpenCodePermission(orchestrator, policies[orchestrator.policy], key), 'deny', key);
+    assert.equal(evaluateOpenCodePermission(coding, policies[coding.policy], key), 'deny', key);
   }
   assert.equal(evaluateOpenCodePermission(reviewer, policies[reviewer.policy], 'task'), 'deny');
   assert.equal(evaluateOpenCodePermission(reviewer, policies[reviewer.policy], 'bash'), 'allow');
@@ -1876,12 +1949,12 @@ test('environment status compares planned bytes, detects drift and shadows, and 
   assert.equal(install(paths).status, 0);
   const initial = run(paths, 'env', 'status');
   assert.equal(initial.status, 0, initial.stderr);
-  assert.match(initial.stdout, /STATUS codex\/orchestrator: in-sync reasons=none planned_digest=[0-9a-f]{64} installed_digest=[0-9a-f]{64}/);
+  assert.match(initial.stdout, /STATUS codex\/coding: in-sync reasons=none planned_digest=[0-9a-f]{64} installed_digest=[0-9a-f]{64}/);
 
   writeFileSync(agentPath(paths, 'claude', 'researcher', 'md'), 'tampered\n');
   rmSync(agentPath(paths, 'opencode', 'researcher', 'md'));
   mkdirSync(resolve(paths.project, '.codex/agents'), { recursive: true });
-  writeFileSync(resolve(paths.project, '.codex/agents/orchestrator.toml'), 'project shadow\n');
+  writeFileSync(resolve(paths.project, '.codex/agents/coding.toml'), 'project shadow\n');
   mkdirSync(resolve(paths.project, '.opencode'), { recursive: true });
   writeFileSync(resolve(paths.project, '.opencode/opencode.json'), JSON.stringify({
     agent: { 'full-stack-coder': { token: 'fixture-secret-must-not-leak' } }
@@ -1899,7 +1972,7 @@ test('environment status compares planned bytes, detects drift and shadows, and 
   assert.equal(status.status, 0, status.stderr);
   assert.match(status.stdout, /STATUS claude\/researcher: drifted reasons=bytes/);
   assert.match(status.stdout, /STATUS opencode\/researcher: shadowed reasons=manifest,missing,user-inline-agent/);
-  assert.match(status.stdout, /STATUS codex\/orchestrator: shadowed reasons=marker,config,project-agent/);
+  assert.match(status.stdout, /STATUS codex\/coding: shadowed reasons=marker,config,project-agent/);
   assert.match(status.stdout, /STATUS codex\/code-reviewer: shadowed reasons=marker,config,legacy-reviewer-agent/);
   assert.match(status.stdout, /STATUS opencode\/full-stack-coder: shadowed reasons=manifest,project-inline-agent/);
   assert.match(status.stdout, /STATUS opencode\/researcher: shadowed reasons=manifest,missing,user-inline-agent/);

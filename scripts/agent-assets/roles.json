@@ -2,12 +2,12 @@
   "version": 1,
   "roles": [
     {
-      "id": "orchestrator",
-      "name": "Orchestrator",
+      "id": "coding",
+      "name": "Coding",
       "description": "负责路由工作、等待受委派结果并汇总结论。",
       "kind": "primary",
       "default_primary": true,
-      "policy": "orchestrate",
+      "policy": "coding",
       "delegates": [
         "file-explorer",
         "researcher",
@@ -93,7 +93,7 @@
     {
       "id": "code-reviewer",
       "name": "Code Reviewer",
-      "description": "仅由 Orchestrator 调用的双轴审查编排角色，负责在差异稳定后调度标准审查和规范审查。",
+      "description": "仅由 Coding 调用的双轴审查编排角色，负责在差异稳定后调度标准审查和规范审查。",
       "kind": "subagent",
       "policy": "review",
       "delegates": ["review-standards", "review-spec"],

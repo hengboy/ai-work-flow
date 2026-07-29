@@ -114,7 +114,7 @@ function verifiedExecutionPlan(executionPlan, integrity) {
   return integrity.executionPlan;
 }
 
-export function createExecutionOrchestrator({ adapter, directExecutor, materialize = materializeSpec, now = toShanghaiTimestamp } = {}) {
+export function createExecutionCoding({ adapter, directExecutor, materialize = materializeSpec, now = toShanghaiTimestamp } = {}) {
   const stash = createPreMergeStash({ git, gitSucceeds, gitOutput, gitSucceedsWithInput });
   const stateStore = createRuntimeStateStore();
 
@@ -235,7 +235,7 @@ export function createExecutionOrchestrator({ adapter, directExecutor, materiali
         try {
           rawResult = await directExecutor({ task: ticket, worktree, executionPlan, readTicket });
         } catch (error) {
-          rawResult = { ticket_id: ticket.id, status: "blocked", commits: [], checks: [], changed_paths: [], summary: "Orchestrator execution failed", error: error instanceof Error ? error.message : String(error) };
+          rawResult = { ticket_id: ticket.id, status: "blocked", commits: [], checks: [], changed_paths: [], summary: "Coding execution failed", error: error instanceof Error ? error.message : String(error) };
         }
       } else throw new Error("Completion adapter is required to execute a ticket");
       const result = assertCompletionResult(rawResult);

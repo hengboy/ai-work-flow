@@ -7,7 +7,7 @@ import { MAX_AGENT_DEPTH } from './asset-catalog.mjs';
 import { applyTransaction } from './transaction.mjs';
 import { updateManagedMarker } from './managed-content.mjs';
 
-const OBSOLETE_PRIMARY_AGENT_ID = ['coord', 'inator'].join('');
+const LEGACY_PRIMARY_AGENT_ID = 'orchestrator';
 const LEGACY_CODE_REVIEWER_AGENT = 'AGENT.md';
 const OPENCODE_PERMISSION_KEYS = ['read', 'edit', 'glob', 'grep', 'bash', 'task', 'skill', 'webfetch', 'websearch', 'question', 'external_directory'];
 const OPENCODE_TOOL_KEYS = {
@@ -236,6 +236,15 @@ function agentFile(paths, platform, roleId) {
   return resolve(paths[strategy.agentDir], 'agents', `${roleId}.${strategy.extension}`);
 }
 
+function isManagedLegacyAgent(path) {
+  try {
+    return lstatSync(path).isFile() && readFileSync(path, 'utf8').includes('<!-- ai-work-flow:routing-digest=');
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
 function projectShadow(platform, roleId) {
   const extension = strategies[platform].extension;
   const agentPath = resolve(process.cwd(), `.${platform}`, 'agents', `${roleId}.${extension}`);
@@ -388,8 +397,8 @@ export function planGeneration({ platform, paths, roles, policies, config, bodie
     if (!policy) fail(`Missing policy for role: ${role.id}`);
     addWrite(resolve(agentDir, `${role.id}.${strategy.extension}`), strategy.render(role, config.roles[role.id][platform], bodies.get(role.id), policy));
   }
-  const obsoleteAgentPath = resolve(agentDir, `${OBSOLETE_PRIMARY_AGENT_ID}.${strategy.extension}`);
-  if (existsSync(obsoleteAgentPath)) plan.push({ type: 'delete', path: obsoleteAgentPath });
+  const legacyAgentPath = resolve(agentDir, `${LEGACY_PRIMARY_AGENT_ID}.${strategy.extension}`);
+  if (isManagedLegacyAgent(legacyAgentPath)) plan.push({ type: 'delete', path: legacyAgentPath });
 
   if (platform === 'codex') {
     const legacyReviewerPath = resolve(agentDir, 'code-reviewer', LEGACY_CODE_REVIEWER_AGENT);
