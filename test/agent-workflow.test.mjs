@@ -490,6 +490,7 @@ test('install atomically migrates the legacy primary role in default and sparse 
   };
   const overlayPath = environmentPath(paths, 'sparse');
   writeFileSync(overlayPath, `${JSON.stringify(sparseOverlay, null, 2)}\n`);
+  writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'sparse');
 
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -500,24 +501,37 @@ test('install atomically migrates the legacy primary role in default and sparse 
   assert.deepEqual(migratedOverlay.roles.coding, sparseOverlay.roles[legacyPrimaryAgentId]);
   assert.deepEqual(migratedOverlay.roles['full-stack-coder'], sparseOverlay.roles['full-stack-coder']);
   assert.equal(migratedOverlay.roles[legacyPrimaryAgentId], undefined);
+  assert.match(readFileSync(agentPath(paths, 'codex', 'coding', 'toml'), 'utf8'), /model_reasoning_effort = "low"/);
 });
 
-test('install rejects conflicting primary role configuration without writing any file', () => {
+test('install rejects a conflicting inactive environment without writing any file', () => {
   const paths = environment();
   assert.equal(run(paths, 'init').status, 0);
   const config = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
-  config.roles[legacyPrimaryAgentId] = structuredClone(config.roles.coding);
-  const before = `${JSON.stringify(config, null, 2)}\n`;
-  writeFileSync(defaultEnvironmentPath(paths), before);
+  const overlay = {
+    version: 1,
+    roles: {
+      coding: { codex: { reasoning: 'low' } },
+      [legacyPrimaryAgentId]: { codex: { reasoning: 'high' } }
+    }
+  };
+  const overlayPath = environmentPath(paths, 'inactive');
+  const before = `${JSON.stringify(overlay, null, 2)}\n`;
+  writeFileSync(overlayPath, before);
   const sentinel = resolve(paths.config, 'ai-work-flow/agent-workflow.mjs');
+  const agent = agentPath(paths, 'codex', 'coding', 'toml');
   mkdirSync(resolve(sentinel, '..'), { recursive: true });
   writeFileSync(sentinel, 'preserved runtime\n');
+  mkdirSync(resolve(agent, '..'), { recursive: true });
+  writeFileSync(agent, 'preserved agent\n');
 
   const result = install(paths);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /contains both roles\.orchestrator and roles\.coding/);
-  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+  assert.equal(JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8')).roles[legacyPrimaryAgentId], undefined);
+  assert.equal(readFileSync(overlayPath, 'utf8'), before);
   assert.equal(readFileSync(sentinel, 'utf8'), 'preserved runtime\n');
+  assert.equal(readFileSync(agent, 'utf8'), 'preserved agent\n');
 });
 
 test('install dry-run plans legacy primary migration without modifying configuration', () => {
