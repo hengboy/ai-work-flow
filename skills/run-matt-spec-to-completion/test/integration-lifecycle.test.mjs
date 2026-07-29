@@ -9,7 +9,7 @@ test("merges the verified execution commit instead of the mutable branch referen
   const checkpoint = {
     status: "integrating",
     branch: "feat/example",
-    review: { review_commit: reviewGateHead },
+    review: { fixed_point: reviewGateHead, review_commit: reviewGateHead },
     integration: { status: "pending" },
   };
   let mergeArgs;
@@ -17,7 +17,7 @@ test("merges the verified execution commit instead of the mutable branch referen
     requireIntegrity: async () => ({ checkpoint, executionPlan: { revision: "revision" } }),
     findMainWorktree: async () => "/main",
     worktreeIsClean: async () => true,
-    currentHead: async () => "b".repeat(40),
+    currentHead: async (worktree) => worktree === "/execution" ? reviewGateHead : reviewGateHead,
     unexpectedMainWorktreeChanges: async () => [],
     git: async (_worktree, args) => {
       if (args[0] === "merge") {
@@ -33,7 +33,7 @@ test("merges the verified execution commit instead of the mutable branch referen
     lifecycle.integrate({ repository: "/repo", worktree: "/execution", featureSlug: "example", executionPlan: { revision: "revision" } }),
     /stop after observing merge target/,
   );
-  assert.deepEqual(mergeArgs, ["merge", "--no-edit", reviewGateHead]);
+  assert.deepEqual(mergeArgs, ["merge", "--ff-only", reviewGateHead]);
 });
 
 test("blocks unrelated main changes without explicit stash authorization before any mutation", async () => {

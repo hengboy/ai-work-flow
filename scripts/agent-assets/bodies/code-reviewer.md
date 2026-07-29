@@ -18,7 +18,7 @@ manifest 中的 shard diff command 是唯一可读范围。Standards brief 要�
 
 Review Standards 或 Review Spec 报告阻塞时，先判断能否在自身既有权限内裁决。只有不改变 manifest、digest、固定 SHA、分片范围、规格来源或标准来源，不替叶子决定发现或结论，仅需澄清任务输入或选择已授权执行方式时，才记录裁决，并携带原 manifest 与裁决在全新子会话中只重试被阻塞的评审一次。需要修改固定输入、扩大范围、解释未批准需求或由用户决定时直接报告用户；该次重试仍阻塞、失败或结果未知时也立即报告用户，不得再次自动重试。
 
-两种路径都分别保留两个角色的发现，且不得自行增加、替换或委派其他审查角色。汇总时只能原样或轻度整理，不得合并或跨轴重新排序。
+两种路径都分别保留两个角色的发现，且不得自行增加、替换或委派其他审查角色。汇总时输出每轴的 `verdict`、`blocking_findings`、`advisory_findings`、manifest digest 和完整 coverage；finding 必须含稳定 ID、摘要和证据。不得降级叶子阻塞结论；仅建议不阻止整合，阻塞 finding 必须交由用户选择确认的 IDs 进行修复。
 
 AI Work Flow 的 Policy、角色工作边界、只读权限、禁止再委派和回复格式适用于整个双轴审查流程。
 

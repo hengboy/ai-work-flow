@@ -1,5 +1,5 @@
-import { access, lstat, mkdir } from "node:fs/promises";
-import { dirname, relative, resolve, sep } from "node:path";
+import { access, appendFile, lstat, mkdir, readFile, realpath } from "node:fs/promises";
+import { basename, dirname, relative, resolve, sep } from "node:path";
 import { git, gitSucceeds, repoRoot } from "./git.mjs";
 
 function parseWorktrees(output) {
@@ -26,6 +26,22 @@ export async function findExecutionWorktree(repository, branch) {
 
 export async function worktreeIsClean(worktree) {
   return (await git(worktree, ["status", "--porcelain"])) === "";
+}
+
+export async function ensureWorktreeExclude(repository) {
+  const root = await repoRoot(repository);
+  const commonDir = await git(root, ["rev-parse", "--git-common-dir"]);
+  const exclude = resolve(root, commonDir, "info", "exclude");
+  let contents = "";
+  try {
+    contents = await readFile(exclude, "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (!contents.split("\n").includes("/.worktrees/")) {
+    await mkdir(dirname(exclude), { recursive: true });
+    await appendFile(exclude, `${contents && !contents.endsWith("\n") ? "\n" : ""}/.worktrees/\n`);
+  }
 }
 
 async function assertNoSymlinkPathChain(root, target) {
@@ -75,8 +91,21 @@ async function verifyCreatedWorktree(root, target, branch) {
 
 export async function ensureExecutionWorktree({ repository, branch, path }) {
   const root = await repoRoot(repository);
+  await ensureWorktreeExclude(root);
   const existing = await findExecutionWorktree(root, branch);
-  if (existing) return { worktree: existing, created: false };
+  if (existing) {
+    const existingPath = await realpath(existing);
+    let requestedPath;
+    try {
+      requestedPath = await realpath(path);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      requestedPath = resolve(await realpath(dirname(path)), basename(path));
+    }
+    if (existingPath !== requestedPath) throw new Error(`Execution branch ${branch} is already attached to a different worktree: ${existing}`);
+    await verifyCreatedWorktree(root, requestedPath, branch);
+    return { worktree: existing, created: false };
+  }
   if (!await gitSucceeds(root, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])) {
     throw new Error(`Execution branch ${branch} does not exist`);
   }
@@ -88,6 +117,7 @@ export async function ensureExecutionWorktree({ repository, branch, path }) {
 
 export async function createExecutionWorktree({ repository, branch, baseline, path }) {
   const root = await repoRoot(repository);
+  await ensureWorktreeExclude(root);
   const target = await prepareNewWorktreePath(repository, root, path);
   await git(root, ["worktree", "add", "-b", branch, target, baseline]);
   await verifyCreatedWorktree(root, target, branch);

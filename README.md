@@ -120,9 +120,11 @@ node scripts/install.mjs env use <name>
 runtime="${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/execution-runtime/execution-cli.mjs"
 node "$runtime" claim --repository <repo> --feature <feature> --worktree <repo>/.worktrees/<feature>
 node "$runtime" record-ticket --repository <repo> --feature <feature> --worktree <repo>/.worktrees/<feature> < handoff.json
+node "$runtime" sync-main --repository <repo> --feature <feature> --worktree <repo>/.worktrees/<feature>
+node "$runtime" begin-review --repository <repo> --feature <feature> --worktree <repo>/.worktrees/<feature> < review-manifest-input.json
 ```
 
-`record-ticket` 只接受 JSON Handoff envelope：它包含 `role_id`、`status`、`summary`、`artifacts`、`checks` 和类型化 `payload`，blocked 时还包含 `error`。裸 Completion Result 不是 runtime 输入。Checkpoint 的 worktree 仅能是仓库内相对路径；绝对路径、遍历路径、符号链接父路径和其他仓库的 worktree 均会停止，而不会迁移或猜测恢复。
+`record-ticket` 只接受 JSON Handoff envelope：它包含 `role_id`、`status`、`summary`、`artifacts`、`checks` 和类型化 `payload`，blocked 时还包含 `error`。裸 Completion Result 不是 runtime 输入。Checkpoint 的 worktree 仅能是仓库内相对路径；绝对路径、遍历路径、符号链接父路径和其他仓库的 worktree 均会停止，而不会迁移或猜测恢复。`sync-main` 冻结精确 `main_commit`；冲突返回未合并路径，由实施角色解决并以 `complete-sync` 完成。结构化评审结果分别记录 Standards 与 Spec 的 verdict、阻塞/建议 finding、manifest digest 和完整 coverage。阻塞 finding 只能由用户确认具体 IDs 后修复；修复会重新同步并最终复审一次。
 
 ## 角色
 
@@ -151,7 +153,8 @@ node "$runtime" record-ticket --repository <repo> --feature <feature> --worktree
 1. **初始化** — 解析 spec.md，推导 feature slug，创建 worktree，物化执行计划
 2. **恢复** — 从已有 Checkpoint 验证并续接执行
 3. **执行** — 逐个执行 Ticket Frontier，委派专职角色实施
-4. **评审与整合** — 每个稳定阶段对固定提交范围执行一次 Standards + Spec 双轴评审；用户确认修复并验证后直接整合，不自动复审相同范围
+4. **同步、评审与整合** — 同步最新 `main` 后，以同步提交为 fixed point 执行 Standards + Spec 双轴评审；阻塞 finding 需用户确认具体 ID，修复后重新同步并最终复审一次
+5. **整合与清理** — 仅在 `main` 未前进、feature HEAD 等于已审查提交时执行 `git merge --ff-only`，随后安全移除干净 worktree 和已合并本地分支
 
 前置条件：Spec 目录须包含 `spec.md` 和 `issues/NN-*.md`，项目还须提供 `docs/agents/issue-tracker.md`。
 

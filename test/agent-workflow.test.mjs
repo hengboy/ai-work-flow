@@ -342,7 +342,7 @@ test('generated codings preserve the automatic commit and fixed-range review con
   assert.equal(result.status, 0, result.stderr);
 
   const assertions = [
-    /Full Stack Coder -> Git Committer -> Code Reviewer -> Review Standards \+ Review Spec/,
+    /Git Committer prepare -> Full Stack Coder -> Git Committer commit\/sync -> Code Reviewer -> Review Standards \+ Review Spec/,
     /不等待新的提交授权/,
     /base_commit/,
     /changed_paths/,
@@ -980,7 +980,7 @@ test('OpenCode derives its default agent from the role catalog', () => {
   assert.equal(openCode.default_agent, 'planning');
 });
 
-test('code review approval satisfies the final independent review', () => {
+test('structured dual-axis review controls the final integration gate', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
   const paths = environment();
@@ -988,17 +988,13 @@ test('code review approval satisfies the final independent review', () => {
   assert.equal(result.status, 0, result.stderr);
 
   const assertions = [
-    /每个阶段先完成实现和测试验证并创建 review commit/,
-    /fixed point 到该 review commit 的已提交差异执行一次 Standards \+ Spec 双轴审查/,
+    /最近同步的 `main_commit` 作为 fixed point/,
+    /review commit 必须精确等于 feature HEAD/,
     /绝不审查未提交内容/,
-    /完成所需 Git 与测试命令验证的双轴审查才是最终独立审查/,
-    /工具不可用或命令被拒绝导致的审查不算完成/,
-    /审查能力基准恢复后可重新委派一次/,
-    /同一会话中，同一稳定差异的已完成审查不得再次委派任何审查角色/,
-    /用户确认的修复必须形成晚于 review commit 的追加提交/,
-    /`complete-review-fix` 必须记录非空验证结果/,
-    /验证后直接整合，不自动复审相同范围/,
-    /只有用户明确要求新的独立审查，且代码、测试、规格或审查能力基准发生变化时，才可重新委派 \*\*Code Reviewer\*\*/,
+    /blocking_findings/,
+    /用户只能用确认的 finding IDs 选择修复/,
+    /修复完成后必须再次同步并自动最终复审一次/,
+    /`git merge --ff-only <review_commit>`/,
   ];
 
   for (const content of [routing]) {
@@ -1006,10 +1002,10 @@ test('code review approval satisfies the final independent review', () => {
   }
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generated = generatedBody(paths, platform, 'coding', extension);
-    assert.match(generated, /同一稳定差异的已完成审查不得再次委派/, platform);
+    assert.match(generated, /用户只能用确认的 finding IDs 选择修复/, platform);
   }
   assert.match(coding, /受管治理内容在生成时从 routing section 编译/);
-  assert.doesNotMatch(coding, /同一稳定差异的已完成审查不得再次委派/);
+  assert.doesNotMatch(coding, /用户只能用确认的 finding IDs 选择修复/);
 });
 
 test('review agents preserve the AI Work Flow committed-range contract', () => {

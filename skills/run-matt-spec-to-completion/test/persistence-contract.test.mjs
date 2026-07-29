@@ -202,7 +202,7 @@ test("freezes the committed range when review begins", async () => {
   assert.deepEqual(checkpoint, frozen);
   assert.throws(
     () => beginReview({ ...checkpoint, status: "executing", review: { status: "pending" } }, { fixedPoint: "c".repeat(40), reviewCommit, manifest: reviewManifest("c".repeat(40), reviewCommit) }),
-    /fixed point must match the execution baseline/,
+    /fixed point must match the most recently synchronized main commit/,
   );
 });
 
@@ -266,7 +266,7 @@ test("rejects integration states before tickets and review complete", async () =
   assert.throws(() => markMerged(checkpoint, { executionHead: "a".repeat(40), mainWorktree: root, mergedCommit: "a".repeat(40) }), /Checkpoint violates schema/);
 });
 
-test("holds user-approved review fixes outside the review loop until they are completed", async () => {
+test("returns user-approved review fixes to synchronization before final review", async () => {
   const { root, specPath } = await specFixture();
   const executionPlan = await materializeSpec({ mainWorktree: root, specPath });
   let checkpoint = createCheckpoint({ executionPlan, baseline: "a".repeat(40), branch: "feat/migrate-runtime", worktree: root });
@@ -280,7 +280,8 @@ test("holds user-approved review fixes outside the review loop until they are co
   assert.equal(checkpoint.review.status, "done");
   assert.equal(checkpoint.review.decision, "fix");
   checkpoint = completeReviewFix(checkpoint, { fixCommit: "c".repeat(40), checks: ["npm test: pass"] });
-  assert.equal(checkpoint.status, "integrating");
-  assert.equal(checkpoint.review.fix_commit, "c".repeat(40));
-  assert.deepEqual(checkpoint.review.fix_checks, ["npm test: pass"]);
+  assert.equal(checkpoint.status, "executing");
+  assert.equal(checkpoint.review.status, "pending");
+  assert.equal(checkpoint.review_attempts[0].fix_commit, "c".repeat(40));
+  assert.deepEqual(checkpoint.review_attempts[0].fix_checks, ["npm test: pass"]);
 });

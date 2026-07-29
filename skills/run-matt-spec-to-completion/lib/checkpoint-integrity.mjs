@@ -3,6 +3,7 @@ import { readCheckpoint, resolveRepositoryPath, verifyCheckpointShape } from "./
 import { git, gitSucceeds, isAncestor } from "./git.mjs";
 import { sourceSpecPath } from "./paths.mjs";
 import { assertReviewCoverage, assertReviewManifest } from "./review-manifest.mjs";
+import { assertReviewResult } from "./review-result.mjs";
 import { resolve } from "node:path";
 
 function diagnostic(code, detail) {
@@ -81,10 +82,12 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
     const reviewWorktree = executionWorktree || worktree;
     const fixedPoint = checkpoint.review.fixed_point;
     const reviewCommit = checkpoint.review.review_commit;
-    const expectedGateHead = checkpoint.status === "fixing"
-      ? null
-      : checkpoint.review.fix_commit || reviewCommit;
-    if (fixedPoint !== checkpoint.baseline) diagnostics.push(diagnostic("review-fixed-point", fixedPoint));
+    const expectedGateHead = checkpoint.status === "fixing" ? null : reviewCommit;
+    if (checkpoint.sync && checkpoint.sync.status === "complete" && fixedPoint !== checkpoint.sync.main_commit) {
+      diagnostics.push(diagnostic("review-fixed-point", fixedPoint));
+    } else if (!checkpoint.sync && fixedPoint !== checkpoint.baseline) {
+      diagnostics.push(diagnostic("review-fixed-point", fixedPoint));
+    }
     try {
       const changedPaths = (await git(reviewWorktree, ["diff", "--name-only", "-z", `${fixedPoint}...${reviewCommit}`])).split("\0").filter(Boolean).sort().map((path) => ({ record_type: "1", index_status: "M", worktree_status: ".", path }));
       const manifest = assertReviewManifest(checkpoint.review.manifest, { fixedPoint, reviewCommit, changedPaths });
@@ -99,6 +102,7 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
       if (checkpoint.review.status !== "in_progress") {
         if (checkpoint.review.manifest_digest !== manifest.manifest_digest) diagnostics.push(diagnostic("review-manifest-digest", checkpoint.review.manifest_digest));
         assertReviewCoverage(manifest, checkpoint.review.coverage);
+        if (checkpoint.review.result) assertReviewResult(checkpoint.review.result, manifest.manifest_digest);
       }
     } catch (error) {
       diagnostics.push(diagnostic("review-manifest", error.message));

@@ -8,7 +8,7 @@
 
 只进行审查。任务必须包含完整、digest 已校验的不可变 `ReviewManifest`、完整 Fowler 异味基准与 Standards brief；缺少任一项时阻塞，不得自行解析 `HEAD`、规格或分片。只使用 manifest 指定 diff command 和 shard 形成发现，禁止使用无参数 `git diff` 或 `git diff --cached`，不得评价 staged、unstaged 或 untracked 内容。不得执行会改变工作树、Git 索引或引用的命令，不得编辑文件或委派工作。
 
-逐文件或 hunk 报告文档化标准违规并引用标准文件及规则；报告可能异味时命名异味并引用 hunk，明确标记为判断性意见。仓库文档标准优先于异味基准；工具已强制执行的规则跳过。coverage 与 findings summary 分字段返回，不施加摘要字数限制。
+逐文件或 hunk 报告文档化标准违规并引用标准文件及规则；报告可能异味时命名异味并引用 hunk，明确标记为判断性意见。仓库文档标准优先于异味基准；工具已强制执行的规则跳过。返回 `verdict`、`blocking_findings`、`advisory_findings`、manifest digest 和 coverage；每个 finding 必须有稳定 ID、摘要和证据。coverage 与 findings summary 分字段返回，不施加摘要字数限制。
 
 ## 回复格式
 

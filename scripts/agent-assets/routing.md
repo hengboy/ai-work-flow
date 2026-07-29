@@ -14,13 +14,13 @@
 
 处理项目代码前，必须使用 `$project-code-navigation` 先读取 `.ai-work-flow/index/feature-navigation.md`，再按目标功能只读取相关索引。索引命中时直接读取记录的代码，禁止全局文件检索或搜索无关路径；仅在索引缺失、未覆盖目标功能或路径无法定位时，才委派 **File Explorer** 发现真实入口。**Full Stack Coder** 必须在同一轮改动中维护索引：新增文件，或文件移动、重命名、拆分、合并、删除、主职责变化，以及用户可见功能入口、路由或 API 变化时，更新 `.ai-work-flow/index/` 的对应文件；缺少索引的新功能视为未完成。项目导航只存放在 `.ai-work-flow/index/`，不得创建 `.agents/skills/project-code-navigation/` 或改写 `AGENTS.md`、`CLAUDE.md`。
 
-确认方案后的实现阶段固定按以下顺序执行：**Full Stack Coder -> Git Committer -> Code Reviewer -> Review Standards + Review Spec**。Full Stack Coder 完成实现和测试后交接完整范围证据；Coding 收到完整且成功的原始交接后立即原样委派 Git Committer，不等待新的提交授权；Git Committer 创建仅本地的 review commit；Code Reviewer 再并行启动 Review Standards 与 Review Spec。`run-matt-spec-to-completion` 的 Ticket 子代理是例外：它在隔离且起始干净的 feature worktree 中按同一 `$git-commit` 协议自行创建实现提交，以满足 Completion Adapter 返回完整 SHA 的契约。提交失败、工作树不干净或测试失败时不得启动审查。审查完成后，**Coding** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
+确认方案后的实现阶段固定按以下顺序执行：**Git Committer prepare -> Full Stack Coder -> Git Committer commit/sync -> Code Reviewer -> Review Standards + Review Spec -> Git Committer integrate/cleanup**。Coding 为每个普通实施生成稳定唯一的 `worktree_id`，分支为 `ai-work-flow/<worktree_id>`，路径为 `.worktrees/<worktree_id>`，并把同一路径传给所有实现和评审角色。Git Committer 在创建前幂等维护共享 Git `info/exclude` 的 `/.worktrees/`；已有路径只能在仓库身份、分支和任务基点全部匹配时恢复，否则停止。Full Stack Coder 只能在该干净 worktree 实现或解决冲突；不得使用整体 `ours/theirs`、删除任一侧实现或机械拼接来解决冲突，无法保留两边有效行为时请求用户裁决。Git Committer 收到完整实现交接后不等待新的提交授权，创建本地 review commit 并同步最新 `main`，再由 Code Reviewer 审查。`run-matt-spec-to-completion` 的 Ticket 子代理也在同一隔离 worktree 契约下执行。提交失败、工作树不干净或测试失败时不得启动审查。
 
 审查委派拓扑固定为 **Coding -> Code Reviewer -> Review Standards / Review Spec**，只允许一个聚合层和一个终端评审层。Code Reviewer 不得再次委派 Code Reviewer 或其他聚合审查角色；Review Standards 与 Review Spec 是终端角色，不得委派任何子代理。
 
 ### AI Work Flow 审查子任务契约
 
-**Code Reviewer** 仅在 Git Committer 报告完整 `review_commit` SHA 且 `git status --short` 为空时开始。它必须先固定 `fixed-point` 与 `review-commit` 两个完整提交 SHA。普通实现流程使用交接 `base_commit` 作为 fixed point 和 Git Committer 的 `review_commit`；工作流评审使用 Checkpoint 中已经冻结的端点；用户直接指定 fixed point 时，将开始评审时的 `HEAD` 解析为 `review-commit`，不得在委派后重新解析。委派前按顺序运行并保存以下命令及结果：
+**Code Reviewer** 仅在 Git Committer 报告完整 `review_commit` SHA 且 `git status --short` 为空时开始。它必须先固定 `fixed-point` 与 `review-commit` 两个完整提交 SHA。普通实现和工作流评审均使用最近同步的 `main_commit` 作为 fixed point，且 review commit 必须精确等于 feature HEAD；用户直接指定 fixed point 时，将开始评审时的 `HEAD` 解析为 `review-commit`，不得在委派后重新解析。它绝不审查未提交内容。委派前按顺序运行并保存以下命令及结果：
 
 ```bash
 git rev-parse <fixed-point>
@@ -32,7 +32,7 @@ git log <fixed-point>..<review-commit> --oneline
 
 两个端点必须可解析，fixed point 必须是 review commit 的祖先，三点 diff 必须非空。`git status --short` 只用于确认工作树干净；存在 staged、unstaged 或 untracked 内容时阻塞，不得读取或评价其内容。评审发现只允许来自固定的 committed diff，禁止使用无参数 `git diff` 或 `git diff --cached` 扩大范围。
 
-Code Reviewer 先以 `git diff --name-only <fixed-point>...<review-commit>` 生成稳定排序的完整文件清单，按文件拆分可读取的分片；每个分片固定使用 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>`。单文件 diff 仍过大时，只对同一命令输出读取固定行窗口。**Review Standards** 与 **Review Spec** 必须收到完全相同的两个完整 SHA、diff 命令、commit list、规格来源、标准来源和完整文件/窗口分片清单。Standards 任务还必须收到完整 Fowler 异味基准及 AI Work Flow Standards 评审任务说明；Spec 任务还必须收到规格路径或完整内容及 AI Work Flow Spec 评审任务说明。缺少任一范围字段时不得自行推断。两个任务并行执行并保持上下文隔离，且各自报告已覆盖与未完成分片；Code Reviewer 只在两轴均覆盖完整清单后汇总，最终报告只能原样或轻度整理两轴结果，不得合并、跨轴重新排序或选择跨轴的单一最严重问题。输出截断、连接中断或结果未知时，只重试未完成分片并保持相同 SHA；重试耗尽后请求用户“继续”或“重试”，不得请求新的提交授权。
+Code Reviewer 先以 `git diff --name-only <fixed-point>...<review-commit>` 生成稳定排序的完整文件清单，按文件拆分可读取的分片；每个分片固定使用 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>`。单文件 diff 仍过大时，只对同一命令输出读取固定行窗口。**Review Standards** 与 **Review Spec** 必须收到完全相同的两个完整 SHA、diff 命令、commit list、规格来源、标准来源和完整文件/窗口分片清单。两个叶子分别返回 `{verdict, blocking_findings, advisory_findings, manifest_digest, coverage}`；每项 finding 具有稳定 ID、摘要和证据。两轴 coverage 完整且无阻塞 finding 才能自动进入整合，建议会保留并报告。任一阻塞 finding 进入 `awaiting_user`，用户只能用确认的 finding IDs 选择修复，不能 approve 绕过。修复完成后必须再次同步并自动最终复审一次；仍有阻塞项时再次等待用户，不自动循环。输出截断、连接中断或结果未知时，只重试未完成分片并保持相同 SHA；重试耗尽后请求用户“继续”或“重试”，不得请求新的提交授权。
 
 **Review Standards** 或 **Review Spec** 报告阻塞时，Code Reviewer 必须先判断阻塞是否可在自身既有权限内裁决。只有无需改变 `ReviewManifest`、digest、固定 SHA、分片范围、规格来源或标准来源，且不替叶子评审决定发现或结论，仅通过澄清任务输入或选择已授权的执行方式即可消除阻塞时，Code Reviewer 才可记录明确裁决，并携带原 manifest 与该裁决，在全新子会话中只重新发起被阻塞的评审一次。需要修改固定输入、扩大范围、解释未批准需求或由用户作决定时不得裁决，必须直接报告用户。该次重试仍阻塞、失败或结果未知时，立即报告用户，不得再次自动重试；这是“子代理正常任务失败不可重试”规则的唯一审查例外。
 
@@ -70,9 +70,9 @@ Code Reviewer 先以 `git diff --name-only <fixed-point>...<review-commit>` 生�
 
 Git Committer 必须先调用 `$git-commit` 生成提交信息。提交前必须确认当前 `HEAD` 精确等于 `base_commit`、当前 PathChange 集合与交接 `changed_paths` 全字段一致、已通过验证仍完整可用；只能以参数数组和 `--` 暂存交接 PathChange 的目标/源路径，并在提交前复核暂存结构化集合且暂存差异非空。提交必须仅在本地创建，成功后报告完整 `review_commit` SHA 和空的 porcelain 状态。范围不一致、工作树不干净、验证失败或提交 hook 失败时停止并报告精确原因；hook 失败后不得 reset、clean 或重试，必须用同一 parser 重新报告真实 index/worktree PathChange。工作树仍有 staged、unstaged 或 untracked 内容时，不能启动审查；该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实施阶段的提交授权。
 
-### 最终审查去重
+### 最终整合与清理
 
-每个阶段先完成实现和测试验证并创建 review commit；**Code Reviewer** 仅对从已解析 fixed point 到该 review commit 的已提交差异执行一次 Standards + Spec 双轴审查，绝不审查未提交内容。完成所需 Git 与测试命令验证的双轴审查才是最终独立审查。工具不可用或命令被拒绝导致的审查不算完成；审查能力基准恢复后可重新委派一次。同一会话中，同一稳定差异的已完成审查不得再次委派任何审查角色。评审发现必须先报告用户，由用户决定是否修复以及修复哪些项；`begin-review` 只能从 pending execution review 进入，开始后不得替换固定端点。用户确认的修复必须形成晚于 review commit 的追加提交，且 `complete-review-fix` 必须记录非空验证结果；验证后直接整合，不自动复审相同范围。只有用户明确要求新的独立审查，且代码、测试、规格或审查能力基准发生变化时，才可重新委派 **Code Reviewer**；重新审查仍只执行一次双轴审查。
+Git Committer 在整合前重新确认主工作树和 feature worktree 均干净、当前 `main` 精确等于评审 fixed point、feature HEAD 精确等于已通过审查的 review commit。若 `main` 已前进，返回 `resync_required`，先同步并重新评审最终提交。门禁通过后仅在主工作树运行 `git merge --ff-only <review_commit>`；主工作树无关改动默认阻塞，保留显式 stash 授权。成功后仅在 worktree 干净、分支已合并的前提下移除 worktree，并用 `git branch -d` 删除本地 feature 分支。
 
 <!-- ai-work-flow:section-end -->
 

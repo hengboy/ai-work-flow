@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { createExecutionCoding } from "../skills/run-matt-spec-to-completion/lib/execution-coding.mjs";
 import { deriveSpecLocation } from "../skills/run-matt-spec-to-completion/lib/paths.mjs";
 import { findMainWorktree } from "../skills/run-matt-spec-to-completion/lib/worktree-lifecycle.mjs";
-import { blockTicket, beginReview, completeReviewFix, completeTicket, decideReview, recordReview, startTickets } from "../skills/run-matt-spec-to-completion/lib/checkpoint.mjs";
+import { beginSync, blockTicket, beginReview, completeReviewFix, completeSync, completeTicket, decideReview, recordReview, startTickets } from "../skills/run-matt-spec-to-completion/lib/checkpoint.mjs";
 import { currentHead, git, gitOutput, gitSucceeds, isAncestor } from "../skills/run-matt-spec-to-completion/lib/git.mjs";
 import { selectTicketFrontier } from "../skills/run-matt-spec-to-completion/lib/ticket-frontier.mjs";
 import { assertCompletionResult, assertHandoffResult } from "../skills/run-matt-spec-to-completion/lib/validation.mjs";
@@ -82,6 +82,11 @@ async function assertTicketCommits(worktree, ticket, commits) {
   }
 }
 
+async function unmergedPaths(worktree) {
+  return (await gitOutput(worktree, ["diff", "--name-only", "--diff-filter=U", "-z"]))
+    .split("\0").filter(Boolean).sort();
+}
+
 function completionFromHandoff(input) {
   const handoff = assertHandoffResult(input);
   const completion = assertCompletionResult(handoff.payload);
@@ -150,7 +155,10 @@ async function run(options) {
         throw new Error("Review can only begin from a pending execution review");
       }
       if (await git(executionWorktree, ["status", "--short"])) throw new Error("Execution worktree must be clean before review");
-      const fixedPoint = current.checkpoint.baseline;
+      const fixedPoint = current.checkpoint.sync?.main_commit;
+      if (current.checkpoint.sync?.status !== "complete" || !fixedPoint) {
+        throw new Error("Main must be synchronized before final review");
+      }
       const reviewCommit = await currentHead(executionWorktree);
       if (!await isAncestor(executionWorktree, fixedPoint, reviewCommit)) throw new Error("Review fixed point must be an ancestor of the review commit");
       if (await gitSucceeds(executionWorktree, ["diff", "--quiet", `${fixedPoint}...${reviewCommit}`])) throw new Error("Review diff must not be empty");
@@ -172,13 +180,13 @@ async function run(options) {
       if (!['in_progress', 'awaiting_user'].includes(current.checkpoint.review.status)) throw new Error("Review is not in progress");
       if (input.manifest_digest !== current.checkpoint.review?.manifest?.manifest_digest) throw new Error("Review result manifest digest does not match the frozen ReviewManifest");
       assertReviewCoverage(current.checkpoint.review.manifest, input.coverage);
-      return recordReview(current.checkpoint, { manifestDigest: input.manifest_digest, coverage: input.coverage, findingsSummary: input.findings_summary }, toShanghaiTimestamp(new Date()));
+      return recordReview(current.checkpoint, { manifestDigest: input.manifest_digest, coverage: input.coverage, findingsSummary: input.findings_summary, result: input.result }, toShanghaiTimestamp(new Date()));
     } });
     return { command: "record-review", status: result.checkpoint.review.status, checkpoint: result.checkpoint };
   }
   if (options.command === "review-decision") {
     const input = await stdinJson();
-    const result = await stateStore.transition({ repository, featureSlug, checkExecutionWorktree: false, apply: ({ checkpoint }) => decideReview(checkpoint, input.decision, toShanghaiTimestamp(new Date())) });
+    const result = await stateStore.transition({ repository, featureSlug, checkExecutionWorktree: false, apply: ({ checkpoint }) => decideReview(checkpoint, input.decision, input.finding_ids, toShanghaiTimestamp(new Date())) });
     return { command: "review-decision", status: result.checkpoint.status, checkpoint: result.checkpoint };
   }
   if (options.command === "complete-review-fix") {
@@ -197,6 +205,38 @@ async function run(options) {
       return completeReviewFix(checkpoint, { fixCommit, checks: input.checks }, toShanghaiTimestamp(new Date()));
     } });
     return { command: "complete-review-fix", status: result.checkpoint.status, checkpoint: result.checkpoint };
+  }
+  if (options.command === "sync-main") {
+    const executionWorktree = requireOption(options, "worktree");
+    return withFeatureLock(repository, featureSlug, async () => {
+      if (await git(executionWorktree, ["status", "--short"])) throw new Error("Execution worktree must be clean before synchronization");
+      const mainWorktree = await findMainWorktree(repository);
+      if (!mainWorktree) throw new Error("Main worktree is unavailable");
+      const mainCommit = await currentHead(mainWorktree);
+      const started = await stateStore.transition({ repository, featureSlug, executionWorktree, apply: ({ checkpoint }) => beginSync(checkpoint, mainCommit, toShanghaiTimestamp(new Date())) });
+      if (!await gitSucceeds(executionWorktree, ["merge", "--no-edit", mainCommit])) {
+        const paths = await unmergedPaths(executionWorktree);
+        if (paths.length === 0) throw new Error("Main synchronization failed without merge conflicts");
+        const conflicted = await stateStore.transition({ repository, featureSlug, executionWorktree, apply: ({ checkpoint }) => completeSync(checkpoint, { conflicted: true, unmergedPaths: paths }, toShanghaiTimestamp(new Date())) });
+        return { command: "sync-main", status: "conflicted", unmerged_paths: paths, checkpoint: conflicted.checkpoint };
+      }
+      const completed = await stateStore.transition({ repository, featureSlug, executionWorktree, apply: ({ checkpoint }) => completeSync(checkpoint, {}, toShanghaiTimestamp(new Date())) });
+      return { command: "sync-main", status: "complete", main_commit: started.checkpoint.sync.main_commit, checkpoint: completed.checkpoint };
+    });
+  }
+  if (options.command === "complete-sync") {
+    const executionWorktree = requireOption(options, "worktree");
+    return withFeatureLock(repository, featureSlug, async () => {
+      if (await git(executionWorktree, ["status", "--short"])) throw new Error("Execution worktree must be clean after resolving synchronization conflicts");
+      const mainWorktree = await findMainWorktree(repository);
+      if (!mainWorktree) throw new Error("Main worktree is unavailable");
+      const result = await stateStore.transition({ repository, featureSlug, executionWorktree, async apply({ checkpoint }) {
+        if (checkpoint.sync?.main_commit !== await currentHead(mainWorktree)) throw new Error("Main advanced while synchronization conflicts were being resolved");
+        if (!await isAncestor(executionWorktree, checkpoint.sync.main_commit)) throw new Error("Resolved feature worktree does not contain the synchronized main commit");
+        return completeSync(checkpoint, {}, toShanghaiTimestamp(new Date()));
+      } });
+      return { command: "complete-sync", status: "complete", checkpoint: result.checkpoint };
+    });
   }
   if (options.command === "integrate") {
     return withFeatureLock(repository, featureSlug, async () => {

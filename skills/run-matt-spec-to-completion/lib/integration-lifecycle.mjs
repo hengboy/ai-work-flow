@@ -85,6 +85,8 @@ export function createIntegrationLifecycle({ now, newStashOperationId, requireIn
     }
     checkpoint = await reconcileRestoredStash({ mainWorktree, featureSlug, checkpoint });
     await requireIntegrity({ mainWorktree, featureSlug });
+    if (checkpoint.branch === "main") throw new Error("Refusing to delete the main branch during cleanup");
+    await git(mainWorktree, ["branch", "-d", checkpoint.branch]);
     const complete = completeIntegration(checkpoint, now());
     await persist(mainWorktree, featureSlug, complete);
     try {
@@ -145,11 +147,17 @@ export function createIntegrationLifecycle({ now, newStashOperationId, requireIn
         await persist(mainWorktree, featureSlug, checkpoint);
       }
     }
+    const reviewCommit = checkpoint.review.review_commit;
+    const featureHead = await currentHead(worktree);
+    if (featureHead !== reviewCommit) throw new Error("Integration requires the reviewed feature HEAD");
+    if (await currentHead(mainWorktree) !== checkpoint.review.fixed_point) {
+      return { status: "resync_required", checkpoint };
+    }
     let mergeApplied = false;
     try {
-      const executionHead = checkpoint.review.fix_commit || checkpoint.review.review_commit;
+      const executionHead = reviewCommit;
       await requireIntegrity({ mainWorktree, featureSlug, executionWorktree: worktree });
-      await git(mainWorktree, ["merge", "--no-edit", executionHead]);
+      await git(mainWorktree, ["merge", "--ff-only", executionHead]);
       mergeApplied = true;
       if (!await isAncestor(mainWorktree, executionHead)) throw new Error("Merged main does not contain execution HEAD");
       const merged = markMerged(await readCheckpoint(mainWorktree, featureSlug), {

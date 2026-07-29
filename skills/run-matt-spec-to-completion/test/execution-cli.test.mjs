@@ -60,7 +60,28 @@ function reviewInput(paths, review, findingsSummary) {
   };
 }
 
+function structuredReviewInput(review, { blocking = false } = {}) {
+  const manifest = review.checkpoint.review.manifest;
+  const coverage = { manifest_digest: manifest.manifest_digest, completed_shard_ids: manifest.shards.map((shard) => shard.id), incomplete_shard_ids: [] };
+  const finding = { id: "standards-001", summary: "fixture blocker", evidence: "fixture evidence" };
+  return {
+    manifest_digest: manifest.manifest_digest,
+    coverage,
+    findings_summary: blocking ? "blocking finding" : "advisory only",
+    result: {
+      manifest_digest: manifest.manifest_digest,
+      coverage,
+      standards: { verdict: blocking ? "blocked" : "approved", blocking_findings: blocking ? [finding] : [], advisory_findings: [] },
+      spec: { verdict: "approved", blocking_findings: [], advisory_findings: [] },
+    },
+  };
+}
+
 async function beginReview(paths) {
+  const status = await invoke(paths, "status", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  if (status.checkpoint.sync?.status !== "complete") {
+    await invoke(paths, "sync-main", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  }
   return invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify({
     spec_status: "present",
     spec_source: { path: paths.spec, revision: "a".repeat(64) },
@@ -176,6 +197,7 @@ test("execution CLI completes review and integration through the same feature lo
   assert.equal(integrated.status, "complete");
   const cleaned = await invoke(paths, "cleanup", ["--feature", "cli-flow"]);
   assert.equal(cleaned.status, "complete");
+  await assert.rejects(git(paths.root, "show-ref", "--verify", "refs/heads/feat/cli-flow"));
   const checkpointPath = join(paths.root, ".scratch", "cli-flow", "checkpoint.json");
   const tampered = JSON.parse(await readFile(checkpointPath, "utf8"));
   tampered.integration.execution_head = paths.baseline;
@@ -196,7 +218,7 @@ test("begin-review rejects uncommitted worktree changes", async () => {
 
   await assert.rejects(
     beginReview(paths),
-    /Execution worktree must be clean before review/,
+    /Execution worktree must be clean before synchronization/,
   );
 });
 
@@ -209,6 +231,7 @@ test("begin-review rejects an empty standards source without advancing review st
   await git(paths.worktree, "commit", "-m", "complete ticket");
   const commit = await git(paths.worktree, "rev-parse", "HEAD");
   await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff(claimed, { ticket_id: "01", status: "done", commits: [commit], checks: [], changed_paths: [], summary: "completed" })));
+  await invoke(paths, "sync-main", ["--feature", "cli-flow", "--worktree", paths.worktree]);
 
   await assert.rejects(
     invoke(paths, "begin-review", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify({ spec_status: "present", spec_source: { path: paths.spec, revision: "a".repeat(64) }, standards_source: [] })),
@@ -239,7 +262,45 @@ test("integration rejects commits added after an approved review", async () => {
   );
 });
 
-test("review fixes advance directly to integration without another review", async () => {
+test("structured blocking findings require confirmed IDs before a review fix", async () => {
+  const paths = await fixture();
+  await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
+  const claimed = await claim(paths);
+  await writeFile(join(paths.worktree, "completed.txt"), "done\n");
+  await git(paths.worktree, "add", "completed.txt");
+  await git(paths.worktree, "commit", "-m", "complete ticket");
+  const commit = await git(paths.worktree, "rev-parse", "HEAD");
+  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff(claimed, { ticket_id: "01", status: "done", commits: [commit], checks: [], changed_paths: [], summary: "completed" })));
+  const review = await beginReview(paths);
+  const recorded = await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify(structuredReviewInput(review, { blocking: true })));
+  assert.equal(recorded.status, "awaiting_user");
+  await assert.rejects(invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "approve" })), /Blocking review findings require a fix decision/);
+  await assert.rejects(invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "fix", finding_ids: ["other"] })), /confirmed blocking finding IDs/);
+  const decision = await invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "fix", finding_ids: ["standards-001"] }));
+  assert.equal(decision.status, "fixing");
+});
+
+test("integration requires resynchronization when main advances after final review", async () => {
+  const paths = await fixture();
+  await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
+  const claimed = await claim(paths);
+  await writeFile(join(paths.worktree, "completed.txt"), "done\n");
+  await git(paths.worktree, "add", "completed.txt");
+  await git(paths.worktree, "commit", "-m", "complete ticket");
+  const commit = await git(paths.worktree, "rev-parse", "HEAD");
+  await invoke(paths, "record-ticket", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify(handoff(claimed, { ticket_id: "01", status: "done", commits: [commit], checks: [], changed_paths: [], summary: "completed" })));
+  const review = await beginReview(paths);
+  const recorded = await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify(structuredReviewInput(review)));
+  assert.equal(recorded.status, "done");
+  assert.equal(recorded.checkpoint.status, "integrating");
+  await writeFile(join(paths.root, "main-advanced.txt"), "main advanced\n");
+  await git(paths.root, "add", "main-advanced.txt");
+  await git(paths.root, "commit", "-m", "advance main");
+  const result = await invoke(paths, "integrate", ["--feature", "cli-flow", "--worktree", paths.worktree]);
+  assert.equal(result.status, "resync_required");
+});
+
+test("review fixes return to synchronization and final review", async () => {
   const paths = await fixture();
   await invoke(paths, "prepare", ["--branch", "feat/cli-flow", "--spec", paths.spec, "--worktree", paths.worktree]);
   const claimed = await claim(paths);
@@ -279,14 +340,13 @@ test("review fixes advance directly to integration without another review", asyn
     /At least one review fix check is required/,
   );
   const completed = await invoke(paths, "complete-review-fix", ["--feature", "cli-flow", "--worktree", paths.worktree], JSON.stringify({ checks: ["npm test: pass"] }));
-  assert.equal(completed.status, "integrating");
-  assert.equal(completed.checkpoint.review.fix_commit, fixCommit);
-  assert.deepEqual(completed.checkpoint.review.fix_checks, ["npm test: pass"]);
-  await assert.rejects(
-    beginReview(paths),
-    /Review can only begin from a pending execution review/,
-  );
-  await assert.rejects(invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify(reviewInput(paths, started, "automatic re-review"))), /Review is not in progress/);
+  assert.equal(completed.status, "executing");
+  assert.equal(completed.checkpoint.review.status, "pending");
+  assert.equal(completed.checkpoint.review_attempts[0].fix_commit, fixCommit);
+  assert.deepEqual(completed.checkpoint.review_attempts[0].fix_checks, ["npm test: pass"]);
+  const rereview = await beginReview(paths);
+  await invoke(paths, "record-review", ["--feature", "cli-flow"], JSON.stringify(reviewInput(paths, rereview, "approved after fix")));
+  await invoke(paths, "review-decision", ["--feature", "cli-flow"], JSON.stringify({ decision: "approve" }));
   const integrated = await invoke(paths, "integrate", ["--feature", "cli-flow", "--worktree", paths.worktree]);
   assert.equal(integrated.status, "complete");
   const cleaned = await invoke(paths, "cleanup", ["--feature", "cli-flow"]);

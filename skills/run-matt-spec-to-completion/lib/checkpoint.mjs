@@ -4,6 +4,7 @@ import { checkpointPath, sourceSpecPath } from "./paths.mjs";
 import { toShanghaiTimestamp } from "./time.mjs";
 import { assertCheckpoint } from "./validation.mjs";
 import { assertReviewCoverage, assertReviewManifest } from "./review-manifest.mjs";
+import { assertReviewResult, blockingFindingIds, hasBlockingFindings } from "./review-result.mjs";
 
 const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:[\\/]/;
 
@@ -46,6 +47,8 @@ export function createCheckpoint({ executionPlan, baseline, branch, worktree, re
     updated_at: now,
     tickets: executionPlan.tickets.map((ticket) => ({ id: ticket.id, status: "pending" })),
     review: { status: "pending" },
+    review_attempts: [],
+    sync: { status: "pending" },
     integration: { status: "pending", target_branch: "main" },
     history: [{ event: "initialized", detail: "Execution plan materialized", at: now }],
   });
@@ -145,7 +148,12 @@ export function beginReview(checkpoint, { fixedPoint, reviewCommit, manifest }, 
   if (checkpoint.tickets.some((ticket) => ticket.status !== "done")) {
     throw new Error("Cannot begin review while tickets are not done");
   }
-  if (fixedPoint !== checkpoint.baseline) throw new Error("Review fixed point must match the execution baseline");
+  // Direct library callers from the pre-sync runtime retain the baseline contract.
+  // The CLI always requires an explicit completed synchronization.
+  const synchronizedMain = checkpoint.sync?.status === "complete" ? checkpoint.sync.main_commit : checkpoint.baseline;
+  if (fixedPoint !== synchronizedMain) {
+    throw new Error("Review fixed point must match the most recently synchronized main commit");
+  }
   manifest = assertReviewManifest(manifest);
   if (manifest.fixed_point !== fixedPoint || manifest.review_commit !== reviewCommit) {
     throw new Error("ReviewManifest endpoints must match the frozen review endpoints");
@@ -165,21 +173,38 @@ export function completeReview(checkpoint, findingsSummary, now = new Date()) {
   return completeTransition(next);
 }
 
-export function recordReview(checkpoint, { manifestDigest, coverage, findingsSummary }, now = new Date()) {
+export function recordReview(checkpoint, { manifestDigest, coverage, findingsSummary, result }, now = new Date()) {
   now = toShanghaiTimestamp(now);
   const next = revise(checkpoint, "review-recorded", findingsSummary, now);
   if (!['in_progress', 'awaiting_user'].includes(next.review.status)) throw new Error("Review is not in progress");
   if (manifestDigest !== next.review.manifest.manifest_digest) throw new Error("Review result manifest digest does not match the frozen ReviewManifest");
   assertReviewCoverage(next.review.manifest, coverage);
-  next.review = { ...next.review, status: "awaiting_user", manifest_digest: manifestDigest, coverage, findings_summary: findingsSummary, completed_at: now };
+  if (result) {
+    assertReviewResult(result, manifestDigest);
+    if (JSON.stringify(result.coverage) !== JSON.stringify(coverage)) throw new Error("Review result coverage must match record-review coverage");
+  }
+  const review = { ...next.review, manifest_digest: manifestDigest, coverage, findings_summary: findingsSummary, ...(result ? { result } : {}), completed_at: now };
+  if (result && !hasBlockingFindings(result)) {
+    next.review = { ...review, status: "done" };
+    next.status = "integrating";
+  } else {
+    next.review = { ...review, status: "awaiting_user" };
+  }
   return completeTransition(next);
 }
 
-export function decideReview(checkpoint, decision, now = new Date()) {
+export function decideReview(checkpoint, decision, findingIds = [], now = new Date()) {
   now = toShanghaiTimestamp(now);
   if (!["approve", "fix"].includes(decision)) throw new Error("Review decision must be approve or fix");
   const next = revise(checkpoint, "review-decision", decision, now);
   if (next.review.status !== "awaiting_user") throw new Error("Review is not awaiting a user decision");
+  const blockers = next.review.result ? blockingFindingIds(next.review.result) : [];
+  if (blockers.length > 0) {
+    if (decision !== "fix") throw new Error("Blocking review findings require a fix decision");
+    if (!Array.isArray(findingIds) || findingIds.length === 0 || findingIds.some((id) => !blockers.includes(id))) {
+      throw new Error("Review fix decision must identify confirmed blocking finding IDs");
+    }
+  }
   next.review = { ...next.review, status: "done", decision };
   next.status = decision === "approve" ? "integrating" : "fixing";
   return completeTransition(next);
@@ -191,8 +216,30 @@ export function completeReviewFix(checkpoint, { fixCommit, checks }, now = new D
   if (next.status !== "fixing" || next.review.status !== "done" || next.review.decision !== "fix") {
     throw new Error("A user-approved review fix is required before integration");
   }
-  next.review = { ...next.review, fix_commit: fixCommit, fix_checks: checks };
-  next.status = "integrating";
+  next.review_attempts = [...(next.review_attempts ?? []), { ...next.review, fix_commit: fixCommit, fix_checks: checks }];
+  next.review = { status: "pending" };
+  next.sync = { status: "pending" };
+  next.status = "executing";
+  return completeTransition(next);
+}
+
+export function beginSync(checkpoint, mainCommit, now = new Date()) {
+  now = toShanghaiTimestamp(now);
+  if (checkpoint.status !== "executing" || checkpoint.review.status !== "pending") {
+    throw new Error("Main can only synchronize before a pending review");
+  }
+  const next = revise(checkpoint, "sync-main", mainCommit, now);
+  next.sync = { status: "in_progress", main_commit: mainCommit, started_at: now };
+  return completeTransition(next);
+}
+
+export function completeSync(checkpoint, { conflicted = false, unmergedPaths = [] } = {}, now = new Date()) {
+  now = toShanghaiTimestamp(now);
+  if (!["in_progress", "conflicted"].includes(checkpoint.sync?.status)) throw new Error("No main synchronization is in progress");
+  const next = revise(checkpoint, conflicted ? "sync-conflicted" : "sync-complete", checkpoint.sync.main_commit, now);
+  next.sync = conflicted
+    ? { ...next.sync, status: "conflicted", unmerged_paths: [...new Set(unmergedPaths)].sort() }
+    : { ...next.sync, status: "complete", completed_at: now };
   return completeTransition(next);
 }
 

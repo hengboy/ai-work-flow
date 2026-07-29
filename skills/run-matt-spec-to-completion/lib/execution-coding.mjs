@@ -250,6 +250,7 @@ export function createExecutionCoding({ adapter, directExecutor, materialize = m
     },
 
     async startReview({ mainWorktree, featureSlug, worktree, executionPlan }) {
+      await canonicalTransition("sync-main", { mainWorktree, featureSlug, worktree });
       const standardsSource = await frozenStandardsSource(worktree);
       return (await canonicalTransition("begin-review", { mainWorktree, featureSlug, worktree }, {
         spec_status: "present",
@@ -258,8 +259,12 @@ export function createExecutionCoding({ adapter, directExecutor, materialize = m
       })).checkpoint;
     },
 
-    async finishReview({ mainWorktree, featureSlug, checkpoint, findingsSummary }) {
-      await canonicalTransition("record-review", { mainWorktree, featureSlug }, { findings_summary: findingsSummary });
+    async finishReview({ mainWorktree, featureSlug, checkpoint, findingsSummary, result }) {
+      const recorded = await canonicalTransition("record-review", { mainWorktree, featureSlug }, {
+        findings_summary: findingsSummary,
+        ...(result ? { manifest_digest: result.manifest_digest, coverage: result.coverage, result } : {}),
+      });
+      if (recorded.checkpoint.status === "integrating") return recorded.checkpoint;
       return (await canonicalTransition("review-decision", { mainWorktree, featureSlug }, { decision: "approve" })).checkpoint;
     },
 
@@ -291,7 +296,7 @@ export function createExecutionCoding({ adapter, directExecutor, materialize = m
         if (!review) return { status: "reviewing", worktree, executionPlan, checkpoint };
         const reviewResult = await review({ worktree, executionPlan, checkpoint, readTicket });
         if (reviewResult?.approved !== true || !reviewResult.findingsSummary) return { status: "reviewing", worktree, executionPlan, checkpoint };
-        checkpoint = await this.finishReview({ mainWorktree, featureSlug, checkpoint, findingsSummary: reviewResult.findingsSummary });
+        checkpoint = await this.finishReview({ mainWorktree, featureSlug, checkpoint, findingsSummary: reviewResult.findingsSummary, result: reviewResult.result });
       }
       if (checkpoint.status === "integrating") return this.integrate({ repository, worktree, featureSlug, executionPlan, checkpoint });
       return { status: checkpoint.status, worktree, executionPlan, checkpoint };
