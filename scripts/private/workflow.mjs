@@ -6,7 +6,7 @@ import process from 'node:process';
 import { loadAgentAssets } from './asset-catalog.mjs';
 import { assertEnvironmentName, assertSafeEnvironmentPaths, environmentPath, loadResolvedConfiguration, validateConfiguration } from './config.mjs';
 import { globalPaths } from './paths.mjs';
-import { fail, readJson, write } from './shared.mjs';
+import { fail, isPlainObject, readJson, write } from './shared.mjs';
 import { applyGenerationPlan, capabilityMatrix, generationStatus, planGeneration } from './platform-adapter.mjs';
 import { applyTransaction, recoverTransaction } from './transaction.mjs';
 
@@ -72,6 +72,35 @@ function planInstallLifecycle() {
   return { skillDirectories, sourceDir, entry };
 }
 
+function addWriteStep(plan, path, contents) {
+  if (existsSync(path)) {
+    const entry = lstatSync(path);
+    if (entry.isFile() && readFileSync(path, 'utf8') === contents) return;
+  }
+  plan.push({ type: 'write', path, contents });
+}
+
+function addSourceTree(plan, source, destination) {
+  for (const entry of readdirSync(source, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
+    const sourcePath = resolve(source, entry.name);
+    const destinationPath = resolve(destination, entry.name);
+    if (entry.isDirectory()) addSourceTree(plan, sourcePath, destinationPath);
+    else if (entry.isFile()) addWriteStep(plan, destinationPath, readFileSync(sourcePath, 'utf8'));
+    else fail(`Install source must contain only regular files and directories: ${sourcePath}`);
+  }
+}
+
+function planCoreRuntime(assets, lifecycle, paths) {
+  const plan = [];
+  addWriteStep(plan, resolve(paths.dir, 'agent-workflow.mjs'), readFileSync(resolve(lifecycle.sourceDir, lifecycle.entry), 'utf8'));
+  addSourceTree(plan, resolve(import.meta.dirname), resolve(paths.dir, 'private'));
+  addSourceTree(plan, assets.root, resolve(paths.dir, 'agent-assets'));
+  addSourceTree(plan, resolve(ROOT, 'execution-runtime'), resolve(paths.dir, 'execution-runtime'));
+  const obsoleteBody = resolve(paths.dir, 'agent-assets', 'bodies', `${OBSOLETE_PRIMARY_AGENT_ID}.md`);
+  if (existsSync(obsoleteBody)) plan.push({ type: 'delete', path: obsoleteBody });
+  return plan;
+}
+
 function installSkills(lifecycle, dryRun) {
   if (dryRun) return;
   const paths = globalPaths();
@@ -98,17 +127,10 @@ function installSkills(lifecycle, dryRun) {
   }
 }
 
-function installRuntime(assets, lifecycle, dryRun) {
+function installSupplementalRuntime(dryRun) {
   if (dryRun) return;
   const { dir } = globalPaths();
-  mkdirSync(dir, { recursive: true });
-  cpSync(resolve(lifecycle.sourceDir, lifecycle.entry), resolve(dir, 'agent-workflow.mjs'), { force: true });
-  cpSync(resolve(import.meta.dirname), resolve(dir, 'private'), { recursive: true, force: true });
-  cpSync(assets.root, resolve(dir, 'agent-assets'), { recursive: true, force: true });
-  cpSync(resolve(ROOT, 'execution-runtime'), resolve(dir, 'execution-runtime'), { recursive: true, force: true });
   cpSync(resolve(SKILLS_ROOT, 'run-matt-spec-to-completion'), resolve(dir, 'skills', 'run-matt-spec-to-completion'), { recursive: true, force: true });
-  const obsoleteBody = resolve(dir, 'agent-assets', 'bodies', `${OBSOLETE_PRIMARY_AGENT_ID}.md`);
-  if (existsSync(obsoleteBody)) unlinkSync(obsoleteBody);
 }
 
 function loadConfig(assets, allowDefaults = false, platforms = [...PLATFORMS]) {
@@ -123,6 +145,28 @@ function loadConfig(assets, allowDefaults = false, platforms = [...PLATFORMS]) {
     fail(`Missing ${paths.defaultEnvironment}. Run init first.`);
   }
   return { ...loadResolvedConfiguration({ paths, roles: assets.roles, platforms }), paths };
+}
+
+function loadInstallConfig(assets, platforms) {
+  const paths = globalPaths();
+  assertSafeEnvironmentPaths(paths);
+  const exists = existsSync(paths.defaultEnvironment);
+  let base = exists ? readJson(paths.defaultEnvironment) : structuredClone(assets.defaults);
+  if (exists && isPlainObject(base?.roles) && !Object.hasOwn(base.roles, 'planning')) {
+    base = structuredClone(base);
+    base.roles.planning = structuredClone(assets.defaults.roles.planning);
+  }
+  const resolved = loadResolvedConfiguration({
+    paths,
+    roles: assets.roles,
+    platforms,
+    defaultConfiguration: base
+  });
+  return {
+    ...resolved,
+    paths,
+    defaultContents: `${JSON.stringify(base, null, 2)}\n`
+  };
 }
 
 function listEnvironments() {
@@ -365,18 +409,24 @@ export function runCli(argv) {
   const assets = loadAgentAssets();
   if (options.command === 'install') {
     const lifecycle = planInstallLifecycle();
-    const { config } = loadConfig(assets, true, options.platforms);
+    const installation = loadInstallConfig(assets, options.platforms);
+    const { config } = installation;
     const generation = planGenerationFor(options.platforms, assets, config);
+    const paths = installation.paths;
+    const plan = planCoreRuntime(assets, lifecycle, paths);
+    addWriteStep(plan, paths.defaultEnvironment, installation.defaultContents);
+    addWriteStep(plan, paths.routing, assets.routing);
+    plan.push(...generation.plan);
+    const manifest = managedPlatformsStep(paths, options.platforms);
+    if (manifest) plan.push(manifest);
+    const changed = applyGenerationTransaction(plan, paths, options.dryRun);
     installSkills(lifecycle, options.dryRun);
-    const changed = init(assets, options.dryRun);
-    console.log(`Initialized ${globalPaths().dir}`);
-    for (const path of changed) console.log(`WRITE ${path}`);
-    installRuntime(assets, lifecycle, options.dryRun);
-    const generated = generate(options.platforms, options.dryRun, assets, config, []);
+    installSupplementalRuntime(options.dryRun);
+    console.log(`Initialized ${paths.dir}`);
     for (const message of generation.warnings) console.warn(`WARNING ${message}`);
     reportCapabilities(options.platforms, assets, config);
-    console.log(`${options.dryRun ? 'Would write' : 'Generated'} ${generated.changed.length} file(s).`);
-    for (const path of generated.changed) console.log(`${options.dryRun ? 'WRITE' : 'WROTE'} ${path}`);
+    console.log(`${options.dryRun ? 'Would write' : 'Generated'} ${changed.length} file(s).`);
+    for (const path of changed) console.log(`${options.dryRun ? 'WRITE' : 'WROTE'} ${path}`);
     return;
   }
   if (options.command === 'init') {

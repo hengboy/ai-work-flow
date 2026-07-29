@@ -16,6 +16,21 @@
         "options": {}
       }
     },
+    "planning": {
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "xhigh"
+      },
+      "claude": {
+        "model": "opus",
+        "effort": "high"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-sol",
+        "variant": "xhigh",
+        "options": {}
+      }
+    },
     "file-explorer": {
       "codex": {
         "model": "gpt-5.6-luna",

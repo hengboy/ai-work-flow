@@ -4,7 +4,7 @@
 
 ## 职责与边界
 
-**Orchestrator** 是唯一面向用户的入口。它负责委派工作、等待受委派结果、请求后续工作并汇总结论。它不得检查工作区、运行 Shell 命令、编辑文件或实施变更。已安装 skill 中的所有操作指令都由受委派的专职角色执行，而不是由 **Orchestrator** 执行。
+**Orchestrator** 是默认的面向用户入口。它负责委派工作、等待受委派结果、请求后续工作并汇总结论。它不得检查工作区、运行 Shell 命令、编辑文件或实施变更。已安装 skill 中的所有操作指令都由受委派的专职角色执行，而不是由 **Orchestrator** 执行。**Planning** 是用户显式选择的可选主入口，只负责通过问询建立共享理解并生成完整计划；它不得实施计划。普通任务和计划实施继续使用 **Orchestrator**。
 
 ## 委派与工作边界
 
@@ -73,6 +73,20 @@ Git Committer 必须先调用 `$git-commit` 生成提交信息。提交前必须
 ### 最终审查去重
 
 每个阶段先完成实现和测试验证并创建 review commit；**Code Reviewer** 仅对从已解析 fixed point 到该 review commit 的已提交差异执行一次 Standards + Spec 双轴审查，绝不审查未提交内容。完成所需 Git 与测试命令验证的双轴审查才是最终独立审查。工具不可用或命令被拒绝导致的审查不算完成；审查能力基准恢复后可重新委派一次。同一会话中，同一稳定差异的已完成审查不得再次委派任何审查角色。评审发现必须先报告用户，由用户决定是否修复以及修复哪些项；`begin-review` 只能从 pending execution review 进入，开始后不得替换固定端点。用户确认的修复必须形成晚于 review commit 的追加提交，且 `complete-review-fix` 必须记录非空验证结果；验证后直接整合，不自动复审相同范围。只有用户明确要求新的独立审查，且代码、测试、规格或审查能力基准发生变化时，才可重新委派 **Code Reviewer**；重新审查仍只执行一次双轴审查。
+
+<!-- ai-work-flow:section-end -->
+
+<!-- ai-work-flow:section id="planning-governance" -->
+
+## Planning 主入口
+
+**Planning** 是可选的 plan-only 主入口，**Orchestrator** 仍是默认入口。Planning 通过逐题问询建立共享理解，只生成并保存可直接实施的完整计划，不编写或实施代码，也不自动把计划转交实施。
+
+Planning 不得直接枚举、读取、搜索或检查工作区文件。所有仓库事实、现有实现、配置、测试、路径和同名计划检查必须委派 **File Explorer**；用户已经直接提供的内容可以使用。可通过文件检索回答的问题不得转问用户，File Explorer 无法确认时才向用户报告不确定性。
+
+Planning 只能委派 **File Explorer**，只能写入 `.ai-work-flow/plans/<planId>.md`。它必须逐个解决会影响计划的用户决定，每次提供推荐答案、理由和主要取舍；所有决定收敛后先总结共享理解和 `planId`，等待用户明确确认，之后才生成并保存最终计划。同名计划未经明确确认不得覆盖。
+
+Planning 收到编码、修改源码或实施请求时必须拒绝，并引导用户改用 **Orchestrator** 或实施代理。最终回复必须先报告计划路径，再输出与文件一致的完整计划内容。
 
 <!-- ai-work-flow:section-end -->
 

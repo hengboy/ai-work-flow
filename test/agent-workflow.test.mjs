@@ -33,10 +33,11 @@ const defaultSkillPrompts = new Map([
 ]);
 
 function assertPromptLayout(source, name) {
-  assert.equal((source.match(/^# [^\n]+$/gm) ?? []).length, 1, `${name} needs one primary title`);
-  assert.match(source, /^## 回复格式$/m, `${name} needs a reply format`);
-  assert.match(source, /\*\*(?:状态|结论|阻塞|结果|更新|注意|完成|发现|提交结果|严重)：\*\*/, `${name} needs a bold response label`);
-  assert.doesNotMatch(source, /^#{1,3} [^\n]+\n(?!\n)/m, `${name} headings need a following blank line`);
+  const prose = source.replace(/^```[\s\S]*?^```$/gm, '');
+  assert.equal((prose.match(/^# [^\n]+$/gm) ?? []).length, 1, `${name} needs one primary title`);
+  assert.match(prose, /^## 回复格式$/m, `${name} needs a reply format`);
+  assert.match(prose, /\*\*(?:状态|结论|阻塞|结果|更新|注意|完成|发现|提交结果|严重)：\*\*/, `${name} needs a bold response label`);
+  assert.doesNotMatch(prose, /^#{1,3} [^\n]+\n(?!\n)/m, `${name} headings need a following blank line`);
 }
 
 function codexDeveloperInstructions(source) {
@@ -176,6 +177,7 @@ test('managed prompt documents use the Markdown layout', () => {
 test('role bodies derive their common structure and reply sections from the catalog', () => {
   const replyLabels = {
     orchestrator: ['协调状态', '已委派', '已收到', '结论', '阻塞'],
+    planning: ['状态', '计划文件', '计划内容', '阻塞'],
     'file-explorer': ['发现', '代码地图', '交接', '阻塞'],
     researcher: ['发现', '来源', '交接', '阻塞'],
     'document-maintainer': ['完成', '变更', '验证', '阻塞'],
@@ -421,6 +423,95 @@ test('init ignores a legacy config when creating the default environment', () =>
   assert.equal(validation.status, 0, validation.stderr);
 });
 
+test('validate does not migrate a default environment that lacks planning', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  delete configuration.roles.planning;
+  const before = `${JSON.stringify(configuration, null, 2)}\n`;
+  writeFileSync(defaultEnvironmentPath(paths), before);
+
+  const validation = run(paths, 'validate');
+  assert.equal(validation.status, 1);
+  assert.match(validation.stderr, /Missing configuration for role: planning/);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+  assert.ok(!existsSync(agentPath(paths, 'codex', 'planning', 'toml')));
+});
+
+test('install migrates only a completely missing planning role and preserves sparse overlays', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  configuration.roles.orchestrator.codex.model = 'preserved-model';
+  delete configuration.roles.planning;
+  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(configuration, null, 2)}\n`);
+
+  const overlayPath = resolve(paths.config, 'ai-work-flow/environments/sparse.json');
+  const overlay = `${JSON.stringify({
+    version: 1,
+    roles: { orchestrator: { codex: { reasoning: 'low' } } }
+  }, null, 2)}\n`;
+  writeFileSync(overlayPath, overlay);
+  writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'sparse');
+
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  const migrated = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  const defaults = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
+  assert.deepEqual(migrated.roles.planning, defaults.roles.planning);
+  assert.equal(migrated.roles.orchestrator.codex.model, 'preserved-model');
+  assert.equal(readFileSync(overlayPath, 'utf8'), overlay);
+  assert.match(readFileSync(agentPath(paths, 'codex', 'planning', 'toml'), 'utf8'), /model = "gpt-5\.6-sol"/);
+  assert.match(readFileSync(agentPath(paths, 'codex', 'orchestrator', 'toml'), 'utf8'), /model = "preserved-model"/);
+});
+
+test('install rejects an existing partial planning role without modifying global files', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  delete configuration.roles.planning.claude;
+  const before = `${JSON.stringify(configuration, null, 2)}\n`;
+  writeFileSync(defaultEnvironmentPath(paths), before);
+  const sentinel = agentPath(paths, 'codex', 'orchestrator', 'toml');
+  mkdirSync(resolve(sentinel, '..'), { recursive: true });
+  writeFileSync(sentinel, 'preserved agent\n');
+
+  const result = install(paths);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /planning\.claude must be an object/);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+  assert.equal(readFileSync(sentinel, 'utf8'), 'preserved agent\n');
+  assert.ok(!existsSync(agentPath(paths, 'claude', 'planning', 'md')));
+});
+
+test('a failed install plan leaves planning migration, runtime, assets, and agents untouched', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  delete configuration.roles.planning;
+  const before = `${JSON.stringify(configuration, null, 2)}\n`;
+  writeFileSync(defaultEnvironmentPath(paths), before);
+
+  const runtime = resolve(paths.config, 'ai-work-flow/agent-workflow.mjs');
+  const installedRoles = resolve(paths.config, 'ai-work-flow/agent-assets/roles.json');
+  mkdirSync(resolve(installedRoles, '..'), { recursive: true });
+  writeFileSync(runtime, 'preserved runtime\n');
+  writeFileSync(installedRoles, 'preserved assets\n');
+  const claudeMarker = resolve(paths.home, '.claude/CLAUDE.md');
+  const invalidMarker = '<!-- ai-work-flow:agents:begin -->\n<!-- ai-work-flow:agents:begin -->\n';
+  mkdirSync(resolve(claudeMarker, '..'), { recursive: true });
+  writeFileSync(claudeMarker, invalidMarker);
+
+  const result = install(paths);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Cannot safely update workflow marker/);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+  assert.equal(readFileSync(runtime, 'utf8'), 'preserved runtime\n');
+  assert.equal(readFileSync(installedRoles, 'utf8'), 'preserved assets\n');
+  assert.equal(readFileSync(claudeMarker, 'utf8'), invalidMarker);
+  assert.ok(!existsSync(agentPath(paths, 'codex', 'planning', 'toml')));
+});
+
 test('routing is the sole source for shared discovery governance', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const source = readFileSync(resolve(agentAssets, 'bodies/orchestrator.md'), 'utf8');
@@ -603,6 +694,130 @@ test('planning workflow resolves material user decisions before writing a plan a
   }
   assert.match(orchestrator, /受管治理内容在生成时从 routing section 编译/);
   assert.doesNotMatch(orchestrator, /每次只询问一个决策/);
+});
+
+test('planning is an opt-in primary that can only delegate repository discovery and write plans', () => {
+  const planning = catalog.roles.find((role) => role.id === 'planning');
+  const orchestrator = catalog.roles.find((role) => role.id === 'orchestrator');
+  assert.equal(planning.kind, 'primary');
+  assert.equal(planning.default_primary, undefined);
+  assert.equal(orchestrator.kind, 'primary');
+  assert.equal(orchestrator.default_primary, true);
+  assert.deepEqual(planning.delegates, ['file-explorer']);
+  assert.deepEqual(planning.tools, ['Write', 'Task']);
+  assert.deepEqual(policies[planning.policy], {
+    filesystem: 'write',
+    shell: 'none',
+    network: 'none',
+    browser: 'none',
+    git: 'none',
+    write_scope: 'plans',
+    delegation: 'allowed'
+  });
+
+  const defaults = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
+  assert.deepEqual(defaults.roles.planning, defaults.roles['planning-writer']);
+});
+
+test('planning prompt converges one decision at a time and emits the complete fixed plan template', () => {
+  const body = readFileSync(resolve(agentAssets, 'bodies/planning.md'), 'utf8');
+  const expectedSections = [
+    'Plan Metadata',
+    'Problem Statement',
+    'Solution',
+    'Goals and Success Criteria',
+    'User Stories',
+    'Scope',
+    'Implementation Decisions',
+    'Implementation Changes',
+    'Public Interfaces',
+    'Data Flow and Failure Modes',
+    'Testing Decisions',
+    'Rollout and Compatibility',
+    'Out of Scope',
+    'Assumptions',
+    'Further Notes'
+  ];
+  const sectionPositions = expectedSections.map((heading) => body.indexOf(`## ${heading}`));
+
+  assert.ok(sectionPositions.every((position) => position >= 0));
+  assert.deepEqual([...sectionPositions].sort((left, right) => left - right), sectionPositions);
+  assert.match(body, /status: `ready-for-implementation`/);
+  assert.match(body, /不适用.*`N\/A`.*原因/);
+  assert.match(body, /每次只询问一个/);
+  assert.match(body, /推荐答案.*理由.*取舍/);
+  assert.match(body, /目标、成功标准、受众、范围、约束、现状、接口、数据流、失败处理、测试、兼容、迁移和发布策略/);
+  assert.match(body, /具体场景.*边界/);
+  assert.match(body, /仓库事实.*委派 \*\*File Explorer\*\*/);
+  assert.match(body, /可通过仓库检索回答的问题不得询问用户/);
+  assert.match(body, /用户明确确认.*共享理解/);
+  assert.match(body, /\.ai-work-flow\/plans\/<planId>\.md/);
+  assert.match(body, /同名.*完整更新.*更换 ID/);
+  assert.match(body, /未经.*确认.*覆盖/);
+  assert.match(body, /先报告计划文件路径/);
+  assert.match(body, /输出完整计划/);
+  assert.match(body, /编码、修改源码或实施请求.*拒绝/);
+  assert.match(body, /Orchestrator/);
+  assert.doesNotMatch(body, /https?:\/\/|github\.com/i);
+});
+
+test('planning assets and generated prompts contain no outside planning references', () => {
+  const restrictedTerms = [
+    ['M', 'att'].join(''),
+    ['gr', 'ill-me'].join(''),
+    ['gr', 'ill-with-docs'].join(''),
+    ['writing-', 'great-skills'].join('')
+  ];
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const sources = [
+    readFileSync(resolve(agentAssets, 'bodies/planning.md'), 'utf8'),
+    readFileSync(resolve(agentAssets, 'routing.md'), 'utf8'),
+    ...[['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']].map(([platform, extension]) => (
+      generatedBody(paths, platform, 'planning', extension)
+    ))
+  ];
+
+  for (const source of sources) {
+    const planningSource = source.replaceAll(executionSkill, '');
+    assert.doesNotMatch(planningSource, /https?:\/\/|github\.com/i);
+    for (const term of restrictedTerms) assert.ok(!planningSource.toLowerCase().includes(term.toLowerCase()), term);
+  }
+});
+
+test('all platforms generate planning without changing the default primary', () => {
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  assert.ok(existsSync(agentPath(paths, 'codex', 'planning', 'toml')));
+  assert.ok(existsSync(agentPath(paths, 'claude', 'planning', 'md')));
+  const openCodePlanning = parseFrontmatter(readFileSync(agentPath(paths, 'opencode', 'planning', 'md'), 'utf8'));
+  assert.equal(openCodePlanning.mode, 'primary');
+  assert.equal(openCodePlanning.permission.read, 'deny');
+  assert.equal(openCodePlanning.permission.glob, 'deny');
+  assert.equal(openCodePlanning.permission.grep, 'deny');
+  assert.equal(openCodePlanning.permission.bash, 'deny');
+  assert.equal(openCodePlanning.permission.edit, 'allow');
+  assert.equal(openCodePlanning.permission.task, 'allow');
+
+  const openCode = JSON.parse(readFileSync(resolve(paths.config, 'opencode/opencode.json'), 'utf8'));
+  assert.equal(openCode.default_agent, 'orchestrator');
+});
+
+test('OpenCode derives its default agent from the role catalog', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const rolePath = resolve(paths.config, 'ai-work-flow/agent-assets/roles.json');
+  const installedCatalog = JSON.parse(readFileSync(rolePath, 'utf8'));
+  installedCatalog.roles.find((role) => role.id === 'orchestrator').default_primary = false;
+  installedCatalog.roles.find((role) => role.id === 'planning').default_primary = true;
+  writeFileSync(rolePath, `${JSON.stringify(installedCatalog, null, 2)}\n`);
+
+  const generated = runInstalledWorkflow(paths, 'generate', '--platform', 'opencode');
+  assert.equal(generated.status, 0, generated.stderr);
+  const openCode = JSON.parse(readFileSync(resolve(paths.config, 'opencode/opencode.json'), 'utf8'));
+  assert.equal(openCode.default_agent, 'planning');
 });
 
 test('code review approval satisfies the final independent review', () => {
@@ -1444,13 +1659,19 @@ test('catalog compiles referenced routing sections and rejects invalid governanc
   const assets = loadAgentAssets();
   const compiled = assets.compiledBodies.get('orchestrator');
   assert.match(compiled, /ai-work-flow:routing-digest=/);
-  assert.match(compiled, /\*\*Orchestrator\*\* 是唯一面向用户的入口/);
-  assert.doesNotMatch(assets.bodies.get('orchestrator'), /\*\*Orchestrator\*\* 是唯一面向用户的入口/);
+  assert.match(compiled, /\*\*Orchestrator\*\* 是默认的面向用户入口/);
+  assert.doesNotMatch(assets.bodies.get('orchestrator'), /\*\*Orchestrator\*\* 是默认的面向用户入口/);
 
   for (const mutate of [
-    (catalog) => { catalog.roles[1].kind = 'primary'; },
-    (catalog) => { catalog.roles[1].delegates = ['orchestrator']; },
-    (catalog) => { catalog.roles[2].tools = ['Read']; },
+    (catalog) => { for (const role of catalog.roles) role.kind = 'subagent'; },
+    (catalog) => { delete catalog.roles.find((role) => role.id === 'orchestrator').default_primary; },
+    (catalog) => { catalog.roles.find((role) => role.id === 'planning').default_primary = true; },
+    (catalog) => {
+      catalog.roles.find((role) => role.id === 'orchestrator').default_primary = false;
+      catalog.roles.find((role) => role.id === 'file-explorer').default_primary = true;
+    },
+    (catalog) => { catalog.roles.find((role) => role.id === 'file-explorer').delegates = ['orchestrator']; },
+    (catalog) => { catalog.roles.find((role) => role.id === 'researcher').tools = ['Read']; },
     (catalog) => { catalog.roles[0].routing_sections = ['missing-section']; }
   ]) {
     const root = copiedAssets();

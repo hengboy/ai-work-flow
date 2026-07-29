@@ -6,6 +6,7 @@
     "research": { "filesystem": "none", "shell": "none", "network": "official", "browser": "none", "git": "none", "write_scope": "none", "delegation": "none" },
     "write-docs": { "filesystem": "write", "shell": "write", "network": "none", "browser": "none", "git": "read", "write_scope": "docs", "delegation": "none" },
     "write-plans": { "filesystem": "write", "shell": "write", "network": "none", "browser": "none", "git": "read", "write_scope": "plans", "delegation": "none" },
+    "write-plans-delegated": { "filesystem": "write", "shell": "none", "network": "none", "browser": "none", "git": "none", "write_scope": "plans", "delegation": "allowed" },
     "write-code": { "filesystem": "write", "shell": "write", "network": "none", "browser": "none", "git": "read", "write_scope": "code", "delegation": "allowed" },
     "commit": { "filesystem": "write", "shell": "git", "network": "none", "browser": "none", "git": "write", "write_scope": "git", "delegation": "none" },
     "review": { "filesystem": "read", "shell": "read", "network": "none", "browser": "none", "git": "read", "write_scope": "none", "delegation": "review-only" }

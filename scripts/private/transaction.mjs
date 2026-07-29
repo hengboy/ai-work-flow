@@ -132,6 +132,7 @@ function processIsAlive(pid) {
 function acquireLock(transactionPath, roots) {
   const path = lockPath(transactionPath);
   assertTrustedPath(path, roots);
+  mkdirSync(dirname(path), { recursive: true });
   try {
     writeFileSync(path, `${JSON.stringify({ version: TRANSACTION_VERSION, pid: process.pid })}\n`, { flag: 'wx' });
   } catch (error) {

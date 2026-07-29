@@ -192,9 +192,9 @@ function readEnvironmentMarker(paths) {
   return name;
 }
 
-export function loadResolvedConfiguration({ paths, roles, platforms, environmentName = null }) {
+export function loadResolvedConfiguration({ paths, roles, platforms, environmentName = null, defaultConfiguration = null }) {
   assertSafeEnvironmentPaths(paths);
-  const base = readVerifiedEnvironment(paths.defaultEnvironment, paths);
+  const base = defaultConfiguration ?? readVerifiedEnvironment(paths.defaultEnvironment, paths);
   const markerName = readEnvironmentMarker(paths);
   const name = environmentName ?? markerName;
   if (name !== 'default') assertEnvironmentName(name);

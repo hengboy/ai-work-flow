@@ -1,8 +1,8 @@
 | 功能/关键词 | 入口路径 | 模块边界 |
 | --- | --- | --- |
-| CLI 安装、初始化、验证、生成 | `scripts/install.mjs` -> `scripts/private/workflow.mjs` | CLI 转交 `runCli`；安装器为全局 Skill 复制 runtime handoff schema，并在配置根安装 canonical runtime。 |
+| CLI 安装、初始化、验证、生成 | `scripts/install.mjs` -> `scripts/private/workflow.mjs` | CLI 转交 `runCli`；安装时只补齐完全缺失的 Planning 配置，并将该迁移、核心 runtime/资产与平台代理生成放入同一事务；`validate` 保持只读。 |
 | 工作流命令、环境管理 | `scripts/private/workflow.mjs` | 依赖 `scripts/private/config.mjs`、`scripts/private/transaction.mjs`、`scripts/private/asset-catalog.mjs`、`scripts/private/paths.mjs`、`scripts/private/platform-adapter.mjs`。 |
-| Agent 角色、Policy、路由资产 | `scripts/agent-assets/roles.json`、`scripts/agent-assets/policies.json`、`scripts/agent-assets/routing.md`、`scripts/agent-assets/bodies/*.md` | Asset catalog 校验角色与 Policy 引用；平台生成输出能力等级。 |
+| Agent 角色、Policy、路由资产 | `scripts/agent-assets/roles.json`、`scripts/agent-assets/policies.json`、`scripts/agent-assets/routing.md`、`scripts/agent-assets/bodies/*.md` | Asset catalog 允许多个 primary、校验唯一 `default_primary`；Planning 正文定义逐题问询、File Explorer 事实委派和固定计划模板。 |
 | 平台 Agent 生成 | `scripts/private/platform-adapter.mjs` | 生成各平台 Agent 配置与托管内容。 |
 | 项目代码导航规则 | `skills/project-code-navigation/SKILL.md` | 维护 `.ai-work-flow/index/` 下的功能导航。 |
 | Spec、Ticket 执行 | `execution-runtime/execution-cli.mjs`、`skills/run-matt-spec-to-completion/lib/execution-orchestrator.mjs` | CLI 是 prepare/claim/record/review/fix/integrate/cleanup/status 的唯一状态入口；orchestrator 只协调 CLI 与 runtime-owned Git 特例。 |

@@ -1,6 +1,6 @@
 # AI Work Flow
 
-为 Codex、Claude Code 和 OpenCode 生成统一专职代理工作流的配置系统。安装后，**Orchestrator** 是唯一面向用户的入口，负责路由、等待和汇总；实际的发现、研究、写作、实现和评审由专职角色完成。
+为 Codex、Claude Code 和 OpenCode 生成统一专职代理工作流的配置系统。安装后，**Orchestrator** 是默认入口，负责路由、等待和汇总；**Planning** 是用户显式选择的可选主入口，只负责问询和生成完整计划。实际的发现、研究、写作、实现和评审由专职角色完成。
 
 ## 前置条件
 
@@ -20,8 +20,8 @@ node scripts/install.mjs
 
 - 将自定义技能（`run-matt-spec-to-completion`、`generate-ai-work-flow-agents`、`switch-ai-work-flow-env`、`project-code-navigation`、`git-commit`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录，并安装共享 execution runtime 及其依赖
 - 创建并默认直接使用 `~/.config/ai-work-flow/environments/default.json` 和 `routing.md`；仓库中的 `scripts/agent-assets/default-config.json` 仅作为初始化模板
-- 生成三端的 9 个受管理 agent
-- 更新三端的路由配置，并将 OpenCode 默认 agent 设为 `orchestrator`
+- 生成三端的 11 个受管理 agent
+- 更新三端的路由配置，并从角色目录的 `default_primary` 设置 OpenCode 默认 agent；默认仍为 `orchestrator`
 - 保留无关的全局 Skills、agents 和工具配置
 
 默认安装会处理全部平台。只生成指定平台的 agents 时，可以使用：
@@ -51,6 +51,8 @@ node scripts/install.mjs --help
 ```
 
 `install` 是完整流程：同步 Skills、初始化配置和路由、安装运行时文件，然后生成 agents。`init` 和 `validate` 适合安装或排查问题；配置更新后的 agents 重新生成应通过 `$generate-ai-work-flow-agents` 完成。
+
+升级安装时，如果全局 `environments/default.json` 完全缺少 `planning`，安装器会从内置默认配置补入该角色，并将配置迁移、核心 runtime/资产和平台代理生成作为一个事务提交。已有 `planning` 即使字段残缺也不会被静默修复；此时安装会停止并保留原文件。`validate` 始终只读，不执行迁移。
 
 ## 模型配置
 
@@ -127,6 +129,7 @@ node "$runtime" record-ticket --repository <repo> --feature <feature> --worktree
 | 角色 | 用途 |
 | --- | --- |
 | **Orchestrator** | 路由、等待和汇总 |
+| **Planning** | 逐题确认目标和关键决策，将完整计划写入 `.ai-work-flow/plans/<planId>.md`；不实施代码 |
 | **File Explorer** | 全库枚举、搜索和代码地图 |
 | **Researcher** | 外部官方资料与依赖研究 |
 | **Document Maintainer** | README、`docs` 等常规文档 |
@@ -179,7 +182,7 @@ node "$runtime" record-ticket --repository <repo> --feature <feature> --worktree
 
 `to-spec`、`to-tickets`、`implement` 和 `code-review` 可以作为独立能力安装。AI Work Flow 提供：
 
-- **Orchestrator 路由层**：`routing.md` + 9 角色 Agent 定义
+- **多主入口路由层**：`routing.md` + 11 角色 Agent 定义；Orchestrator 为默认入口，Planning 为可选 plan-only 入口
 - **执行引擎**：`run-matt-spec-to-completion`（适配 `to-spec`/`to-tickets` 产物）
 - **配置管理**：`generate-ai-work-flow-agents` + `agent-workflow.mjs`
 - **项目导航**：`project-code-navigation` + 目标项目 `.ai-work-flow/index/`

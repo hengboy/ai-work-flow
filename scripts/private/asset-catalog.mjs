@@ -41,8 +41,9 @@ function validateRole(role, errors) {
     if (typeof role[property] !== 'string' || !role[property]) errors.push(`Role ${role.id} must have a non-empty ${property}.`);
   }
   for (const property of Object.keys(role)) {
-    if (!['id', 'name', 'description', 'kind', 'policy', 'delegates', 'tools', 'routing_sections'].includes(property)) errors.push(`Role ${role.id} has unknown field: ${property}.`);
+    if (!['id', 'name', 'description', 'kind', 'default_primary', 'policy', 'delegates', 'tools', 'routing_sections'].includes(property)) errors.push(`Role ${role.id} has unknown field: ${property}.`);
   }
+  if (role.default_primary !== undefined && typeof role.default_primary !== 'boolean') errors.push(`Role ${role.id}.default_primary must be a boolean.`);
   if (!Array.isArray(role.delegates)) errors.push(`Role ${role.id}.delegates must be an array.`);
   if (!Array.isArray(role.tools)) errors.push(`Role ${role.id}.tools must be an array.`);
   if (!Array.isArray(role.routing_sections) || role.routing_sections.length === 0) errors.push(`Role ${role.id}.routing_sections must be a non-empty array.`);
@@ -87,8 +88,6 @@ function validateDelegateGraph(roles, errors) {
 
 function validateDelegateDepth(roles, errors) {
   const byId = new Map(roles.map((role) => [role.id, role]));
-  const primary = roles.find((role) => role.kind === 'primary');
-  if (!primary) return;
   const visit = (id, path) => {
     if (path.length - 1 > MAX_AGENT_DEPTH) {
       errors.push(`Role delegation exceeds max depth ${MAX_AGENT_DEPTH}: ${path.join(' -> ')}.`);
@@ -98,7 +97,7 @@ function validateDelegateDepth(roles, errors) {
       if (!path.includes(delegate)) visit(delegate, [...path, delegate]);
     }
   };
-  visit(primary.id, [primary.id]);
+  for (const primary of roles.filter((role) => role.kind === 'primary')) visit(primary.id, [primary.id]);
 }
 
 function validatePolicy(name, policy, errors) {
@@ -131,7 +130,11 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
   }
   const ids = roles.map((role) => role?.id).filter(Boolean);
   if (!unique(ids)) errors.push('roles.json contains duplicate role ids.');
-  if (roles.filter((role) => role.kind === 'primary').length !== 1) errors.push('roles.json must contain exactly one primary role.');
+  const primaryRoles = roles.filter((role) => role.kind === 'primary');
+  const defaultPrimaryRoles = roles.filter((role) => role.default_primary === true);
+  if (primaryRoles.length === 0) errors.push('roles.json must contain at least one primary role.');
+  if (defaultPrimaryRoles.length !== 1) errors.push('roles.json must contain exactly one role with default_primary: true.');
+  if (defaultPrimaryRoles.length === 1 && defaultPrimaryRoles[0].kind !== 'primary') errors.push(`Role ${defaultPrimaryRoles[0].id} sets default_primary: true but is not a primary role.`);
   for (const role of roles) {
     if (!ROLE_KINDS.has(role.kind)) errors.push(`Role ${role.id} has invalid kind: ${role.kind}.`);
     if (!unique(role.delegates ?? [])) errors.push(`Role ${role.id} has duplicate delegates.`);

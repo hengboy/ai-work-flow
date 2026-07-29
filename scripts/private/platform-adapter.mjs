@@ -175,7 +175,7 @@ function opencodeRender(role, settings, body, policy) {
   return frontmatter.join('\n');
 }
 
-function opencodeUpdateConfig(source) {
+function opencodeUpdateConfig(source, path, roles) {
   const current = source ? JSON.parse(source) : {};
   if (!isPlainObject(current)) fail(`Cannot safely merge opencode.json: root must be an object.`);
   if (current.agent !== undefined && !isPlainObject(current.agent)) {
@@ -186,7 +186,9 @@ function opencodeUpdateConfig(source) {
   }
   const agent = { ...(current.agent ?? {}) };
   if (agent.explore === false) delete agent.explore;
-  return `${JSON.stringify({ ...current, agent, subagent_depth: Math.max(MAX_AGENT_DEPTH, current.subagent_depth ?? 0), default_agent: 'orchestrator' }, null, 2)}\n`;
+  const defaultPrimary = roles.find((role) => role.default_primary === true);
+  if (!defaultPrimary) fail('Cannot configure OpenCode without a default primary role.');
+  return `${JSON.stringify({ ...current, agent, subagent_depth: Math.max(MAX_AGENT_DEPTH, current.subagent_depth ?? 0), default_agent: defaultPrimary.id }, null, 2)}\n`;
 }
 
 function digest(contents) {
@@ -241,12 +243,12 @@ function markerDrift(strategy, paths) {
   }
 }
 
-function configurationDrift(strategy, paths) {
+function configurationDrift(strategy, paths, roles) {
   if (!strategy.globalConfig) return false;
   const path = strategy.globalConfig.path(paths);
   try {
     const source = existsSync(path) ? readFileSync(path, 'utf8') : '';
-    return strategy.globalConfig.update(source, path) !== source;
+    return strategy.globalConfig.update(source, path, roles) !== source;
   } catch {
     return true;
   }
@@ -334,7 +336,7 @@ export function planGeneration({ platform, paths, roles, policies, config, bodie
   if (strategy.globalConfig) {
     const configPath = strategy.globalConfig.path(paths);
     const source = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
-    addWrite(configPath, strategy.globalConfig.update(source, configPath));
+    addWrite(configPath, strategy.globalConfig.update(source, configPath, roles));
   }
 
   if (strategy.marker) {
@@ -370,7 +372,7 @@ export function generationStatus({ platforms, paths, roles, policies, config, bo
   return platforms.flatMap((platform) => {
     const strategy = strategies[platform];
     const markerIsDrifted = markerDrift(strategy, paths);
-    const configurationIsDrifted = configurationDrift(strategy, paths);
+    const configurationIsDrifted = configurationDrift(strategy, paths, roles);
     return roles.map((role) => {
       const expected = strategy.render(role, config.roles[role.id][platform], bodies.get(role.id), policies[role.policy]);
       const target = agentFile(paths, platform, role.id);

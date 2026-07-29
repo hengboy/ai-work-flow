@@ -6,6 +6,7 @@
       "name": "Orchestrator",
       "description": "负责路由工作、等待受委派结果并汇总结论。",
       "kind": "primary",
+      "default_primary": true,
       "policy": "orchestrate",
       "delegates": [
         "file-explorer",
@@ -18,6 +19,16 @@
       ],
       "tools": [],
       "routing_sections": ["core-governance"]
+    },
+    {
+      "id": "planning",
+      "name": "Planning",
+      "description": "通过持续问询建立共享理解，并生成可直接实施的完整计划。",
+      "kind": "primary",
+      "policy": "write-plans-delegated",
+      "delegates": ["file-explorer"],
+      "tools": ["Write", "Task"],
+      "routing_sections": ["planning-governance"]
     },
     {
       "id": "file-explorer",
