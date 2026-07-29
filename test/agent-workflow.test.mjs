@@ -626,6 +626,9 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
   assert.match(routing, /禁止使用无参数 `git diff` 或 `git diff --cached`/);
   assert.match(bodies['code-reviewer'], /不得合并或跨轴重新排序/);
   assert.match(bodies['code-reviewer'], /只根据不可变 `ReviewManifest` 调度审查/);
+  assert.match(bodies['code-reviewer'], /在全新子会话中只重试被阻塞的评审一次/);
+  assert.match(bodies['code-reviewer'], /不改变 manifest、digest、固定 SHA、分片范围、规格来源或标准来源/);
+  assert.match(bodies['code-reviewer'], /该次重试仍阻塞、失败或结果未知时也立即报告用户/);
   assert.doesNotMatch(bodies['code-reviewer'], /\$code-review|已安装时|未安装时|Matt/);
   assert.match(bodies['review-standards'], /缺少任一项时阻塞/);
   assert.match(bodies['review-spec'], /缺少任一项时阻塞/);
@@ -637,6 +640,10 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
     for (const role of Object.keys(bodies)) {
       const generated = generatedBody(paths, platform, role, extension);
       assert.ok(generated.includes('git diff <fixed-point>...<review-commit>'), `${platform}/${role}`);
+      if (role === 'code-reviewer') {
+        assert.match(generated, /在全新子会话中只重新发起被阻塞的评审一次/, platform);
+        assert.match(generated, /该次重试仍阻塞、失败或结果未知时，立即报告用户/, platform);
+      }
     }
   }
 });
@@ -653,6 +660,7 @@ test('routing is the sole source for retry and stop-lock governance', () => {
     /可恢复的 429、502\/503\/504、超时、连接重置或结果未知/,
     /硬配额或计费耗尽的 429 不可重试/,
     /400\/401\/403\/404、参数或模型配置错误、子代理正常任务失败或测试失败、需求不清均不可重试/,
+    /Code Reviewer 裁决后重试一次的叶子评审阻塞除外/,
     /`Retry-After`，否则等待 30 秒、60 秒/,
     /网关或连接错误等待 5 秒、15 秒；单次等待不超过 120 秒/,
     /不承诺平台未提供的原子性或精确计时/,

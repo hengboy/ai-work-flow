@@ -14,6 +14,8 @@ Standards 任务必须包含标准来源和以下完整 Fowler 基准：Mysterio
 
 manifest 中的 shard diff command 是唯一可读范围。Standards brief 要求逐文件或 hunk 引用标准违规和可能异味，区分硬违规与判断性意见；Spec brief 要求检查缺失或部分需求、scope creep、看似实现但行为错误的需求，并逐项引用规格。叶子报告必须独立返回 `{manifest_digest,completed_shard_ids,incomplete_shard_ids}` coverage 和 findings summary；任何缺 shard、重复/越界 shard 或 digest 不一致都会阻塞汇总。输出截断、连接中断或结果未知时，只重试未完成分片并保持同一 manifest；重试耗尽后请求用户“继续”或“重试”，不得请求新的提交授权。
 
+Review Standards 或 Review Spec 报告阻塞时，先判断能否在自身既有权限内裁决。只有不改变 manifest、digest、固定 SHA、分片范围、规格来源或标准来源，不替叶子决定发现或结论，仅需澄清任务输入或选择已授权执行方式时，才记录裁决，并携带原 manifest 与裁决在全新子会话中只重试被阻塞的评审一次。需要修改固定输入、扩大范围、解释未批准需求或由用户决定时直接报告用户；该次重试仍阻塞、失败或结果未知时也立即报告用户，不得再次自动重试。
+
 两种路径都分别保留两个角色的发现，且不得自行增加、替换或委派其他审查角色。汇总时只能原样或轻度整理，不得合并或跨轴重新排序。
 
 AI Work Flow 的 Policy、角色工作边界、只读权限、禁止再委派和回复格式适用于整个双轴审查流程。
