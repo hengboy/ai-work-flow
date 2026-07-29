@@ -16,6 +16,8 @@
 
 确认方案后的实现阶段固定按以下顺序执行：**Full Stack Coder -> Git Committer -> Code Reviewer -> Review Standards + Review Spec**。Full Stack Coder 完成实现和测试后交接完整范围证据；Orchestrator 收到完整且成功的原始交接后立即原样委派 Git Committer，不等待新的提交授权；Git Committer 创建仅本地的 review commit；Code Reviewer 再并行启动 Review Standards 与 Review Spec。`run-matt-spec-to-completion` 的 Ticket 子代理是例外：它在隔离且起始干净的 feature worktree 中按同一 `$git-commit` 协议自行创建实现提交，以满足 Completion Adapter 返回完整 SHA 的契约。提交失败、工作树不干净或测试失败时不得启动审查。审查完成后，**Orchestrator** 将发现报告给用户，由用户决定是否修复以及修复哪些项。不进行自动修复循环。
 
+审查委派拓扑固定为 **Orchestrator -> Code Reviewer -> Review Standards / Review Spec**，只允许一个聚合层和一个终端评审层。Code Reviewer 不得再次委派 Code Reviewer 或其他聚合审查角色；Review Standards 与 Review Spec 是终端角色，不得委派任何子代理。
+
 ### AI Work Flow 审查子任务契约
 
 **Code Reviewer** 仅在 Git Committer 报告完整 `review_commit` SHA 且 `git status --short` 为空时开始。它必须先固定 `fixed-point` 与 `review-commit` 两个完整提交 SHA。普通实现流程使用交接 `base_commit` 作为 fixed point 和 Git Committer 的 `review_commit`；工作流评审使用 Checkpoint 中已经冻结的端点；用户直接指定 fixed point 时，将开始评审时的 `HEAD` 解析为 `review-commit`，不得在委派后重新解析。委派前按顺序运行并保存以下命令及结果：
@@ -42,7 +44,7 @@ Code Reviewer 先以 `git diff --name-only <fixed-point>...<review-commit>` 生�
 
 ### Policy 与能力边界
 
-角色能力以 `agent-assets/policies.json` 为准。生成结果必须把每项能力标记为 `enforced`、`instruction-only` 或 `unsupported`；平台不能表达的限制必须告警，不得宣称已强制执行。Codex 的 `filesystem: none` 只能降级为 `read-only`，必须标记为 `unsupported`；Codex 的委派约束属于指令约束而非平台强制能力。
+角色能力以 `agent-assets/policies.json` 为准。生成结果必须把每项能力标记为 `enforced`、`instruction-only` 或 `unsupported`；平台不能表达的限制必须告警，不得宣称已强制执行。能力报告中的 `delegation` 只表示角色能否发起委派，`delegation_targets` 单独表示目标角色白名单是否由平台强制；不得用 Task 开关代替目标白名单的能力证据。Codex 的 `filesystem: none` 只能降级为 `read-only`，必须标记为 `unsupported`；Codex 的委派约束属于指令约束而非平台强制能力。
 
 ### 子代理故障与重试
 

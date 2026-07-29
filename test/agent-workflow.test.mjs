@@ -9,7 +9,7 @@ import YAML from 'yaml';
 
 import { MARKER_END, MARKER_START, updateManagedMarker } from '../scripts/private/managed-content.mjs';
 import { loadAgentAssets } from '../scripts/private/asset-catalog.mjs';
-import { capabilityMatrix, evaluateOpenCodePermission } from '../scripts/private/platform-adapter.mjs';
+import { capabilityEvidence, capabilityMatrix, evaluateOpenCodePermission } from '../scripts/private/platform-adapter.mjs';
 import { applyTransaction, recoverTransaction } from '../scripts/private/transaction.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -506,6 +506,42 @@ test('full stack coder delegates unknown file discovery to file explorer', () =>
   assert.equal(openCode.permission.grep, 'deny');
 });
 
+test('review roles declare one non-recursive aggregation hop', () => {
+  const byId = new Map(catalog.roles.map((role) => [role.id, role]));
+  const reviewer = readFileSync(resolve(agentAssets, 'bodies/code-reviewer.md'), 'utf8');
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+
+  assert.match(byId.get('code-reviewer').description, /仅由 Orchestrator 调用/);
+  assert.match(byId.get('code-reviewer').description, /双轴审查编排/);
+  for (const role of ['review-standards', 'review-spec']) {
+    assert.match(byId.get(role).description, /仅由 Code Reviewer 调用/);
+    assert.match(byId.get(role).description, /终端/);
+  }
+  assert.match(reviewer, /不得将整个双轴审查任务再次委派给另一个 Code Reviewer 或其他聚合审查角色/);
+  assert.match(routing, /Orchestrator -> Code Reviewer -> Review Standards \/ Review Spec/);
+  assert.match(routing, /Code Reviewer 不得再次委派 Code Reviewer/);
+  assert.match(routing, /Review Standards 与 Review Spec 是终端角色/);
+});
+
+test('generated delegation contracts prevent same-role recursion', () => {
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const reviewer = generatedBody(paths, platform, 'code-reviewer', extension);
+    assert.match(reviewer, /当前角色 ID 是 `code-reviewer`/, platform);
+    assert.match(reviewer, /只允许委派以下角色 ID：`review-standards`、`review-spec`/, platform);
+    assert.match(reviewer, /禁止委派当前角色 `code-reviewer`/, platform);
+
+    for (const role of ['review-standards', 'review-spec']) {
+      const leaf = generatedBody(paths, platform, role, extension);
+      assert.ok(leaf.includes(`当前角色 ID 是 \`${role}\``), `${platform}/${role}`);
+      assert.match(leaf, /此角色不得委派任何子代理/, `${platform}/${role}`);
+    }
+  }
+});
+
 test('workflow browser automation requires an explicit user request', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const paths = environment();
@@ -727,9 +763,13 @@ test('platform generation enforces the declared workspace access where supported
 });
 
 test('capability reporting reflects adapter limits and rejects invalid policy catalogs before writing', () => {
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
+  assert.match(routing, /`delegation` 只表示角色能否发起委派/);
+  assert.match(routing, /`delegation_targets` 单独表示目标角色白名单是否由平台强制/);
+  assert.match(routing, /不得用 Task 开关代替目标白名单的能力证据/);
   assert.match(result.stdout, /CAPABILITY codex\/orchestrator:.*filesystem=unsupported.*delegation=instruction-only/);
   assert.match(result.stderr, /WARNING codex\/orchestrator:.*delegation=instruction-only/);
   const status = run(paths, 'env', 'status');
@@ -739,7 +779,7 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
   for (const platform of ['codex', 'claude', 'opencode']) {
     for (const role of catalog.roles) {
       const matrix = capabilityMatrix(platform, role, policies[role.policy]);
-      assert.deepEqual(Object.keys(matrix).sort(), ['browser', 'delegation', 'filesystem', 'git', 'network', 'shell', 'write_scope']);
+      assert.deepEqual(Object.keys(matrix).sort(), ['browser', 'delegation', 'delegation_targets', 'filesystem', 'git', 'network', 'shell', 'write_scope']);
       for (const [capability, level] of Object.entries(matrix)) {
         assert.ok(['enforced', 'instruction-only', 'unsupported'].includes(level), `${platform}/${role.id}/${capability}`);
         if (level !== 'enforced') assert.match(result.stderr, new RegExp(`WARNING ${platform}/${role.id}:[^\\n]*${capability}=${level}`));
@@ -747,8 +787,17 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
     }
   }
   assert.equal(capabilityMatrix('codex', catalog.roles[0], policies.orchestrate).delegation, 'instruction-only');
+  assert.equal(capabilityMatrix('codex', catalog.roles[0], policies.orchestrate).delegation_targets, 'instruction-only');
   assert.equal(capabilityMatrix('codex', catalog.roles[0], policies.orchestrate).filesystem, 'unsupported');
-  assert.equal(capabilityMatrix('opencode', catalog.roles.find((role) => role.id === 'review-standards'), policies.review).shell, 'instruction-only');
+  const openCodeReviewer = capabilityMatrix('opencode', catalog.roles.find((role) => role.id === 'code-reviewer'), policies.review);
+  assert.equal(openCodeReviewer.delegation, 'enforced');
+  assert.equal(openCodeReviewer.delegation_targets, 'instruction-only');
+  const targetEvidence = capabilityEvidence('opencode', catalog.roles.find((role) => role.id === 'code-reviewer'), policies.review).delegation_targets;
+  assert.deepEqual(targetEvidence.requested, ['review-standards', 'review-spec']);
+  assert.equal(targetEvidence.level, 'instruction-only');
+  const openCodeLeaf = capabilityMatrix('opencode', catalog.roles.find((role) => role.id === 'review-standards'), policies.review);
+  assert.equal(openCodeLeaf.delegation_targets, 'enforced');
+  assert.equal(openCodeLeaf.shell, 'instruction-only');
 
   const generated = agentPath(paths, 'codex', 'orchestrator', 'toml');
   const before = readFileSync(generated, 'utf8');
@@ -1411,6 +1460,21 @@ test('catalog compiles referenced routing sections and rejects invalid governanc
     writeFileSync(path, `${JSON.stringify(catalog, null, 2)}\n`);
     assert.throws(() => loadAgentAssets(root), /Agent asset catalog is invalid/);
   }
+});
+
+test('catalog rejects declared delegation paths deeper than the platform limit', () => {
+  const root = copiedAssets();
+  const path = resolve(root, 'roles.json');
+  const catalog = JSON.parse(readFileSync(path, 'utf8'));
+  const standards = catalog.roles.find((role) => role.id === 'review-standards');
+  standards.delegates = ['review-spec'];
+  standards.tools.push('Task');
+  writeFileSync(path, `${JSON.stringify(catalog, null, 2)}\n`);
+
+  assert.throws(
+    () => loadAgentAssets(root),
+    /Role delegation exceeds max depth 2: orchestrator -> code-reviewer -> review-standards -> review-spec/
+  );
 });
 
 function parseFrontmatter(source) {

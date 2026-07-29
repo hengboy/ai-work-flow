@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { relative, resolve, sep } from 'node:path';
 
 import { fail, isPlainObject } from './shared.mjs';
+import { MAX_AGENT_DEPTH } from './asset-catalog.mjs';
 import { applyTransaction } from './transaction.mjs';
 import { updateManagedMarker } from './managed-content.mjs';
 
@@ -84,18 +85,18 @@ function codexAssertSafeToml(source, path) {
       }
     }
   }
-  if (quote || square !== 0 || curly !== 0) fail(`Cannot safely parse existing TOML at ${path}. Add agents.max_depth = 2 manually.`);
+  if (quote || square !== 0 || curly !== 0) fail(`Cannot safely parse existing TOML at ${path}. Add agents.max_depth = ${MAX_AGENT_DEPTH} manually.`);
   if ((source.match(/^\[agents\]\s*$/gm) || []).length > 1) {
-    fail(`Cannot safely update duplicate [agents] tables in ${path}. Add max_depth = 2 manually.`);
+    fail(`Cannot safely update duplicate [agents] tables in ${path}. Add max_depth = ${MAX_AGENT_DEPTH} manually.`);
   }
 }
 
 function codexUpdateConfig(source, path) {
   codexAssertSafeToml(source, path);
   const direct = /^(agents\.max_depth\s*=\s*)(\d+)(\s*(?:#.*)?)$/m;
-  if (direct.test(source)) return source.replace(direct, (_, prefix, value, suffix) => `${prefix}${Math.max(2, Number(value))}${suffix}`);
+  if (direct.test(source)) return source.replace(direct, (_, prefix, value, suffix) => `${prefix}${Math.max(MAX_AGENT_DEPTH, Number(value))}${suffix}`);
   const table = /^\[agents\]\s*$/m;
-  if (!table.test(source)) return `${source.replace(/\s*$/, '')}${source.trim() ? '\n\n' : ''}[agents]\nmax_depth = 2\n`;
+  if (!table.test(source)) return `${source.replace(/\s*$/, '')}${source.trim() ? '\n\n' : ''}[agents]\nmax_depth = ${MAX_AGENT_DEPTH}\n`;
   const start = source.search(table);
   const bodyStart = source.indexOf('\n', start) + 1;
   const nextTable = source.slice(bodyStart).search(/^\[/m);
@@ -103,10 +104,10 @@ function codexUpdateConfig(source, path) {
   const body = source.slice(bodyStart, end);
   const existing = /^(max_depth\s*=\s*)(\d+)(\s*(?:#.*)?)$/m;
   if (existing.test(body)) {
-    const updated = body.replace(existing, (_, prefix, value, suffix) => `${prefix}${Math.max(2, Number(value))}${suffix}`);
+    const updated = body.replace(existing, (_, prefix, value, suffix) => `${prefix}${Math.max(MAX_AGENT_DEPTH, Number(value))}${suffix}`);
     return `${source.slice(0, bodyStart)}${updated}${source.slice(end)}`;
   }
-  return `${source.slice(0, end)}${body.endsWith('\n') || !body ? '' : '\n'}max_depth = 2\n${source.slice(end)}`;
+  return `${source.slice(0, end)}${body.endsWith('\n') || !body ? '' : '\n'}max_depth = ${MAX_AGENT_DEPTH}\n${source.slice(end)}`;
 }
 
 // --- Claude strategy ---
@@ -185,7 +186,7 @@ function opencodeUpdateConfig(source) {
   }
   const agent = { ...(current.agent ?? {}) };
   if (agent.explore === false) delete agent.explore;
-  return `${JSON.stringify({ ...current, agent, subagent_depth: Math.max(2, current.subagent_depth ?? 0), default_agent: 'orchestrator' }, null, 2)}\n`;
+  return `${JSON.stringify({ ...current, agent, subagent_depth: Math.max(MAX_AGENT_DEPTH, current.subagent_depth ?? 0), default_agent: 'orchestrator' }, null, 2)}\n`;
 }
 
 function digest(contents) {
@@ -294,15 +295,19 @@ function capabilityLevel(platform, role, capability, requested) {
     if (platform === 'opencode') return 'enforced';
     return 'instruction-only';
   }
+  if (capability === 'delegation_targets') {
+    if (platform === 'opencode' && role.delegates.length === 0 && requested !== 'allowed' && !role.tools.includes('Task')) return 'enforced';
+    return 'instruction-only';
+  }
   if (capability === 'network' || capability === 'browser') return 'unsupported';
-  if (platform === 'opencode' && capability === 'delegation' && requested === 'allowed') return 'enforced';
+  if (platform === 'opencode' && capability === 'delegation') return 'enforced';
   return 'instruction-only';
 }
 
 export function capabilityEvidence(platform, role, policy) {
   const levels = capabilityMatrix(platform, role, policy);
-  return Object.fromEntries(Object.entries(levels).map(([requested, level]) => [requested, {
-    requested: policy[requested],
+  return Object.fromEntries(Object.entries(levels).map(([capability, level]) => [capability, {
+    requested: capability === 'delegation_targets' ? role.delegates : policy[capability],
     level,
     evidence: level === 'enforced' ? ['platform permission key'] : []
   }]));
@@ -310,7 +315,10 @@ export function capabilityEvidence(platform, role, policy) {
 
 export function capabilityMatrix(platform, role, policy) {
   if (!strategies[platform]) fail(`Unknown platform: ${platform}`);
-  return Object.fromEntries(Object.entries(policy).map(([capability, requested]) => [capability, capabilityLevel(platform, role, capability, requested)]));
+  return {
+    ...Object.fromEntries(Object.entries(policy).map(([capability, requested]) => [capability, capabilityLevel(platform, role, capability, requested)])),
+    delegation_targets: capabilityLevel(platform, role, 'delegation_targets', policy.delegation)
+  };
 }
 
 // --- Entry point ---

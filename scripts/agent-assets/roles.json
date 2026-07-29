@@ -82,7 +82,7 @@
     {
       "id": "code-reviewer",
       "name": "Code Reviewer",
-      "description": "负责在差异稳定后执行独立的标准审查和规范审查。",
+      "description": "仅由 Orchestrator 调用的双轴审查编排角色，负责在差异稳定后调度标准审查和规范审查。",
       "kind": "subagent",
       "policy": "review",
       "delegates": ["review-standards", "review-spec"],
@@ -92,7 +92,7 @@
     {
       "id": "review-standards",
       "name": "Review Standards",
-      "description": "负责依据仓库标准审查稳定差异。",
+      "description": "仅由 Code Reviewer 调用的终端角色，负责依据仓库标准审查稳定差异。",
       "kind": "reviewer",
       "policy": "review",
       "delegates": [],
@@ -102,7 +102,7 @@
     {
       "id": "review-spec",
       "name": "Review Spec",
-      "description": "负责依据已批准的规范审查稳定差异。",
+      "description": "仅由 Code Reviewer 调用的终端角色，负责依据已批准的规范审查稳定差异。",
       "kind": "reviewer",
       "policy": "review",
       "delegates": [],

@@ -15,6 +15,7 @@ const POLICY_CAPABILITIES = {
   delegation: new Set(['none', 'allowed', 'review-only'])
 };
 const ROLE_KINDS = new Set(['primary', 'subagent', 'reviewer']);
+export const MAX_AGENT_DEPTH = 2;
 const TOOL_REQUIREMENTS = {
   Read: ['filesystem', new Set(['read', 'write'])],
   Glob: ['filesystem', new Set(['read', 'write'])],
@@ -84,6 +85,22 @@ function validateDelegateGraph(roles, errors) {
   for (const role of roles) visit(role.id);
 }
 
+function validateDelegateDepth(roles, errors) {
+  const byId = new Map(roles.map((role) => [role.id, role]));
+  const primary = roles.find((role) => role.kind === 'primary');
+  if (!primary) return;
+  const visit = (id, path) => {
+    if (path.length - 1 > MAX_AGENT_DEPTH) {
+      errors.push(`Role delegation exceeds max depth ${MAX_AGENT_DEPTH}: ${path.join(' -> ')}.`);
+      return;
+    }
+    for (const delegate of byId.get(id)?.delegates ?? []) {
+      if (!path.includes(delegate)) visit(delegate, [...path, delegate]);
+    }
+  };
+  visit(primary.id, [primary.id]);
+}
+
 function validatePolicy(name, policy, errors) {
   if (!isPlainObject(policy)) {
     errors.push(`Policy ${name} must be an object.`);
@@ -134,6 +151,7 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
     }
   }
   validateDelegateGraph(roles, errors);
+  validateDelegateDepth(roles, errors);
 
   const routing = readFileSync(resolve(assetRoot, 'routing.md'), 'utf8');
   const sections = parseRoutingSections(routing, errors);
@@ -176,6 +194,14 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
   return { routing, sections };
 }
 
+function delegationContract(role) {
+  const delegates = role.delegates ?? [];
+  const boundary = delegates.length
+    ? `只允许委派以下角色 ID：${delegates.map((id) => `\`${id}\``).join('、')}。调用委派工具时必须显式选择其中一个精确 ID；禁止委派当前角色 \`${role.id}\`，也禁止委派任何未列出的角色。`
+    : `此角色不得委派任何子代理。禁止委派当前角色 \`${role.id}\` 或任何其他角色。`;
+  return `## 运行时委派约束\n\n当前角色 ID 是 \`${role.id}\`。${boundary}`;
+}
+
 export function loadAgentAssets(assetRoot = resolve(import.meta.dirname, '..', 'agent-assets')) {
   const root = resolve(assetRoot);
   const catalog = readJson(resolve(root, 'roles.json'));
@@ -192,7 +218,7 @@ export function loadAgentAssets(assetRoot = resolve(import.meta.dirname, '..', '
   const routingDigest = createHash('sha256').update(routing).digest('hex');
   const compiledBodies = new Map(catalog.roles.map((role) => [
     role.id,
-    `<!-- ai-work-flow:routing-digest=${routingDigest} sections=${role.routing_sections.join(',')} -->\n\n${role.routing_sections.map((id) => sections.get(id)).join('\n\n')}\n\n${bodies.get(role.id)}`
+    `<!-- ai-work-flow:routing-digest=${routingDigest} sections=${role.routing_sections.join(',')} -->\n\n${delegationContract(role)}\n\n${role.routing_sections.map((id) => sections.get(id)).join('\n\n')}\n\n${bodies.get(role.id)}`
   ]));
   return {
     root,
