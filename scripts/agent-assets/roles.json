@@ -65,8 +65,8 @@
       "description": "负责实现源码、测试、必要配置和修复。",
       "kind": "subagent",
       "policy": "write-code",
-      "delegates": [],
-      "tools": ["Read", "Edit", "Write", "Glob", "Grep", "Bash"],
+      "delegates": ["file-explorer"],
+      "tools": ["Read", "Edit", "Write", "Bash", "Task"],
       "routing_sections": ["core-governance"]
     },
     {

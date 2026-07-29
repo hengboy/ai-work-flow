@@ -475,6 +475,37 @@ test('project navigation is a managed global skill and stores indexes in the pro
   }
 });
 
+test('full stack coder delegates unknown file discovery to file explorer', () => {
+  const coderRole = catalog.roles.find((role) => role.id === 'full-stack-coder');
+  const coder = readFileSync(resolve(agentAssets, 'bodies/full-stack-coder.md'), 'utf8');
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  assert.deepEqual(coderRole.delegates, ['file-explorer']);
+  assert.ok(coderRole.tools.includes('Task'));
+  assert.ok(!coderRole.tools.includes('Glob'));
+  assert.ok(!coderRole.tools.includes('Grep'));
+  assert.equal(policies[coderRole.policy].delegation, 'allowed');
+  assert.match(coder, /必须委派 \*\*File Explorer\*\* 并等待其交接/);
+  assert.match(coder, /不得自行使用 Glob、Grep、`find`、`rg` 或同类命令检索/);
+  assert.match(coder, /目标功能或问题、已知索引或路径、需要返回的路径和直接依赖/);
+  assert.match(coder, /只读取交接路径及其直接依赖/);
+
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    assert.match(generatedBody(paths, platform, 'full-stack-coder', extension), /必须委派 \*\*File Explorer\*\* 并等待其交接/, platform);
+  }
+
+  const claude = parseFrontmatter(readFileSync(agentPath(paths, 'claude', 'full-stack-coder', 'md'), 'utf8'));
+  const openCode = parseFrontmatter(readFileSync(agentPath(paths, 'opencode', 'full-stack-coder', 'md'), 'utf8'));
+  assert.ok(claude.tools.includes('Task'));
+  assert.ok(!claude.tools.includes('Glob'));
+  assert.ok(!claude.tools.includes('Grep'));
+  assert.equal(openCode.permission.task, 'allow');
+  assert.equal(openCode.permission.glob, 'deny');
+  assert.equal(openCode.permission.grep, 'deny');
+});
+
 test('workflow browser automation requires an explicit user request', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const paths = environment();
