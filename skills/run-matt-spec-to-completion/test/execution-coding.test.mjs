@@ -20,9 +20,20 @@ function reviewManifest(fixedPoint, reviewCommit, paths = []) {
   return createReviewManifest({ fixed_point: fixedPoint, review_commit: reviewCommit, commit_list: [{ sha: reviewCommit, subject: "review" }], changed_paths: paths.map((path) => ({ record_type: "1", index_status: "M", worktree_status: ".", path })), checks: [], diff_command: diffCommand, spec_status: "absent", spec_source: null, standards_source: [{ path: "CONTEXT.md", revision: reviewCommit }], shards: paths.map((path, index) => ({ id: `shard-${index + 1}`, paths: [path], diff_command: [...diffCommand, "--", path] })) });
 }
 
+function reviewResult(checkpoint, { blocking = false } = {}) {
+  const coverage = { manifest_digest: checkpoint.review.manifest.manifest_digest, completed_shard_ids: checkpoint.review.manifest.shards.map((shard) => shard.id), incomplete_shard_ids: [] };
+  const finding = { id: "standards-001", summary: "fixture blocker", evidence: "fixture evidence" };
+  return {
+    manifest_digest: checkpoint.review.manifest.manifest_digest,
+    coverage,
+    standards: { verdict: blocking ? "blocked" : "approved", blocking_findings: blocking ? [finding] : [], advisory_findings: [] },
+    spec: { verdict: "approved", blocking_findings: [], advisory_findings: [] },
+  };
+}
+
 function completeReviewWithManifest(checkpoint, findingsSummary) {
-  checkpoint = recordReview(checkpoint, { manifestDigest: checkpoint.review.manifest.manifest_digest, coverage: { manifest_digest: checkpoint.review.manifest.manifest_digest, completed_shard_ids: checkpoint.review.manifest.shards.map((shard) => shard.id), incomplete_shard_ids: [] }, findingsSummary });
-  return decideReview(checkpoint, "approve");
+  const result = reviewResult(checkpoint);
+  return recordReview(checkpoint, { manifestDigest: result.manifest_digest, coverage: result.coverage, findingsSummary, result });
 }
 
 async function git(cwd, ...args) {
@@ -580,8 +591,9 @@ test("rejects a persisted review range whose review commit is missing", async ()
 test("rejects a persisted review fix whose commit is missing", async () => {
   const { root, checkpoint: completed, executionWorktree, featureCommit } = await completedExecutionFixture();
   let checkpoint = beginReview(completed, { fixedPoint: completed.baseline, reviewCommit: featureCommit, manifest: reviewManifest(completed.baseline, featureCommit, ["execution.txt"]) });
-  checkpoint = recordReview(checkpoint, { manifestDigest: checkpoint.review.manifest.manifest_digest, coverage: { manifest_digest: checkpoint.review.manifest.manifest_digest, completed_shard_ids: checkpoint.review.manifest.shards.map((shard) => shard.id), incomplete_shard_ids: [] }, findingsSummary: "requires a fix" });
-  checkpoint = decideReview(checkpoint, "fix");
+  const result = reviewResult(checkpoint, { blocking: true });
+  checkpoint = recordReview(checkpoint, { manifestDigest: result.manifest_digest, coverage: result.coverage, findingsSummary: "requires a fix", result });
+  checkpoint = decideReview(checkpoint, "fix", ["standards-001"]);
   checkpoint = completeReviewFix(checkpoint, { fixCommit: "f".repeat(40), checks: ["npm test: pass"] });
   await writeCheckpoint(root, "migrate-runtime", checkpoint);
 

@@ -262,10 +262,11 @@ export function createExecutionCoding({ adapter, directExecutor, materialize = m
     async finishReview({ mainWorktree, featureSlug, checkpoint, findingsSummary, result }) {
       const recorded = await canonicalTransition("record-review", { mainWorktree, featureSlug }, {
         findings_summary: findingsSummary,
-        ...(result ? { manifest_digest: result.manifest_digest, coverage: result.coverage, result } : {}),
+        manifest_digest: result.manifest_digest,
+        coverage: result.coverage,
+        result,
       });
-      if (recorded.checkpoint.status === "integrating") return recorded.checkpoint;
-      return (await canonicalTransition("review-decision", { mainWorktree, featureSlug }, { decision: "approve" })).checkpoint;
+      return recorded.checkpoint;
     },
 
     async run({ repository, branch, specPath, worktreePath, review }) {
@@ -295,7 +296,7 @@ export function createExecutionCoding({ adapter, directExecutor, materialize = m
       if (checkpoint.status === "reviewing") {
         if (!review) return { status: "reviewing", worktree, executionPlan, checkpoint };
         const reviewResult = await review({ worktree, executionPlan, checkpoint, readTicket });
-        if (reviewResult?.approved !== true || !reviewResult.findingsSummary) return { status: "reviewing", worktree, executionPlan, checkpoint };
+        if (!reviewResult?.result || !reviewResult.findingsSummary) return { status: "reviewing", worktree, executionPlan, checkpoint };
         checkpoint = await this.finishReview({ mainWorktree, featureSlug, checkpoint, findingsSummary: reviewResult.findingsSummary, result: reviewResult.result });
       }
       if (checkpoint.status === "integrating") return this.integrate({ repository, worktree, featureSlug, executionPlan, checkpoint });

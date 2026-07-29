@@ -179,12 +179,11 @@ export function recordReview(checkpoint, { manifestDigest, coverage, findingsSum
   if (!['in_progress', 'awaiting_user'].includes(next.review.status)) throw new Error("Review is not in progress");
   if (manifestDigest !== next.review.manifest.manifest_digest) throw new Error("Review result manifest digest does not match the frozen ReviewManifest");
   assertReviewCoverage(next.review.manifest, coverage);
-  if (result) {
-    assertReviewResult(result, manifestDigest);
-    if (JSON.stringify(result.coverage) !== JSON.stringify(coverage)) throw new Error("Review result coverage must match record-review coverage");
-  }
-  const review = { ...next.review, manifest_digest: manifestDigest, coverage, findings_summary: findingsSummary, ...(result ? { result } : {}), completed_at: now };
-  if (result && !hasBlockingFindings(result)) {
+  if (!result) throw new Error("Structured Review Result is required");
+  assertReviewResult(result, manifestDigest);
+  if (JSON.stringify(result.coverage) !== JSON.stringify(coverage)) throw new Error("Review result coverage must match record-review coverage");
+  const review = { ...next.review, manifest_digest: manifestDigest, coverage, findings_summary: findingsSummary, result, completed_at: now };
+  if (!hasBlockingFindings(result)) {
     next.review = { ...review, status: "done" };
     next.status = "integrating";
   } else {
@@ -217,6 +216,17 @@ export function completeReviewFix(checkpoint, { fixCommit, checks }, now = new D
     throw new Error("A user-approved review fix is required before integration");
   }
   next.review_attempts = [...(next.review_attempts ?? []), { ...next.review, fix_commit: fixCommit, fix_checks: checks }];
+  next.review = { status: "pending" };
+  next.sync = { status: "pending" };
+  next.status = "executing";
+  return completeTransition(next);
+}
+
+export function restartForResync(checkpoint, now = new Date()) {
+  now = toShanghaiTimestamp(now);
+  const next = revise(checkpoint, "resync-required", "main advanced after final review", now);
+  if (next.status !== "integrating" || next.review.status !== "done") throw new Error("An approved review is required before resynchronization");
+  next.review_attempts = [...(next.review_attempts ?? []), next.review];
   next.review = { status: "pending" };
   next.sync = { status: "pending" };
   next.status = "executing";

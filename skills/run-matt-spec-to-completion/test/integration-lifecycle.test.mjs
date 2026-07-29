@@ -37,12 +37,14 @@ test("merges the verified execution commit instead of the mutable branch referen
 });
 
 test("blocks unrelated main changes without explicit stash authorization before any mutation", async () => {
-  const checkpoint = { status: "integrating", branch: "feat/example", review: { review_commit: "a".repeat(40) }, integration: { status: "pending" } };
+  const reviewCommit = "a".repeat(40);
+  const checkpoint = { status: "integrating", branch: "feat/example", review: { fixed_point: reviewCommit, review_commit: reviewCommit }, integration: { status: "pending" } };
   let mutated = false;
   const lifecycle = createIntegrationLifecycle({
     requireIntegrity: async () => ({ checkpoint, executionPlan: { revision: "revision" } }),
     findMainWorktree: async () => "/main",
     worktreeIsClean: async () => true,
+    currentHead: async () => reviewCommit,
     unexpectedMainWorktreeChanges: async () => [{ path: "user-file" }],
     persist: async () => { mutated = true; },
     stash: { save: async () => { mutated = true; } },

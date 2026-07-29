@@ -1,4 +1,4 @@
-import { authorizeStash, beginStashOperation, beginStashRestoration, clearRestoredStashReference, completeIntegration, markMerged, markRestoredStashDropped, markStashRestored, recordStashReference } from "./checkpoint.mjs";
+import { authorizeStash, beginStashOperation, beginStashRestoration, clearRestoredStashReference, completeIntegration, markMerged, markRestoredStashDropped, markStashRestored, recordStashReference, restartForResync } from "./checkpoint.mjs";
 
 export function createIntegrationLifecycle({ now, newStashOperationId, requireIntegrity, persist, stash, executionRecordsHaveChanges, commitExecutionRecords, findMainWorktree, worktreeIsClean, currentHead, isAncestor, findExecutionWorktree, removeExecutionWorktree, readCheckpoint, git, gitSucceeds, unexpectedMainWorktreeChanges }) {
   const verifiedExecutionPlan = (executionPlan, integrity) => {
@@ -53,6 +53,12 @@ export function createIntegrationLifecycle({ now, newStashOperationId, requireIn
   };
 
   const completeMergedCleanup = async ({ repository, mainWorktree, featureSlug, executionPlan, checkpoint }) => {
+    const deleteMergedBranch = async (branch) => {
+      if (branch === "main") throw new Error("Refusing to delete the main branch during cleanup");
+      if (await gitSucceeds(mainWorktree, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])) {
+        await git(mainWorktree, ["branch", "-d", branch]);
+      }
+    };
     if (checkpoint.integration.status === "done") {
       const integrity = await requireIntegrity({ mainWorktree, featureSlug });
       checkpoint = integrity.checkpoint;
@@ -61,6 +67,7 @@ export function createIntegrationLifecycle({ now, newStashOperationId, requireIn
         await requireIntegrity({ mainWorktree, featureSlug });
         await commitExecutionRecords({ mainWorktree, featureSlug, executionPlan });
       }
+      await deleteMergedBranch(checkpoint.branch);
       return { status: "complete", worktree: mainWorktree, checkpoint };
     }
     if (checkpoint.integration.status !== "merged") throw new Error("Checkpoint is not ready for merged cleanup");
@@ -85,17 +92,11 @@ export function createIntegrationLifecycle({ now, newStashOperationId, requireIn
     }
     checkpoint = await reconcileRestoredStash({ mainWorktree, featureSlug, checkpoint });
     await requireIntegrity({ mainWorktree, featureSlug });
-    if (checkpoint.branch === "main") throw new Error("Refusing to delete the main branch during cleanup");
-    await git(mainWorktree, ["branch", "-d", checkpoint.branch]);
     const complete = completeIntegration(checkpoint, now());
     await persist(mainWorktree, featureSlug, complete);
-    try {
-      await requireIntegrity({ mainWorktree, featureSlug });
-      await commitExecutionRecords({ mainWorktree, featureSlug, executionPlan });
-    } catch (error) {
-      await persist(mainWorktree, featureSlug, checkpoint);
-      throw error;
-    }
+    await requireIntegrity({ mainWorktree, featureSlug });
+    await commitExecutionRecords({ mainWorktree, featureSlug, executionPlan });
+    await deleteMergedBranch(checkpoint.branch);
     return { status: "complete", worktree: mainWorktree, checkpoint: complete };
   };
 
@@ -107,6 +108,14 @@ export function createIntegrationLifecycle({ now, newStashOperationId, requireIn
     executionPlan = verifiedExecutionPlan(executionPlan, integrity);
     if (checkpoint.status !== "integrating") throw new Error("Checkpoint is not ready for integration");
     if (!await worktreeIsClean(worktree)) throw new Error("Execution worktree is not clean");
+    const reviewCommit = checkpoint.review.review_commit;
+    const featureHead = await currentHead(worktree);
+    if (featureHead !== reviewCommit) throw new Error("Integration requires the reviewed feature HEAD");
+    if (await currentHead(mainWorktree) !== checkpoint.review.fixed_point) {
+      checkpoint = restartForResync(checkpoint, now());
+      await persist(mainWorktree, featureSlug, checkpoint);
+      return { status: "resync_required", checkpoint };
+    }
     if (checkpoint.integration.stash_restore_state === "applying") {
       checkpoint = await restoreRecordedStash({ mainWorktree, featureSlug, executionPlan, checkpoint });
     }
@@ -146,12 +155,6 @@ export function createIntegrationLifecycle({ now, newStashOperationId, requireIn
         checkpoint = recordStashReference(checkpoint, stashRef, now());
         await persist(mainWorktree, featureSlug, checkpoint);
       }
-    }
-    const reviewCommit = checkpoint.review.review_commit;
-    const featureHead = await currentHead(worktree);
-    if (featureHead !== reviewCommit) throw new Error("Integration requires the reviewed feature HEAD");
-    if (await currentHead(mainWorktree) !== checkpoint.review.fixed_point) {
-      return { status: "resync_required", checkpoint };
     }
     let mergeApplied = false;
     try {

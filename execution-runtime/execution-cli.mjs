@@ -176,6 +176,7 @@ async function run(options) {
   if (options.command === "record-review") {
     const input = await stdinJson();
     if (typeof input.findings_summary !== "string" || !input.findings_summary) throw new Error("findings_summary is required.");
+    if (!input.result) throw new Error("Structured Review Result is required.");
     const result = await stateStore.transition({ repository, featureSlug, checkExecutionWorktree: false, async apply(current) {
       if (!['in_progress', 'awaiting_user'].includes(current.checkpoint.review.status)) throw new Error("Review is not in progress");
       if (input.manifest_digest !== current.checkpoint.review?.manifest?.manifest_digest) throw new Error("Review result manifest digest does not match the frozen ReviewManifest");

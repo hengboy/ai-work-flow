@@ -14,6 +14,17 @@ function reviewManifest(fixedPoint, reviewCommit) {
   return createReviewManifest({ fixed_point: fixedPoint, review_commit: reviewCommit, commit_list: [{ sha: reviewCommit, subject: "review" }], changed_paths: [], checks: [], diff_command: ["git", "diff", "--no-ext-diff", `${fixedPoint}...${reviewCommit}`], spec_status: "absent", spec_source: null, standards_source: [{ path: "CONTEXT.md", revision: reviewCommit }], shards: [] });
 }
 
+function reviewResult(checkpoint, { blocking = false } = {}) {
+  const coverage = { manifest_digest: checkpoint.review.manifest.manifest_digest, completed_shard_ids: [], incomplete_shard_ids: [] };
+  const finding = { id: "standards-001", summary: "fixture blocker", evidence: "fixture evidence" };
+  return {
+    manifest_digest: checkpoint.review.manifest.manifest_digest,
+    coverage,
+    standards: { verdict: blocking ? "blocked" : "approved", blocking_findings: blocking ? [finding] : [], advisory_findings: [] },
+    spec: { verdict: "approved", blocking_findings: [], advisory_findings: [] },
+  };
+}
+
 async function specFixture() {
   const root = await mkdtemp(join(tmpdir(), "run-plan-"));
   const directory = join(root, ".scratch", "migrate-runtime");
@@ -229,8 +240,8 @@ test("retains a persisted stash reference when integration is marked merged", as
   checkpoint = startTickets(checkpoint, ["01"], "a".repeat(40));
   checkpoint = completeTicket(checkpoint, "01", "a".repeat(40));
   checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: "a".repeat(40), manifest: reviewManifest(checkpoint.baseline, "a".repeat(40)) });
-  checkpoint = recordReview(checkpoint, { manifestDigest: checkpoint.review.manifest.manifest_digest, coverage: { manifest_digest: checkpoint.review.manifest.manifest_digest, completed_shard_ids: [], incomplete_shard_ids: [] }, findingsSummary: "approved" });
-  checkpoint = decideReview(checkpoint, "approve");
+  const approved = reviewResult(checkpoint);
+  checkpoint = recordReview(checkpoint, { manifestDigest: approved.manifest_digest, coverage: approved.coverage, findingsSummary: "approved", result: approved });
   checkpoint.integration.stash_ref = "b".repeat(40);
 
   const merged = markMerged(checkpoint, {
@@ -273,9 +284,10 @@ test("returns user-approved review fixes to synchronization before final review"
   checkpoint = startTickets(checkpoint, ["01"], "a".repeat(40));
   checkpoint = completeTicket(checkpoint, "01", "b".repeat(40));
   checkpoint = beginReview(checkpoint, { fixedPoint: checkpoint.baseline, reviewCommit: "b".repeat(40), manifest: reviewManifest(checkpoint.baseline, "b".repeat(40)) });
-  checkpoint = recordReview(checkpoint, { manifestDigest: checkpoint.review.manifest.manifest_digest, coverage: { manifest_digest: checkpoint.review.manifest.manifest_digest, completed_shard_ids: [], incomplete_shard_ids: [] }, findingsSummary: "needs a user choice" });
+  const blocked = reviewResult(checkpoint, { blocking: true });
+  checkpoint = recordReview(checkpoint, { manifestDigest: blocked.manifest_digest, coverage: blocked.coverage, findingsSummary: "needs a user choice", result: blocked });
   assert.equal(checkpoint.review.status, "awaiting_user");
-  checkpoint = decideReview(checkpoint, "fix");
+  checkpoint = decideReview(checkpoint, "fix", ["standards-001"]);
   assert.equal(checkpoint.status, "fixing");
   assert.equal(checkpoint.review.status, "done");
   assert.equal(checkpoint.review.decision, "fix");

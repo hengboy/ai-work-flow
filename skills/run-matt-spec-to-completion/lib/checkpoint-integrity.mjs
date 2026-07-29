@@ -78,8 +78,8 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
   } else if (!await isAncestor(worktree, checkpoint.baseline)) {
     diagnostics.push(diagnostic("baseline-not-ancestor", checkpoint.baseline));
   }
+  const reviewWorktree = executionWorktree || worktree;
   if (checkpoint.review.status !== "pending") {
-    const reviewWorktree = executionWorktree || worktree;
     const fixedPoint = checkpoint.review.fixed_point;
     const reviewCommit = checkpoint.review.review_commit;
     const expectedGateHead = checkpoint.status === "fixing" ? null : reviewCommit;
@@ -141,6 +141,14 @@ export async function verifyCheckpointIntegrity({ worktree, executionWorktree, f
       if (actualGateHead !== expectedGateHead) {
         diagnostics.push(diagnostic("review-gate-head", `${actualGateHead || checkpoint.branch} != ${expectedGateHead}`));
       }
+    }
+  }
+  for (const attempt of checkpoint.review_attempts ?? []) {
+    if (!attempt.fix_commit) continue;
+    const fixCommitExists = await gitSucceeds(reviewWorktree, ["rev-parse", "--verify", `${attempt.fix_commit}^{commit}`]);
+    if (!fixCommitExists) diagnostics.push(diagnostic("review-fix-commit-missing", attempt.fix_commit));
+    else if (!attempt.review_commit || attempt.fix_commit === attempt.review_commit || !await isAncestor(reviewWorktree, attempt.review_commit, attempt.fix_commit)) {
+      diagnostics.push(diagnostic("review-fix-range", `${attempt.review_commit}..${attempt.fix_commit}`));
     }
   }
   const specTicketIds = new Set(executionPlan.tickets.map((ticket) => ticket.id));
