@@ -828,12 +828,16 @@ test('all platforms generate planning without changing the default primary', () 
   assert.equal(openCodePlanning.permission.bash, 'deny');
   assert.deepEqual(openCodePlanning.permission.edit, {
     '*': 'deny',
-    '.ai-work-flow/plans/*.md': 'allow'
+    '.ai-work-flow/plans/?*.md': 'allow',
+    '.ai-work-flow/plans/*/*.md': 'deny',
+    '.ai-work-flow/plans/* *.md': 'deny'
   });
   assert.equal(openCodePlanning.permission.task, 'allow');
   const planning = catalog.roles.find((role) => role.id === 'planning');
   assert.equal(evaluateOpenCodePermission(planning, policies[planning.policy], 'edit', '.ai-work-flow/plans/ready-plan.md'), 'allow');
-  assert.equal(evaluateOpenCodePermission(planning, policies[planning.policy], 'edit', 'src/app.js'), 'deny');
+  for (const filePath of ['src/app.js', '.ai-work-flow/plans/.md', '.ai-work-flow/plans/not valid.md', '.ai-work-flow/plans/nested/plan.md', '.ai-work-flow/plans/../../src/app.md']) {
+    assert.equal(evaluateOpenCodePermission(planning, policies[planning.policy], 'edit', filePath), 'deny', filePath);
+  }
 
   const claudePlanning = parseFrontmatter(readFileSync(agentPath(paths, 'claude', 'planning', 'md'), 'utf8'));
   assert.deepEqual(claudePlanning.tools, ['Write', 'Task']);
@@ -842,6 +846,14 @@ test('all platforms generate planning without changing the default primary', () 
   assert.equal(capabilityMatrix('codex', planning, policies[planning.policy]).write_scope, 'instruction-only');
   assert.equal(capabilityMatrix('claude', planning, policies[planning.policy]).write_scope, 'enforced');
   assert.equal(capabilityMatrix('opencode', planning, policies[planning.policy]).write_scope, 'enforced');
+
+  const planningWriter = catalog.roles.find((role) => role.id === 'planning-writer');
+  assert.equal(capabilityMatrix('claude', planningWriter, policies[planningWriter.policy]).write_scope, 'instruction-only');
+  assert.equal(capabilityMatrix('opencode', planningWriter, policies[planningWriter.policy]).write_scope, 'instruction-only');
+  const claudePlanningWriter = parseFrontmatter(readFileSync(agentPath(paths, 'claude', 'planning-writer', 'md'), 'utf8'));
+  const openCodePlanningWriter = parseFrontmatter(readFileSync(agentPath(paths, 'opencode', 'planning-writer', 'md'), 'utf8'));
+  assert.equal(Object.hasOwn(claudePlanningWriter, 'hooks'), false);
+  assert.equal(openCodePlanningWriter.permission.edit, 'allow');
 
   const openCode = JSON.parse(readFileSync(resolve(paths.config, 'opencode/opencode.json'), 'utf8'));
   assert.equal(openCode.default_agent, 'orchestrator');
@@ -1023,10 +1035,12 @@ test('platform generation enforces the declared workspace access where supported
     } else {
       assert.match(codex, /sandbox_mode = "workspace-write"/, role.id);
       assert.equal(claude.permissionMode, 'acceptEdits', role.id);
-      if (policy.write_scope === 'plans') {
+      if (role.id === 'planning') {
         assert.deepEqual(openCode.permission.edit, {
           '*': 'deny',
-          '.ai-work-flow/plans/*.md': 'allow'
+          '.ai-work-flow/plans/?*.md': 'allow',
+          '.ai-work-flow/plans/*/*.md': 'deny',
+          '.ai-work-flow/plans/* *.md': 'deny'
         }, role.id);
       } else {
         assert.equal(openCode.permission.edit, role.tools.some((tool) => tool === 'Edit' || tool === 'Write') ? 'allow' : 'deny', role.id);

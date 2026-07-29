@@ -120,6 +120,10 @@ function yamlValue(value) {
   return JSON.stringify(value);
 }
 
+function enforcesPlanningWriteScope(role, policy) {
+  return role.id === 'planning' && policy.write_scope === 'plans';
+}
+
 function claudeRender(role, settings, body, policy) {
   const frontmatter = [
     '---',
@@ -130,7 +134,7 @@ function claudeRender(role, settings, body, policy) {
     `tools: ${yamlValue(role.tools.length ? role.tools : ['Task'])}`,
     `permissionMode: ${yamlValue(claudePermission(policy))}`
   ];
-  if (policy.write_scope === 'plans') {
+  if (enforcesPlanningWriteScope(role, policy)) {
     frontmatter.push(`hooks: ${yamlValue({
       PreToolUse: [{
         matcher: 'Write',
@@ -165,10 +169,12 @@ export function opencodePermission(role, policy) {
     permission.grep = 'deny';
     permission.bash = 'deny';
   }
-  if (policy.write_scope === 'plans') {
+  if (enforcesPlanningWriteScope(role, policy)) {
     permission.edit = {
       '*': 'deny',
-      '.ai-work-flow/plans/*.md': 'allow'
+      '.ai-work-flow/plans/?*.md': 'allow',
+      '.ai-work-flow/plans/*/*.md': 'deny',
+      '.ai-work-flow/plans/* *.md': 'deny'
     };
   }
   if (policy.delegation === 'allowed') permission.task = 'allow';
@@ -177,7 +183,7 @@ export function opencodePermission(role, policy) {
 }
 
 function wildcardMatch(pattern, value) {
-  const expression = pattern.replace(/[|\\{}()[\]^$+?.]/g, '\\$&').replaceAll('*', '.*');
+  const expression = pattern.replace(/[|\\{}()[\]^$+.]/g, '\\$&').replaceAll('*', '.*').replaceAll('?', '.');
   return new RegExp(`^${expression}$`).test(value);
 }
 
@@ -186,7 +192,8 @@ export function evaluateOpenCodePermission(role, policy, key, value = '*') {
   const permission = opencodePermission(role, policy)[key];
   if (typeof permission === 'string') return permission;
   let result = 'deny';
-  for (const [pattern, action] of Object.entries(permission)) if (wildcardMatch(pattern, value)) result = action;
+  const rules = Object.entries(permission).sort(([left], [right]) => left.length - right.length || left.localeCompare(right));
+  for (const [pattern, action] of rules) if (wildcardMatch(pattern, value)) result = action;
   return result;
 }
 
@@ -330,7 +337,7 @@ function capabilityLevel(platform, role, capability, requested) {
     if (platform === 'opencode' && role.delegates.length === 0 && requested !== 'allowed' && !role.tools.includes('Task')) return 'enforced';
     return 'instruction-only';
   }
-  if (capability === 'write_scope' && requested === 'plans' && (platform === 'claude' || platform === 'opencode')) return 'enforced';
+  if (capability === 'write_scope' && role.id === 'planning' && requested === 'plans' && (platform === 'claude' || platform === 'opencode')) return 'enforced';
   if (capability === 'network' || capability === 'browser') return 'unsupported';
   if (platform === 'opencode' && capability === 'delegation') return 'enforced';
   return 'instruction-only';
