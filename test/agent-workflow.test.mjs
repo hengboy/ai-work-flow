@@ -1100,6 +1100,9 @@ test('planning confirms plan splitting and commits only final planning artifacts
   assert.match(planning, /不拆分.*不得创建 `tasks\/`.*一个 \*\*Full Stack Coder\*\*/s);
   assert.match(planning, /outcome.*blocked_by.*acceptance/s);
   assert.match(planning, /合并、拆细、调整依赖或验收/);
+  assert.match(planning, /只生成完整任务草案.*不得创建、修改或删除任何 task 文件/s);
+  assert.match(planning, /用户明确确认当前展示的完整任务草案后.*写入 `tasks\/`/s);
+  assert.match(planning, /沉默、继续讨论、选择拆分或只确认收到草案.*不构成颗粒度确认/s);
   assert.match(planning, /plan.*digest.*全部失效.*重新生成/s);
   assert.match(planning, /main.*仅规划工件.*Git Committer/s);
   assert.match(planning, /planning commit.*SHA/);
@@ -1110,7 +1113,10 @@ test('planning confirms plan splitting and commits only final planning artifacts
   assert.match(planningWriter, /不得.*tasks\//s);
   assert.match(planningWriter, /ready-for-implementation/);
   assert.match(taskPlanner, /plan\.md.*File Explorer.*交接/s);
-  assert.match(taskPlanner, /只能写入.*\.ai-work-flow\/plans\/<plan-id>\/tasks\//s);
+  assert.match(taskPlanner, /获准写入时.*只能写入.*\.ai-work-flow\/plans\/<plan-id>\/tasks\//s);
+  assert.match(taskPlanner, /草案阶段.*不得创建、修改或删除任何 task 文件/s);
+  assert.match(taskPlanner, /写入阶段.*完整任务草案.*用户已明确确认.*颗粒度/s);
+  assert.match(taskPlanner, /校验待写内容与已确认草案完全一致/s);
 });
 
 test('task planner emits a deterministic dependency-safe task artifact contract', () => {
