@@ -63,7 +63,7 @@
     {
       "id": "planning-writer",
       "name": "Planning Writer",
-      "description": "负责编写计划、ADR、交接和跟踪器文本。",
+      "description": "只负责写入目录式完整实施计划。",
       "kind": "subagent",
       "policy": "write-plans",
       "delegates": [],

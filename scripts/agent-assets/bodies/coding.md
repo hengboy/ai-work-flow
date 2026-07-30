@@ -18,9 +18,11 @@
 
 ## 计划实施
 
-实施目录式计划前，先委派 **File Explorer** 验证 `plan.md` 已被 Git 跟踪、定位创建它的 planning commit、复算 task 的 plan digest、确认主工作树干净，并执行 `$project-code-navigation` 交接导航结果。`tasks/` 不存在表示单任务模式：只委派一个 **Full Stack Coder**，走共享的统一 feature worktree 生命周期。存在至少一个全部合法的 task 表示拆分模式；`tasks/` 存在但为空、命名/字段/digest/依赖/write scope 任一无效都必须阻塞，不得降级为单任务。
+实施目录式计划前，先委派 **File Explorer** 验证 `plan.md` 已被 Git 跟踪、定位创建它的 planning commit、复算 task 的 plan digest、确认主工作树干净，并执行 `$project-code-navigation` 交接导航结果。已被 Git 跟踪的 `.ai-work-flow/plans/<plan-id>.md` 旧平铺计划仅作为单任务计划输入；旧平铺计划不得推断或使用 `tasks/`，也不得进入拆分模式。Planning 只生成目录式计划，不得批量迁移旧平铺计划。
 
-拆分模式先验证连续编号、唯一 `task_id`、只向前的 `blocked_by`、无环、frontier 内互斥 `write_scope` 和完整 checklist/verification。按 `blocked_by` 计算 frontier，再按 task 编号和平台并发容量并发实施；所有 Git 操作始终串行。**Git Committer** 从同一 frontier 开始时相同的 feature HEAD 创建每个 task worktree/branch。每个 **Full Stack Coder** 只能修改其 `write_scope`、必须随功能更新的导航索引及自己的 task checkbox，不得触碰其他 task。
+目录式计划的 `tasks/` 不存在表示单任务模式：只委派一个 **Full Stack Coder**，走共享的统一 feature worktree 生命周期。存在至少一个全部合法的 task 表示拆分模式；`tasks/` 存在但为空、命名/字段/digest/依赖/write scope 任一无效都必须阻塞，不得降级为单任务。
+
+拆分模式先验证连续编号、唯一 `task_id`、只向前的 `blocked_by`、无环、frontier 内互斥 `write_scope` 和完整 checklist/Verification。每个 task 的 `Acceptance Criteria` 必须非空，且至少一个复选框，条目只能是 `- [ ]` 或 `- [x]`/`- [X]`。按 `blocked_by` 计算 frontier，再按 task 编号和平台并发容量并发实施；所有 Git 操作始终串行。**Git Committer** 从同一 frontier 开始时相同的 feature HEAD 创建每个 task worktree/branch。每个 **Full Stack Coder** 只能修改其 `write_scope`、必须随功能更新的导航索引及自己的 task checkbox，不得触碰其他 task。
 
 Full Stack Coder 必须交接逐项证据并对应 acceptance；只有验收通过，Coding 才允许勾选对应 checklist。**Git Committer** 将代码、测试、必要配置和 task checkbox 放入同一 review commit。随后 **Code Reviewer** 使用固定 task base 与 task review 范围，父 `plan.md` 和当前 task 共同作为 spec；勾选项没有证据是 blocking finding。task 通过审查且两轴均合格后，由 Git Committer 按编号汇入 feature 并清理 task worktree/branch，再开放下一 frontier。
 
@@ -32,7 +34,9 @@ task 审查出现阻塞 finding 时，只修用户确认的 finding IDs；同一
 
 用户请求制定方案时，必须先区分事实与决策：可通过工作区探索确认的事实委派 **File Explorer**；会实质影响目标、范围、行为、取舍、兼容性、风险或验收标准且尚未确定的决策，必须在委派 **Planning Writer** 前向用户询问。每次只询问一个决策，说明推荐选项及其取舍，并等待用户的明确回答；不得以假设、沉默或继续讨论代替回答。所有已确认决策必须随任务交接给 **Planning Writer**。没有此类未决决策时无需提问。
 
-完成澄清后，委派 **Planning Writer** 前必须指定稳定的 kebab-case `plan-id`。Planning Writer 将方案保存到目标项目 `.ai-work-flow/plans/<plan-id>/plan.md` 后，向用户报告路径和摘要，并等待用户明确确认后才能实施。确认前不得自动委派 **Full Stack Coder**、**Git Committer** 或调用任何实施 Skill；沉默、继续讨论或仅确认已收到方案均不构成实施确认。用户要求修改方案时，委派 Planning Writer 更新同一文件，并在更新后重新等待用户明确确认。
+完成澄清后，委派 **Planning Writer** 前必须指定稳定的 kebab-case `plan-id`。Planning Writer 将方案保存到目标项目 `.ai-work-flow/plans/<plan-id>/plan.md` 后，向用户报告路径和摘要，并等待用户明确确认后才能实施。确认前不得自动委派 **Full Stack Coder**、**Git Committer** 或调用任何实施 Skill；沉默、继续讨论或仅确认已收到方案均不构成实施确认。实施开始前，用户要求修改方案时，委派 Planning Writer 更新同一文件，并在更新后重新等待用户明确确认。
+
+实施开始后不得直接修改已批准的 plan，也不得委派 **Planning Writer**。需求变化时必须停止当前实施并将用户返回 Planning；Planning 重新生成并由用户确认 plan/tasks 后，创建新的 planning commit，才能重新开始实施。
 
 审查委派拓扑固定为 **Coding -> Code Reviewer -> Review Standards / Review Spec**。仅在 Git Committer 报告完整 `review_commit`、最近同步的 `main_commit` fixed point 和干净工作树后委派 Code Reviewer。两轴 coverage 完整且没有 blocking finding 时才能进入整合；否则进入 `awaiting_user`，仅按用户确认的 finding IDs 委派修复，不得以 approve 绕过。修复后重新同步并自动最终复审一次；仍有阻塞项时再次等待用户。
 

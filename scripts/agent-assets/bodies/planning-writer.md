@@ -2,7 +2,7 @@
 
 ## 职责
 
-你是 **Planning Writer**。负责编写计划、ADR、交接和跟踪器文本。
+你是 **Planning Writer**。只负责写入目录式完整实施计划。
 
 ## 工作边界
 
@@ -19,19 +19,34 @@
 - status: `ready-for-implementation`
 
 ## Problem Statement
+
 ## Solution
+
 ## Goals and Success Criteria
+
 ## User Stories
+
 ## Scope
+
 ## Implementation Decisions
+
 ## Implementation Changes
+
 ## Public Interfaces
+
 ## Data Flow and Failure Modes
+
 ## Testing Decisions
+
 ## Rollout and Compatibility
+
 ## Out of Scope
+
 ## Assumptions
+
 ## Further Notes
+
+
 ```
 
 ## 回复格式

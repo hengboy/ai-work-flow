@@ -918,6 +918,55 @@ test('planning workflow resolves material user decisions before writing a plan a
   assert.match(coding, /每次只询问一个决策/);
 });
 
+test('planning writer fixed template keeps a blank line after every section heading', () => {
+  const body = readFileSync(resolve(agentAssets, 'bodies/planning-writer.md'), 'utf8');
+  const template = body.match(/```markdown\n([\s\S]*?)\n```/)?.[1];
+  assert.ok(template, 'planning writer fixed template');
+  for (const heading of [
+    'Plan Metadata', 'Problem Statement', 'Solution', 'Goals and Success Criteria',
+    'User Stories', 'Scope', 'Implementation Decisions', 'Implementation Changes',
+    'Public Interfaces', 'Data Flow and Failure Modes', 'Testing Decisions',
+    'Rollout and Compatibility', 'Out of Scope', 'Assumptions', 'Further Notes'
+  ]) {
+    assert.match(template, new RegExp(`^## ${heading}\\n\\n`, 'm'), heading);
+  }
+});
+
+test('coding treats a tracked legacy flat plan as single-task input only', () => {
+  const prompt = loadAgentAssets().compiledBodies.get('coding');
+  assert.match(prompt, /已被 Git 跟踪.*`\.ai-work-flow\/plans\/<plan-id>\.md`.*旧平铺.*单任务/s);
+  assert.match(prompt, /旧平铺计划.*不得.*tasks.*拆分/s);
+  assert.match(prompt, /Planning.*只生成.*目录式/s);
+  assert.match(prompt, /不得批量迁移/);
+});
+
+test('coding validates non-empty checkbox acceptance criteria before split execution', () => {
+  const prompt = loadAgentAssets().compiledBodies.get('coding');
+  assert.match(prompt, /`Acceptance Criteria`.*非空.*至少一个.*复选框/s);
+  assert.match(prompt, /`- \[ \]`.*`- \[[xX]\]`/s);
+  assert.match(prompt, /checklist.*Verification/s);
+});
+
+test('coding stops implementation when an approved plan needs to change', () => {
+  const prompt = loadAgentAssets().compiledBodies.get('coding');
+  assert.match(prompt, /实施开始后.*不得.*已批准.*plan.*不得委派 \*\*Planning Writer\*\*/s);
+  assert.match(prompt, /需求变化.*停止当前实施.*Planning.*重新生成.*确认.*planning commit/s);
+});
+
+test('git committer rejects completed checkboxes from a planning commit', () => {
+  const prompt = loadAgentAssets().compiledBodies.get('git-committer');
+  assert.match(prompt, /planning commit.*所有存在的 checkbox.*未勾选/s);
+  assert.match(prompt, /`\[x\]`.*`\[X\]`.*阻塞/s);
+});
+
+test('planning writer catalog and prompt describe only directory implementation plans', () => {
+  const role = catalog.roles.find((candidate) => candidate.id === 'planning-writer');
+  const prompt = loadAgentAssets().compiledBodies.get('planning-writer');
+  assert.equal(role.description, '只负责写入目录式完整实施计划。');
+  assert.match(prompt, /你是 \*\*Planning Writer\*\*。只负责写入目录式完整实施计划。/);
+  assert.doesNotMatch(role.description, /ADR|交接|跟踪器/);
+});
+
 test('planning is an opt-in primary that delegates discovery and plan writing', () => {
   const planning = catalog.roles.find((role) => role.id === 'planning');
   const coding = catalog.roles.find((role) => role.id === 'coding');
