@@ -156,6 +156,13 @@ export function opencodePermission(role, policy) {
   }
   if (policy.delegation === 'allowed') permission.task = 'allow';
   if (policy.delegation === 'none') permission.task = 'deny';
+  if (role.id === 'task-planner') {
+    permission.edit = {
+      '*': 'deny',
+      '.ai-work-flow/plans/*/tasks/??-*.md': 'allow',
+      '.ai-work-flow/plans/*/tasks/*/*': 'deny'
+    };
+  }
   return permission;
 }
 

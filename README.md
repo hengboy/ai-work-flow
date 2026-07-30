@@ -20,7 +20,7 @@ node scripts/install.mjs
 
 - 将自定义技能（`run-matt-spec-to-completion`、`generate-ai-work-flow-agents`、`switch-ai-work-flow-env`、`project-code-navigation`、`git-commit`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录，并安装共享 execution runtime 及其依赖
 - 创建并默认直接使用 `~/.config/ai-work-flow/environments/default.json` 和 `routing.md`；仓库中的 `scripts/agent-assets/default-config.json` 仅作为初始化模板
-- 生成三端的 11 个受管理 agent
+- 生成三端的 12 个受管理 agent
 - 更新三端的路由配置，并从角色目录的 `default_primary` 设置 OpenCode 默认 agent；默认仍为 `coding`
 - 保留无关的全局 Skills、agents 和工具配置
 
@@ -52,7 +52,7 @@ node scripts/install.mjs --help
 
 `install` 是完整流程：同步 Skills、初始化配置和路由、安装运行时文件，然后生成 agents。`init` 和 `validate` 适合安装或排查问题；配置更新后的 agents 重新生成应通过 `$generate-ai-work-flow-agents` 完成。
 
-升级安装时，如果全局 `environments/default.json` 完全缺少 `planning`，安装器会从内置默认配置补入该角色，并将配置迁移、核心 runtime/资产和平台代理生成作为一个事务提交。已有 `planning` 即使字段残缺也不会被静默修复；此时安装会停止并保留原文件。`validate` 始终只读，不执行迁移。
+升级安装时，如果全局 `environments/default.json` 完全缺少 `planning` 或 `task-planner`，安装器会从内置默认配置补入缺失角色，并将配置迁移、核心 runtime/资产和平台代理生成作为一个事务提交。已有角色即使字段残缺也不会被静默修复；此时安装会停止并保留原文件。`validate` 和 `--dry-run` 始终不写入文件，也不执行迁移。
 
 ## 模型配置
 
@@ -131,16 +131,23 @@ node "$runtime" begin-review --repository <repo> --feature <feature> --worktree 
 | 角色 | 用途 |
 | --- | --- |
 | **Coding** | 路由、等待和汇总 |
-| **Planning** | 逐题确认目标和关键决策，将完整计划写入 `.ai-work-flow/plans/<planId>.md`；不实施代码 |
+| **Planning** | 逐题确认目标和关键决策，将完整计划写入 `.ai-work-flow/plans/<plan-id>/plan.md`，再确认是否拆分任务和 planning commit；不实施代码 |
 | **File Explorer** | 全库枚举、搜索和代码地图 |
 | **Researcher** | 外部官方资料与依赖研究 |
 | **Document Maintainer** | README、`docs` 等常规文档 |
 | **Planning Writer** | 计划、任务、ADR、交接和 tracker 文案 |
+| **Task Planner** | 将已确认计划拆分为可跟踪的实施任务 |
 | **Full Stack Coder** | 源码、测试、必要配置和调试 |
 | **Code Reviewer** | 汇总标准与需求双轴评审 |
 | **Review Standards** / **Review Spec** | Code Reviewer 使用的内部评审角色 |
 
 项目级 issue tracker 和领域文档由目标项目自行维护；全局 Skills、配置和 agents 由本仓库的安装器维护。
+
+## 计划与实施
+
+Planning 将已确认的完整计划写入目录式工件 `.ai-work-flow/plans/<plan-id>/plan.md`，并在计划展示后确认是否拆分任务以及是否创建 planning commit。可选的 `tasks/NN-short-name.md` 任务文件位于同一目录：没有 `tasks/` 表示单任务模式；存在且全部合法的任务文件表示拆分模式；空的或含无效任务文件的 `tasks/` 会阻塞实施。
+
+单任务模式由 Coding 只委派一个 **Full Stack Coder** 完成整个计划。拆分模式按 `blocked_by` 计算依赖前沿并发实施；每个 task 的代码、测试、必要配置和 checkbox 进入同一个 task review commit，经 **Code Reviewer** 对该 task 做 Standards + Spec 双轴评审后，Git Committer 按编号顺序汇入 feature，再开放下一前沿。全部 task 汇入后执行一次聚合双轴评审；只有评审覆盖完整、无阻塞 finding 且 `main` 未前进时，才以 `--ff-only` 整合。
 
 ## Skills
 
@@ -185,7 +192,7 @@ node "$runtime" begin-review --repository <repo> --feature <feature> --worktree 
 
 `to-spec`、`to-tickets`、`implement` 和 `code-review` 可以作为独立能力安装。AI Work Flow 提供：
 
-- **多主入口路由层**：`routing.md` + 11 角色 Agent 定义；Coding 为默认入口，Planning 为可选 plan-only 入口
+- **多主入口路由层**：`routing.md` + 12 角色 Agent 定义；Coding 为默认入口，Planning 为可选 plan-only 入口
 - **执行引擎**：`run-matt-spec-to-completion`（适配 `to-spec`/`to-tickets` 产物）
 - **配置管理**：`generate-ai-work-flow-agents` + `agent-workflow.mjs`
 - **项目导航**：`project-code-navigation` + 目标项目 `.ai-work-flow/index/`

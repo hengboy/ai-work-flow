@@ -26,7 +26,7 @@
       "description": "通过持续问询建立共享理解，并生成可直接实施的完整计划。",
       "kind": "primary",
       "policy": "planning",
-      "delegates": ["file-explorer", "planning-writer"],
+      "delegates": ["file-explorer", "planning-writer", "task-planner", "git-committer"],
       "tools": ["Task"],
       "routing_sections": ["browser-governance", "retry-governance"]
     },
@@ -63,9 +63,19 @@
     {
       "id": "planning-writer",
       "name": "Planning Writer",
-      "description": "负责编写计划、ADR、任务拆分、交接和跟踪器文本。",
+      "description": "负责编写计划、ADR、交接和跟踪器文本。",
       "kind": "subagent",
       "policy": "write-plans",
+      "delegates": [],
+      "tools": ["Read", "Edit", "Write", "Bash"],
+      "routing_sections": ["browser-governance", "handoff-governance"]
+    },
+    {
+      "id": "task-planner",
+      "name": "Task Planner",
+      "description": "负责把已确认计划拆分为可跟踪的实施任务。",
+      "kind": "subagent",
+      "policy": "write-tasks",
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
       "routing_sections": ["browser-governance", "handoff-governance"]

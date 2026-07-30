@@ -106,6 +106,21 @@
         "options": {}
       }
     },
+    "task-planner": {
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "reasoning": "xhigh"
+      },
+      "claude": {
+        "model": "opus",
+        "effort": "high"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-sol",
+        "variant": "xhigh",
+        "options": {}
+      }
+    },
     "full-stack-coder": {
       "codex": {
         "model": "gpt-5.6-sol",

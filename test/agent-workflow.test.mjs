@@ -175,6 +175,7 @@ test('compiled governance is scoped to each role concern', () => {
     researcher: ['browser-governance'],
     'document-maintainer': ['browser-governance', 'handoff-governance'],
     'planning-writer': ['browser-governance', 'handoff-governance'],
+    'task-planner': ['browser-governance', 'handoff-governance'],
     'full-stack-coder': ['browser-governance', 'retry-governance', 'implementation-governance'],
     'git-committer': ['browser-governance', 'implementation-governance'],
     'code-reviewer': ['browser-governance', 'retry-governance', 'review-governance'],
@@ -193,7 +194,7 @@ test('compiled governance is scoped to each role concern', () => {
   const retryRoles = new Set(['coding', 'planning', 'full-stack-coder', 'code-reviewer']);
   const implementationRoles = new Set(['coding', 'full-stack-coder', 'git-committer']);
   const reviewRoles = new Set(['code-reviewer', 'review-standards', 'review-spec']);
-  const handoffRoles = new Set(['document-maintainer', 'planning-writer']);
+  const handoffRoles = new Set(['document-maintainer', 'planning-writer', 'task-planner']);
   for (const role of assets.roles) {
     const prompt = compiled.get(role.id);
     assert.equal(prompt.includes('每个子任务的首次尝试最多重试 2 次'), retryRoles.has(role.id), `${role.id}: retry`);
@@ -208,7 +209,7 @@ test('compiled governance is scoped to each role concern', () => {
   assert.match(assets.bodies.get('planning'), /编码、修改源码或实施请求.*拒绝/);
   assert.doesNotMatch(assets.routing, /planning-governance|Policy 与能力边界|^## 回复格式$/m);
   const totalCompiledLength = [...compiled.values()].reduce((total, prompt) => total + prompt.length, 0);
-  assert.ok(totalCompiledLength < 35_000, `compiled prompts should stay focused, got ${totalCompiledLength} characters`);
+  assert.ok(totalCompiledLength < 40_000, `compiled prompts should stay focused, got ${totalCompiledLength} characters`);
 });
 
 test('managed prompt documents use the Markdown layout', () => {
@@ -236,6 +237,7 @@ test('role bodies derive their common structure and reply sections from the cata
     researcher: ['发现', '来源', '交接', '阻塞'],
     'document-maintainer': ['完成', '变更', '验证', '阻塞'],
     'planning-writer': ['完成', '变更', '验证', '阻塞'],
+    'task-planner': ['完成', '变更', '验证', '阻塞'],
     'full-stack-coder': ['完成', '变更', '验证', '阻塞'],
     'git-committer': ['提交结果'],
     'code-reviewer': ['Standards', 'Spec', '结论', '测试缺口', '阻塞'],
@@ -554,6 +556,51 @@ test('install atomically migrates the legacy primary role in default and sparse 
   assert.match(readFileSync(agentPath(paths, 'codex', 'coding', 'toml'), 'utf8'), /model_reasoning_effort = "low"/);
 });
 
+test('install atomically adds a completely missing task planner to default configuration', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  delete configuration.roles['task-planner'];
+  configuration.roles.coding.codex.model = 'preserved-model';
+  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(configuration, null, 2)}\n`);
+
+  const overlayPath = environmentPath(paths, 'sparse');
+  const overlay = `${JSON.stringify({
+    version: 1,
+    roles: { coding: { codex: { reasoning: 'low' } } }
+  }, null, 2)}\n`;
+  writeFileSync(overlayPath, overlay);
+  writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'sparse');
+
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  const migrated = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  const defaults = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
+  assert.deepEqual(migrated.roles['task-planner'], defaults.roles['task-planner']);
+  assert.equal(migrated.roles.coding.codex.model, 'preserved-model');
+  assert.equal(readFileSync(overlayPath, 'utf8'), overlay);
+  assert.match(readFileSync(agentPath(paths, 'codex', 'task-planner', 'toml'), 'utf8'), /model = "gpt-5\.6-sol"/);
+});
+
+test('validate and install dry-run never write a missing task planner migration', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  delete configuration.roles['task-planner'];
+  const before = `${JSON.stringify(configuration, null, 2)}\n`;
+  writeFileSync(defaultEnvironmentPath(paths), before);
+
+  const validation = run(paths, 'validate');
+  assert.equal(validation.status, 1);
+  assert.match(validation.stderr, /Missing configuration for role: task-planner/);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+
+  const dryRun = run(paths, '--dry-run');
+  assert.equal(dryRun.status, 0, dryRun.stderr);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+  assert.ok(!existsSync(agentPath(paths, 'codex', 'task-planner', 'toml')));
+});
+
 test('install rejects a conflicting inactive environment without writing any file', () => {
   const paths = environment();
   assert.equal(run(paths, 'init').status, 0);
@@ -618,11 +665,31 @@ test('install rejects an existing partial planning role without modifying global
   assert.ok(!existsSync(agentPath(paths, 'claude', 'planning', 'md')));
 });
 
+test('install rejects an existing partial task planner without modifying global files', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  delete configuration.roles['task-planner'].claude;
+  const before = `${JSON.stringify(configuration, null, 2)}\n`;
+  writeFileSync(defaultEnvironmentPath(paths), before);
+  const sentinel = agentPath(paths, 'codex', 'coding', 'toml');
+  mkdirSync(resolve(sentinel, '..'), { recursive: true });
+  writeFileSync(sentinel, 'preserved agent\n');
+
+  const result = install(paths);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /task-planner\.claude must be an object/);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+  assert.equal(readFileSync(sentinel, 'utf8'), 'preserved agent\n');
+  assert.ok(!existsSync(agentPath(paths, 'claude', 'task-planner', 'md')));
+});
+
 test('a failed install plan leaves planning migration, runtime, assets, and agents untouched', () => {
   const paths = environment();
   assert.equal(run(paths, 'init').status, 0);
   const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
   delete configuration.roles.planning;
+  delete configuration.roles['task-planner'];
   const before = `${JSON.stringify(configuration, null, 2)}\n`;
   writeFileSync(defaultEnvironmentPath(paths), before);
 
@@ -644,6 +711,7 @@ test('a failed install plan leaves planning migration, runtime, assets, and agen
   assert.equal(readFileSync(installedRoles, 'utf8'), 'preserved assets\n');
   assert.equal(readFileSync(claudeMarker, 'utf8'), invalidMarker);
   assert.ok(!existsSync(agentPath(paths, 'codex', 'planning', 'toml')));
+  assert.ok(!existsSync(agentPath(paths, 'codex', 'task-planner', 'toml')));
 });
 
 test('install validates managed skill trees before committing planning migration or agents', () => {
@@ -820,9 +888,9 @@ test('planning workflow resolves material user decisions before writing a plan a
   const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
   const compiledCoding = loadAgentAssets().compiledBodies.get('coding');
 
-  assert.match(planningWriter, /\.ai-work-flow\/plans\/<plan_id>\.md/);
+  assert.match(planningWriter, /\.ai-work-flow\/plans\/<plan-id>\/plan\.md/);
   assert.match(planningWriter, /不得实施/);
-  assert.match(compiledCoding, /\*\*Planning Writer\*\* 写入计划、ADR/);
+  assert.match(compiledCoding, /\*\*Planning Writer\*\* 写入计划/);
   for (const content of [compiledCoding]) {
     assert.match(content, /可通过工作区探索确认的事实委派 \*\*File Explorer\*\*/);
     assert.match(content, /会实质影响目标、范围、行为、取舍、兼容性、风险或验收标准/);
@@ -830,8 +898,8 @@ test('planning workflow resolves material user decisions before writing a plan a
     assert.match(content, /等待用户的明确回答/);
     assert.match(content, /所有已确认决策必须随任务交接给 \*\*Planning Writer\*\*/);
     assert.match(content, /没有此类未决决策时无需提问/);
-    assert.match(content, /kebab-case `plan_id`/);
-    assert.match(content, /\.ai-work-flow\/plans\/<plan_id>\.md/);
+    assert.match(content, /kebab-case `plan-id`/);
+    assert.match(content, /\.ai-work-flow\/plans\/<plan-id>\/plan\.md/);
     assert.match(content, /等待用户明确确认/);
     assert.match(content, /不得自动.*实施/);
   }
@@ -843,7 +911,7 @@ test('planning workflow resolves material user decisions before writing a plan a
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generatedPlanningWriter = readFileSync(agentPath(paths, platform, 'planning-writer', extension), 'utf8');
     const generatedCoding = generatedBody(paths, platform, 'coding', extension);
-    assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedPlanningWriter) : generatedBody(paths, platform, 'planning-writer', extension), /\.ai-work-flow\/plans\/<plan_id>\.md/, platform);
+    assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedPlanningWriter) : generatedBody(paths, platform, 'planning-writer', extension), /\.ai-work-flow\/plans\/<plan-id>\/plan\.md/, platform);
     assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedPlanningWriter) : generatedBody(paths, platform, 'planning-writer', extension), /不得实施/, platform);
     assert.match(generatedCoding, /每次只询问一个决策/, platform);
   }
@@ -857,7 +925,7 @@ test('planning is an opt-in primary that delegates discovery and plan writing', 
   assert.equal(planning.default_primary, undefined);
   assert.equal(coding.kind, 'primary');
   assert.equal(coding.default_primary, true);
-  assert.deepEqual(planning.delegates, ['file-explorer', 'planning-writer']);
+  assert.deepEqual(planning.delegates, ['file-explorer', 'planning-writer', 'task-planner', 'git-committer']);
   assert.deepEqual(planning.tools, ['Task']);
   assert.deepEqual(policies[planning.policy], {
     filesystem: 'none',
@@ -871,6 +939,53 @@ test('planning is an opt-in primary that delegates discovery and plan writing', 
 
   const defaults = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
   assert.deepEqual(defaults.roles.planning, defaults.roles['planning-writer']);
+});
+
+test('install generates the task planner subagent on every platform', () => {
+  const taskPlanner = catalog.roles.find((role) => role.id === 'task-planner');
+  assert.equal(catalog.roles.length, 12);
+  assert.equal(taskPlanner.kind, 'subagent');
+  assert.deepEqual(taskPlanner.delegates, []);
+  assert.equal(taskPlanner.policy, 'write-tasks');
+
+  const defaults = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
+  assert.ok(defaults.roles['task-planner']);
+
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    assert.ok(existsSync(agentPath(paths, platform, 'task-planner', extension)), platform);
+  }
+});
+
+test('task planning delegation and generated permissions stay narrowly scoped', () => {
+  const planning = catalog.roles.find((role) => role.id === 'planning');
+  const coding = catalog.roles.find((role) => role.id === 'coding');
+  const taskPlanner = catalog.roles.find((role) => role.id === 'task-planner');
+  assert.deepEqual(planning.delegates, ['file-explorer', 'planning-writer', 'task-planner', 'git-committer']);
+  assert.ok(!coding.delegates.includes('task-planner'));
+  assert.deepEqual(policies[taskPlanner.policy], {
+    filesystem: 'write',
+    shell: 'write',
+    network: 'none',
+    browser: 'none',
+    git: 'none',
+    write_scope: 'tasks',
+    delegation: 'none'
+  });
+
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  const openCode = parseFrontmatter(readFileSync(agentPath(paths, 'opencode', 'task-planner', 'md'), 'utf8'));
+  assert.deepEqual(openCode.permission.edit, {
+    '*': 'deny',
+    '.ai-work-flow/plans/*/tasks/??-*.md': 'allow',
+    '.ai-work-flow/plans/*/tasks/*/*': 'deny'
+  });
+  assert.equal(openCode.permission.task, 'deny');
+  assert.equal(capabilityMatrix('opencode', taskPlanner, policies[taskPlanner.policy]).write_scope, 'instruction-only');
 });
 
 test('planning prompt converges one decision at a time and emits the complete fixed plan template', () => {
@@ -910,7 +1025,7 @@ test('planning prompt converges one decision at a time and emits the complete fi
   assert.match(prompt, /仓库事实.*委派 \*\*File Explorer\*\*/);
   assert.match(prompt, /可通过文件检索回答的问题不得转问用户/);
   assert.match(body, /用户明确确认.*共享理解/);
-  assert.match(body, /\.ai-work-flow\/plans\/<planId>\.md/);
+  assert.match(body, /\.ai-work-flow\/plans\/<plan-id>\/plan\.md/);
   assert.match(body, /同名.*完整更新.*更换 ID/);
   assert.match(body, /未经.*确认.*覆盖/);
   assert.match(body, /所有方案创建、覆盖、更新和保存/);
@@ -924,6 +1039,120 @@ test('planning prompt converges one decision at a time and emits the complete fi
   assert.match(prompt, /\*\*Planning Writer\*\* 不向用户提问/);
   assert.match(prompt, /Coding/);
   assert.doesNotMatch(prompt, /https?:\/\/|github\.com/i);
+});
+
+test('planning confirms plan splitting and commits only final planning artifacts', () => {
+  const planning = readFileSync(resolve(agentAssets, 'bodies/planning.md'), 'utf8');
+  const planningWriter = readFileSync(resolve(agentAssets, 'bodies/planning-writer.md'), 'utf8');
+  const taskPlanner = readFileSync(resolve(agentAssets, 'bodies/task-planner.md'), 'utf8');
+
+  assert.match(planning, /\.ai-work-flow\/plans\/<plan-id>\/plan\.md/);
+  assert.match(planning, /先.*输出完整计划.*再询问.*拆分.*不拆分/s);
+  assert.match(planning, /不拆分.*不得创建 `tasks\/`.*一个 \*\*Full Stack Coder\*\*/s);
+  assert.match(planning, /outcome.*blocked_by.*acceptance/s);
+  assert.match(planning, /合并、拆细、调整依赖或验收/);
+  assert.match(planning, /plan.*digest.*全部失效.*重新生成/s);
+  assert.match(planning, /main.*仅规划工件.*Git Committer/s);
+  assert.match(planning, /planning commit.*SHA/);
+  assert.match(planning, /不得实施/);
+
+  assert.match(planningWriter, /\.ai-work-flow\/plans\/<plan-id>\/plan\.md/);
+  assert.match(planningWriter, /唯一允许写入/);
+  assert.match(planningWriter, /不得.*tasks\//s);
+  assert.match(planningWriter, /ready-for-implementation/);
+  assert.match(taskPlanner, /plan\.md.*File Explorer.*交接/s);
+  assert.match(taskPlanner, /只能写入.*\.ai-work-flow\/plans\/<plan-id>\/tasks\//s);
+});
+
+test('task planner emits a deterministic dependency-safe task artifact contract', () => {
+  const body = readFileSync(resolve(agentAssets, 'bodies/task-planner.md'), 'utf8');
+  for (const field of ['task_id:', 'order:', 'blocked_by:', 'source_plan:', 'source_plan_digest:', 'write_scope:']) {
+    assert.match(body, new RegExp(field), field);
+  }
+  for (const heading of ['Outcome', 'Implementation Checklist', 'Acceptance Criteria', 'Verification Steps', 'Out of Scope']) {
+    assert.match(body, new RegExp(`^## ${heading}$`, 'm'), heading);
+  }
+  assert.match(body, /`NN-<short-name>\.md`/);
+  assert.match(body, /`01`.*`99`/);
+  assert.match(body, /short name.*lowercase kebab/);
+  assert.match(body, /唯一且连续/);
+  assert.match(body, /`task_id`.*唯一/);
+  assert.match(body, /`blocked_by`.*较早.*task ID.*`none`.*不得成环/s);
+  assert.match(body, /同一 frontier.*`write_scope`.*互斥/s);
+  assert.match(body, /一个 \*\*Full Stack Coder\*\*.*一个上下文/s);
+  assert.match(body, /expand.*migrate.*contract/s);
+  assert.match(body, /source_plan: `\.\.\/plan\.md`/);
+  assert.match(body, /`source_plan_digest`.*完整字节.*SHA-256/s);
+  assert.match(body, /`tasks\/`.*只包含.*`NN-<short-name>\.md`/s);
+  assert.match(body, /不得创建 `index\.md` 或其他文件/);
+  assert.doesNotMatch(body, /^- plan_id:/m);
+  assert.doesNotMatch(body, /^- plan_digest:/m);
+  assert.doesNotMatch(body, /^---$/m);
+});
+
+test('task planner wraps each complete task artifact in a markdown fenced code block', () => {
+  const source = readFileSync(resolve(agentAssets, 'bodies/task-planner.md'), 'utf8');
+  const completeTaskFence = /```markdown\n# NN - <Task title>\n\n- task_id:[\s\S]*- order:[\s\S]*- blocked_by: `<task IDs or none>`\n- source_plan: `\.\.\/plan\.md`[\s\S]*- source_plan_digest:[\s\S]*- write_scope: `<exclusive paths or modules>`\n\n## Outcome[\s\S]*## Implementation Checklist\n\n- \[ \] 实施项[\s\S]*## Acceptance Criteria\n\n- \[ \][\s\S]*## Verification Steps\n\n- \[ \][\s\S]*## Out of Scope[\s\S]*```/;
+  assert.match(source, completeTaskFence);
+  assert.match(source, /不得在 fenced code block 外输出 task 文件正文/);
+
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const generated = generatedBody(paths, platform, 'task-planner', extension);
+    assert.match(generated, completeTaskFence, platform);
+    assert.match(generated, /不得在 fenced code block 外输出 task 文件正文/, platform);
+  }
+});
+
+test('coding executes single or split plans through validated task frontiers', () => {
+  const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
+  const assertions = [
+    /File Explorer.*plan\.md.*已被 Git 跟踪.*planning commit.*digest.*干净/s,
+    /\$project-code-navigation/,
+    /`tasks\/` 不存在.*单任务.*一个 \*\*Full Stack Coder\*\*/s,
+    /`tasks\/` 存在但.*无效.*阻塞/s,
+    /`blocked_by`.*frontier.*编号.*平台并发容量/s,
+    /所有 Git 操作.*串行/,
+    /同一 frontier.*相同的 feature HEAD/s,
+    /`write_scope`.*导航索引.*自己的 task/s,
+    /逐项证据.*checklist/s,
+    /代码、测试、必要配置和 task checkbox.*同一 review commit/s,
+    /task base.*task review.*父 `plan\.md`.*task.*spec/s,
+    /勾选.*没有证据.*阻塞/s,
+    /通过审查.*按编号.*汇入 feature/s,
+    /用户确认的 finding IDs/,
+    /同一批.*结束.*不得启动新的依赖 task/s,
+    /冲突.*一个 \*\*Full Stack Coder\*\*.*feature worktree.*验证.*评审/s,
+    /最终.*同步.*main.*聚合.*双轴审查/s,
+    /main.*未前进.*--ff-only/s
+  ];
+  for (const assertion of assertions) assert.match(coding, assertion);
+});
+
+test('implementation roles preserve planning and task commit boundaries', () => {
+  const coder = readFileSync(resolve(agentAssets, 'bodies/full-stack-coder.md'), 'utf8');
+  const committer = readFileSync(resolve(agentAssets, 'bodies/git-committer.md'), 'utf8');
+  const reviewer = readFileSync(resolve(agentAssets, 'bodies/code-reviewer.md'), 'utf8');
+  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+
+  assert.match(coder, /task 模式.*`write_scope`.*自己的 task checkbox/s);
+  assert.match(coder, /不得.*其他 task/s);
+  assert.match(coder, /逐项.*acceptance.*证据/s);
+
+  assert.match(committer, /planning commit.*直接在 `main`/s);
+  assert.match(committer, /仅规划工件.*精确 PathChange/s);
+  assert.match(committer, /Planning Writer.*Task Planner.*交接.*一致/s);
+  assert.match(committer, /task worktree.*task review commit.*按编号.*汇入/s);
+  assert.match(committer, /所有 Git 操作.*串行/);
+  assert.match(committer, /不得.*push.*amend.*reset.*clean.*隐式 stash.*跳过.*hook/s);
+
+  assert.match(reviewer, /task base.*task review commit/s);
+  assert.match(reviewer, /父 `plan\.md`.*当前 task.*spec/s);
+  assert.match(reviewer, /checkbox.*逐项证据.*阻塞/s);
+  assert.match(reviewer, /最终聚合.*feature.*完整 committed range/s);
+  assert.match(routing, /所有 Git 操作.*串行/);
 });
 
 test('planning assets and generated prompts contain no outside planning references', () => {
@@ -1143,12 +1372,11 @@ test('platform generation enforces the declared workspace access where supported
     } else {
       assert.match(codex, /sandbox_mode = "workspace-write"/, role.id);
       assert.equal(claude.permissionMode, 'acceptEdits', role.id);
-      if (role.id === 'planning') {
+      if (role.id === 'task-planner') {
         assert.deepEqual(openCode.permission.edit, {
           '*': 'deny',
-          '.ai-work-flow/plans/?*.md': 'allow',
-          '.ai-work-flow/plans/*/*.md': 'deny',
-          '.ai-work-flow/plans/* *.md': 'deny'
+          '.ai-work-flow/plans/*/tasks/??-*.md': 'allow',
+          '.ai-work-flow/plans/*/tasks/*/*': 'deny'
         }, role.id);
       } else {
         assert.equal(openCode.permission.edit, role.tools.some((tool) => tool === 'Edit' || tool === 'Write') ? 'allow' : 'deny', role.id);
@@ -1228,7 +1456,7 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
 });
 
 test('only writer bodies require git diff reporting', () => {
-  const writers = new Set(['document-maintainer', 'planning-writer', 'full-stack-coder']);
+  const writers = new Set(['document-maintainer', 'planning-writer', 'task-planner', 'full-stack-coder']);
   for (const role of catalog.roles) {
     const body = readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8');
     assert.equal(body.includes('git diff --name-only'), writers.has(role.id), role.id);

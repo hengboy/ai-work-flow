@@ -215,6 +215,10 @@ function loadInstallConfig(assets, platforms) {
     base = structuredClone(base);
     base.roles.planning = structuredClone(assets.defaults.roles.planning);
   }
+  if (exists && isPlainObject(base?.roles) && !Object.hasOwn(base.roles, 'task-planner')) {
+    base = structuredClone(base);
+    base.roles['task-planner'] = structuredClone(assets.defaults.roles['task-planner']);
+  }
   const resolved = loadResolvedConfiguration({
     paths,
     roles: assets.roles,
