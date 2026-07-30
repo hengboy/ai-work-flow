@@ -3,7 +3,7 @@
   "roles": {
     "coding": {
       "codex": {
-        "model": "gpt-5.6-terra",
+        "model": "gpt-5.6-sol",
         "reasoning": "high"
       },
       "claude": {
@@ -11,7 +11,7 @@
         "effort": "medium"
       },
       "opencode": {
-        "model": "baibai/gpt-5.6-terra",
+        "model": "baibai/gpt-5.6-sol",
         "variant": "high",
         "options": {}
       }
@@ -63,7 +63,7 @@
     },
     "researcher": {
       "codex": {
-        "model": "gpt-5.6-luna",
+        "model": "gpt-5.6-terra",
         "reasoning": "medium"
       },
       "claude": {
@@ -71,7 +71,7 @@
         "effort": "medium"
       },
       "opencode": {
-        "model": "baibai/gpt-5.6-luna",
+        "model": "baibai/gpt-5.6-terra",
         "variant": "medium",
         "options": {}
       }
@@ -94,7 +94,7 @@
     "planning-writer": {
       "codex": {
         "model": "gpt-5.6-sol",
-        "reasoning": "xhigh"
+        "reasoning": "medium"
       },
       "claude": {
         "model": "opus",
@@ -102,7 +102,7 @@
       },
       "opencode": {
         "model": "baibai/gpt-5.6-sol",
-        "variant": "xhigh",
+        "variant": "medium",
         "options": {}
       }
     },
@@ -138,46 +138,46 @@
     },
     "code-reviewer": {
       "codex": {
-        "model": "gpt-5.6-terra",
-        "reasoning": "xhigh"
+        "model": "gpt-5.6-sol",
+        "reasoning": "medium"
       },
       "claude": {
         "model": "sonnet",
         "effort": "high"
       },
       "opencode": {
-        "model": "baibai/gpt-5.6-terra",
-        "variant": "xhigh",
+        "model": "baibai/gpt-5.6-sol",
+        "variant": "medium",
         "options": {}
       }
     },
     "review-standards": {
       "codex": {
-        "model": "gpt-5.6-terra",
-        "reasoning": "xhigh"
+        "model": "gpt-5.6-sol",
+        "reasoning": "medium"
       },
       "claude": {
         "model": "sonnet",
         "effort": "high"
       },
       "opencode": {
-        "model": "baibai/gpt-5.6-terra",
-        "variant": "xhigh",
+        "model": "baibai/gpt-5.6-sol",
+        "variant": "medium",
         "options": {}
       }
     },
     "review-spec": {
       "codex": {
-        "model": "gpt-5.6-terra",
-        "reasoning": "xhigh"
+        "model": "gpt-5.6-sol",
+        "reasoning": "medium"
       },
       "claude": {
         "model": "sonnet",
         "effort": "high"
       },
       "opencode": {
-        "model": "baibai/gpt-5.6-terra",
-        "variant": "xhigh",
+        "model": "baibai/gpt-5.6-sol",
+        "variant": "medium",
         "options": {}
       }
     }
