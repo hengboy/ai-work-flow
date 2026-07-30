@@ -108,16 +108,16 @@
     },
     "full-stack-coder": {
       "codex": {
-        "model": "gpt-5.6-terra",
-        "reasoning": "high"
+        "model": "gpt-5.6-sol",
+        "reasoning": "medium"
       },
       "claude": {
         "model": "sonnet",
         "effort": "high"
       },
       "opencode": {
-        "model": "baibai/gpt-5.6-terra",
-        "variant": "high",
+        "model": "baibai/gpt-5.6-sol",
+        "variant": "medium",
         "options": {}
       }
     },
