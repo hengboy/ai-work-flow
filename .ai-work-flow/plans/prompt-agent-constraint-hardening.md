@@ -4,7 +4,7 @@
 
 - 计划 ID 固定为 `prompt-agent-constraint-hardening`；本文件是用户确认后新实施会话的唯一实施计划输入。
 - 在不扩展角色集合、平台集合或产品功能的前提下，关闭当前仍未实现或仍漂移的提示词、生成器、平台权限、环境状态、审查、Handoff、Git 提交和 execution runtime 契约。
-- 保持 `scripts/agent-assets/routing.md` 为共享治理内容的唯一源；生成器从该源编译角色所需子集进入最终 agent body，使没有文件读取能力的 Claude/OpenCode Orchestrator 也能获得必需规则，同时禁止在 body 中手工复制第二份治理真相。
+- 保持 `agent-build/config/routing.md` 为共享治理内容的唯一源；生成器从该源编译角色所需子集进入最终 agent body，使没有文件读取能力的 Claude/OpenCode Orchestrator 也能获得必需规则，同时禁止在 body 中手工复制第二份治理真相。
 - 使 capability 输出只陈述平台配置可证明的事实：只有真实负向测试证明越权被平台阻止时才标记 `enforced`，其余为 `instruction-only` 或 `unsupported`。
 - 使三平台生成内容可由标准解析器 round-trip，动态 model、variant、effort、reasoning、options 和正文不产生 TOML/YAML/JSON 注入或双重转义。
 - 使 `env status` 比较 planned rendered bytes、磁盘受管文件和平台实际解析/覆盖事实，按角色/平台报告 `in-sync`、`drifted` 或 `shadowed`，且不读取、散列、记录或输出用户 secret。
@@ -19,7 +19,7 @@
 
 ## 需求
 
-1. **治理编译：** `scripts/agent-assets/routing.md` 继续是共享治理的唯一 managed source。角色 body 只保存角色专属职责、输入、排除条件和回复格式；`scripts/private/asset-catalog.mjs` 解析 routing 中有稳定 ID 的受管片段，`scripts/private/platform-adapter.mjs` 按 `roles.json` 的片段引用编译最终正文。缺失、重复、嵌套错误或未引用的必需片段必须在任何平台写入前失败。
+1. **治理编译：** `agent-build/config/routing.md` 继续是共享治理的唯一 managed source。角色 body 只保存角色专属职责、输入、排除条件和回复格式；`agent-build/runtime/asset-catalog.mjs` 解析 routing 中有稳定 ID 的受管片段，`agent-build/runtime/platform-adapter.mjs` 按 `roles.json` 的片段引用编译最终正文。缺失、重复、嵌套错误或未引用的必需片段必须在任何平台写入前失败。
 2. **不可读 routing 的角色：** Claude Orchestrator 只有 `Task`，OpenCode Orchestrator 将采用 deny-by-default；二者不得依赖运行时读取 `$XDG_CONFIG_HOME/ai-work-flow/routing.md` 才能遵守核心委派、计划确认、提交、审查、重试与停止规则。最终 body 必须包含由唯一源编译的所需子集，并保留治理来源/版本标识以供状态检查。
 3. **OpenCode 权限：** 权限对象必须先拒绝平台已知的独立权限键，再按 role.tools、policy 和 delegate 关系精确放行。至少覆盖 `read`、`edit`、`glob`、`grep`、`bash`、`task`、`skill`、`webfetch`、`websearch`、`question`、`external_directory`；发现平台新增但 adapter 未建模的权限键时，catalog/测试必须失败或 capability 降级，不得默认为允许。
 4. **能力诚实性：** OpenCode 现有 reviewer 命令模式中的 `git branch*`、`git diff*`、`node --test*`、`npm test*` 不能作为“只读 shell/git 已强制”的证据。只有参数级负向 evaluator 能拒绝创建/切换分支、外部 diff/helper、输出写文件、测试副作用和命令拼接时才可升级；本计划完成前相应能力保持 `instruction-only` 或 `unsupported`。
@@ -68,13 +68,13 @@
 
 **文件：**
 
-- `scripts/agent-assets/routing.md`
-- `scripts/agent-assets/roles.json`
-- `scripts/agent-assets/policies.json`
-- `scripts/agent-assets/bodies/*.md`
-- `scripts/private/asset-catalog.mjs`
-- `scripts/private/managed-content.mjs`
-- `scripts/private/platform-adapter.mjs`
+- `agent-build/config/routing.md`
+- `agent-build/config/roles.json`
+- `agent-build/config/policies.json`
+- `agent-build/templates/*.md`
+- `agent-build/runtime/asset-catalog.mjs`
+- `agent-build/runtime/managed-content.mjs`
+- `agent-build/runtime/platform-adapter.mjs`
 - `skills/project-code-navigation/SKILL.md`
 - `test/agent-workflow.test.mjs`
 
@@ -97,12 +97,12 @@
 
 **文件：**
 
-- `scripts/private/platform-adapter.mjs`
-- `scripts/private/config.mjs`
-- `scripts/private/workflow.mjs`
-- `scripts/private/managed-content.mjs`
-- `scripts/agent-assets/policies.json`
-- `scripts/agent-assets/roles.json`
+- `agent-build/runtime/platform-adapter.mjs`
+- `agent-build/runtime/config.mjs`
+- `agent-build/runtime/workflow.mjs`
+- `agent-build/runtime/managed-content.mjs`
+- `agent-build/config/policies.json`
+- `agent-build/config/roles.json`
 - `skills/generate-ai-work-flow-agents/SKILL.md`
 - `skills/switch-ai-work-flow-env/SKILL.md`
 - `test/agent-workflow.test.mjs`
@@ -128,8 +128,8 @@
 
 **文件：**
 
-- `scripts/agent-assets/routing.md`
-- `scripts/agent-assets/bodies/{orchestrator,full-stack-coder,git-committer,code-reviewer,review-standards,review-spec}.md`
+- `agent-build/config/routing.md`
+- `agent-build/templates/{orchestrator,full-stack-coder,git-committer,code-reviewer,review-standards,review-spec}.md`
 - `skills/git-commit/SKILL.md`
 - `execution-runtime/handoff-result-schema.json`
 - `skills/run-matt-spec-to-completion/completion-result-schema.json`
@@ -338,7 +338,7 @@
 
 - 阶段 0 至 5 按依赖顺序完成；每阶段定向测试在不依赖后续未提交改动的提交上通过。
 - 本计划 25 项需求各能映射到实现差异和至少一个行为测试；只保留辅助性的关键句 smoke test。
-- `scripts/agent-assets/routing.md` 是共享治理正文唯一源；生成 body 可离线执行核心角色约束，且有可验证来源 digest。
+- `agent-build/config/routing.md` 是共享治理正文唯一源；生成 body 可离线执行核心角色约束，且有可验证来源 digest。
 - 三平台解析、权限、capability、status 与实际配置一致；没有未经负向测试支持的 `enforced`。
 - plan artifact、implementation、review fix 和 runtime execution record 四类提交所有权及差异边界可在临时仓库复现。
 - JSON Handoff、review manifest、PathChange 和 stash authorization 都经 schema/结构校验并 fail closed。
@@ -370,7 +370,7 @@
 ## 假设
 
 - 当前仓库事实以实施开始时的 `HEAD` 和测试为准；本计划编写时观察到的双重换行转义、OpenCode 权限漏项、乐观 capability、期望 digest、Skill 命令缺口和文本协议沉积仍需在阶段开始时用失败测试复核。
-- `scripts/agent-assets/routing.md` 可以增加机器可解析的 managed section 标记而不改变其作为人类可读治理文档的角色；section 引用元数据不构成第二份治理正文。
+- `agent-build/config/routing.md` 可以增加机器可解析的 managed section 标记而不改变其作为人类可读治理文档的角色；section 引用元数据不构成第二份治理正文。
 - OpenCode 支持以 permission map 表达 deny-by-default；若实际版本出现新权限键，默认行为是 catalog/测试失败或 capability 降级，而不是静默 allow。
 - TOML/YAML 标准 parser 可作为根测试开发依赖锁定；已安装 workflow runtime 仍保持只依赖 Node 内置模块，生产生成路径不依赖测试 parser package。
 - workflow `session_id` 是由调用者在委派前生成并传给 child 的执行会话标识，不要求暴露平台内部 secret/session token；平台原生 handle 可另作非持久诊断，但不是 claim identity 的替代。

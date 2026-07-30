@@ -20,7 +20,7 @@
 
 ### 1. 定义首次阻塞清单协议
 
-修改 `scripts/agent-assets/bodies/git-committer.md` 的工作边界和范围不清回复规则：
+修改 `agent-build/templates/git-committer.md` 的工作边界和范围不清回复规则：
 
 1. 在任何暂存动作之前读取完整 Git 状态，并以能够区分已跟踪修改、删除、重命名和未跟踪文件的状态结果构造快照；实现时优先使用可无歧义处理特殊路径的 porcelain `-z` 形式，不以自然语言解析 diff 推断路径。
 2. 首次发现超出既有白名单的文件时立即停止，不调用 `git add`、`git commit` 或其他会改变状态的命令。
@@ -28,11 +28,11 @@
 4. 回复中声明该清单尚未获得授权，并要求用户明确引用“刚才列出的全部文件”；不得评价文件相关性或建议用户应授权哪些文件。
 5. 对重命名或复制状态保留源路径和目标路径信息，使后续白名单可精确约束 Git pathspec；特殊字符路径必须使用一致、可比对的表示，避免显示值与第二次校验值不一致。
 
-该修改替代当前 `scripts/agent-assets/bodies/git-committer.md:12` 和 `:16` 的“不得枚举”及“仅输出固定一句”约束，因为现有协议无法产生后续授权所需的固定清单。
+该修改替代当前 `agent-build/templates/git-committer.md:12` 和 `:16` 的“不得枚举”及“仅输出固定一句”约束，因为现有协议无法产生后续授权所需的固定清单。
 
 ### 2. 定义 Orchestrator 的跨轮授权传递
 
-修改 `scripts/agent-assets/bodies/orchestrator.md`，新增 Git 提交授权专项规则：
+修改 `agent-build/templates/orchestrator.md`，新增 Git 提交授权专项规则：
 
 1. 收到 Git Committer 的首次阻塞结果后，在当前对话状态中保留其完整清单，作为待授权快照；Orchestrator 不访问工作区，也不编辑、筛选或补全该清单。
 2. 用户未明确授权刚才完整清单时，仅报告阻塞并等待，不得再次委派 Git Committer。
@@ -44,7 +44,7 @@
 
 ### 3. 将共享约束加入生成源
 
-修改 `scripts/agent-assets/routing.md`，在专项规则中加入对 Orchestrator 与 Git Committer 都生效的授权范围契约：
+修改 `agent-build/config/routing.md`，在专项规则中加入对 Orchestrator 与 Git Committer 都生效的授权范围契约：
 
 - 首次阻塞清单是唯一授权对象。
 - 授权必须发生在清单展示之后并明确指向全部所列文件。
@@ -57,7 +57,7 @@
 
 ### 4. 保持资产目录和角色配置稳定
 
-检查但不修改 `scripts/agent-assets/roles.json` 与 `scripts/agent-assets/default-config.json`：
+检查但不修改 `agent-build/config/roles.json` 与 `agent-build/config/default-config.json`：
 
 - `roles.json` 已允许 Orchestrator 委派 Git Committer，Git Committer 已拥有读取状态和执行受控 Git 命令所需的 `Read`/`Bash` 工具，不需要新增工具或委派能力。
 - `default-config.json` 只定义平台模型配置，授权快照属于提示词协议而非新配置项，不应在环境配置中引入用户授权状态。
@@ -89,9 +89,9 @@
 
 1. 在 `test/agent-workflow.test.mjs` 先增加失败断言，覆盖源提示词中的首次完整清单、事后明确授权、原样传递、集合一致性校验、一次性消费和禁止相关性推断。
 2. 扩展同一测试中的安装/平台生成场景：执行现有 `install(paths)`，分别读取 Codex、Claude Code、OpenCode 生成的 `orchestrator` 与 `git-committer`，断言两类角色都包含各自应执行的授权契约；继续断言安装后的 `routing.md` 与资产源完全一致。
-3. 修改 `scripts/agent-assets/bodies/git-committer.md`，落实首次阻塞清单格式和第二次白名单校验，移除与列清单相冲突的固定一句回复限制，同时保留既有 Git 操作白名单和 `git-commit` 技能门禁。
-4. 修改 `scripts/agent-assets/bodies/orchestrator.md`，落实待授权快照的对话内保存、用户授权识别、第二次委派载荷及消费规则。
-5. 修改 `scripts/agent-assets/routing.md`，写入共享的状态转换和禁止推断约束，确保安装到 `~/.config/ai-work-flow/routing.md` 后仍约束两个角色。
+3. 修改 `agent-build/templates/git-committer.md`，落实首次阻塞清单格式和第二次白名单校验，移除与列清单相冲突的固定一句回复限制，同时保留既有 Git 操作白名单和 `git-commit` 技能门禁。
+4. 修改 `agent-build/templates/orchestrator.md`，落实待授权快照的对话内保存、用户授权识别、第二次委派载荷及消费规则。
+5. 修改 `agent-build/config/routing.md`，写入共享的状态转换和禁止推断约束，确保安装到 `~/.config/ai-work-flow/routing.md` 后仍约束两个角色。
 6. 运行定向测试并修正提示词或断言，直到源资产与三平台生成结果全部覆盖协议。
 7. 运行完整测试，确认资产目录一致性、配置校验、安装幂等性、平台权限和现有规划/审查/重试规则没有回归。
 8. 检查最终差异，确认仅包含上述三个提示词资产、`test/agent-workflow.test.mjs` 及本计划文件；`roles.json`、`default-config.json` 和任何生成到用户主目录的文件不应出现在差异中。
@@ -160,7 +160,7 @@
 - 授权在一次第二次尝试后失效，不能跨失败重试、其他任务或新会话复用。
 - Codex、Claude Code、OpenCode 生成结果及安装后的共享 routing 均包含对应约束。
 - `node --test test/agent-workflow.test.mjs`、`npm test` 和 `git diff --check` 全部通过。
-- 最终实现差异不包含 `scripts/agent-assets/roles.json`、`scripts/agent-assets/default-config.json`、用户全局代理文件或任何无关文件。
+- 最终实现差异不包含 `agent-build/config/roles.json`、`agent-build/config/default-config.json`、用户全局代理文件或任何无关文件。
 
 ## 范围外
 
@@ -175,4 +175,4 @@
 
 - 用户所说“跨轮传递”指同一 Orchestrator 会话中，首次阻塞结果与紧随其后的用户授权之间的对话状态传递；新会话不具备可靠的原始清单，因此必须重新检查。
 - “刚才列出的全部文件一并提交”的语义要求当前变更集合与首次快照完全一致；如果原清单项消失或状态改变，宁可重新授权，也不使用部分或陈旧白名单。
-- 现有安装器继续以 `scripts/agent-assets/` 为唯一生成源，测试中的临时 HOME/XDG_CONFIG_HOME 足以验证三平台产物而不污染用户真实全局配置。
+- 现有安装器继续以 `agent-build/config/` 为唯一生成源，测试中的临时 HOME/XDG_CONFIG_HOME 足以验证三平台产物而不污染用户真实全局配置。

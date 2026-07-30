@@ -17,15 +17,15 @@ const LEGACY_PRIMARY_AGENT_ID = 'orchestrator';
 
 function usage() {
   return `Usage:
-  node scripts/install.mjs [--platform codex,claude,opencode] [--dry-run]
-  node scripts/install.mjs init [--dry-run]
-  node scripts/install.mjs generate [--platform codex,claude,opencode] [--dry-run]
-  node scripts/install.mjs validate
-  node scripts/install.mjs env
-  node scripts/install.mjs env use <name> [--dry-run]
-  node scripts/install.mjs env status
-  node scripts/install.mjs env create <name>
-  node scripts/install.mjs env delete <name>`;
+  node agent-build/install.mjs [--platform codex,claude,opencode] [--dry-run]
+  node agent-build/install.mjs init [--dry-run]
+  node agent-build/install.mjs generate [--platform codex,claude,opencode] [--dry-run]
+  node agent-build/install.mjs validate
+  node agent-build/install.mjs env
+  node agent-build/install.mjs env use <name> [--dry-run]
+  node agent-build/install.mjs env status
+  node agent-build/install.mjs env create <name>
+  node agent-build/install.mjs env delete <name>`;
 }
 
 function parseArgs(argv) {
@@ -130,10 +130,11 @@ function addTreeStep(plan, source, destination) {
 function planCoreRuntime(assets, lifecycle, paths) {
   const plan = [];
   addWriteStep(plan, resolve(paths.dir, 'agent-workflow.mjs'), readFileSync(resolve(lifecycle.sourceDir, lifecycle.entry), 'utf8'));
-  addSourceTree(plan, resolve(import.meta.dirname), resolve(paths.dir, 'private'));
-  addSourceTree(plan, assets.root, resolve(paths.dir, 'agent-assets'));
+  addSourceTree(plan, resolve(import.meta.dirname), resolve(paths.dir, 'runtime'));
+  addSourceTree(plan, assets.configRoot, resolve(paths.dir, 'config'));
+  addSourceTree(plan, assets.templatesRoot, resolve(paths.dir, 'templates'));
   addSourceTree(plan, resolve(ROOT, 'execution-runtime'), resolve(paths.dir, 'execution-runtime'));
-  const legacyBody = resolve(paths.dir, 'agent-assets', 'bodies', `${LEGACY_PRIMARY_AGENT_ID}.md`);
+  const legacyBody = resolve(paths.dir, 'templates', `${LEGACY_PRIMARY_AGENT_ID}.md`);
   if (existsSync(legacyBody)) plan.push({ type: 'delete', path: legacyBody });
   return plan;
 }

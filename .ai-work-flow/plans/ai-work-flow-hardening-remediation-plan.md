@@ -150,9 +150,9 @@ git log <fixed-point>..<review-commit> --oneline
 
 ### 涉及模块
 
-- `scripts/private/config.mjs`
-- `scripts/private/workflow.mjs` 中配置加载、validate/generate 预检入口
-- `scripts/private/shared.mjs`（仅在现有结构无法提供统一错误/JSON 校验时最小修改）
+- `agent-build/runtime/config.mjs`
+- `agent-build/runtime/workflow.mjs` 中配置加载、validate/generate 预检入口
+- `agent-build/runtime/shared.mjs`（仅在现有结构无法提供统一错误/JSON 校验时最小修改）
 - `test/agent-workflow.test.mjs`
 
 ### 验收不变量
@@ -202,10 +202,10 @@ git diff --check G0..HEAD
 
 ### 涉及模块
 
-- `scripts/private/transaction.mjs`
-- `scripts/private/paths.mjs`
-- `scripts/private/workflow.mjs`
-- `scripts/private/platform-adapter.mjs` 的 plan/apply 边界
+- `agent-build/runtime/transaction.mjs`
+- `agent-build/runtime/paths.mjs`
+- `agent-build/runtime/workflow.mjs`
+- `agent-build/runtime/platform-adapter.mjs` 的 plan/apply 边界
 - `test/agent-workflow.test.mjs`
 
 ### 实施要求
@@ -272,12 +272,12 @@ git diff --check G1..HEAD
 
 ### 涉及模块
 
-- `scripts/agent-assets/policies.json`
-- `scripts/agent-assets/roles.json`
-- `scripts/private/asset-catalog.mjs`
-- `scripts/private/platform-adapter.mjs`
-- `scripts/private/workflow.mjs` 的 capability/status 输出
-- `scripts/agent-assets/bodies/*.md`（仅能力边界需要同步时）
+- `agent-build/config/policies.json`
+- `agent-build/config/roles.json`
+- `agent-build/runtime/asset-catalog.mjs`
+- `agent-build/runtime/platform-adapter.mjs`
+- `agent-build/runtime/workflow.mjs` 的 capability/status 输出
+- `agent-build/templates/*.md`（仅能力边界需要同步时）
 - `test/agent-workflow.test.mjs`
 
 ### 验收不变量
@@ -419,9 +419,9 @@ git diff --check G3..HEAD
 
 ### 涉及模块
 
-- `scripts/agent-assets/routing.md`
-- `scripts/agent-assets/bodies/orchestrator.md`
-- 其他受影响的 `scripts/agent-assets/bodies/*.md`
+- `agent-build/config/routing.md`
+- `agent-build/templates/orchestrator.md`
+- 其他受影响的 `agent-build/templates/*.md`
 - `skills/run-matt-spec-to-completion/SKILL.md`
 - `skills/run-matt-spec-to-completion/references/execution-architecture.md`
 - `README.md`

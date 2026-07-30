@@ -4,7 +4,7 @@
 
 本报告为本项目的角色路由提供“满足质量的最低成本”基线。官方资料将 OpenAI 的 Sol 定位为旗舰能力、Terra 定位为智能与成本平衡、Luna 定位为高吞吐低成本；Claude 则分别以 Opus、Sonnet、Haiku 覆盖复杂 agentic coding、速度/智能平衡和最快的简单任务。DeepSWE v1.1 为 Sol/Terra/Luna、Opus 5/Sonnet 5 提供了同一编码 harness 下的直接实测，但没有 Haiku 成绩，也没有运行本项目的原生 Codex、Claude 或 OpenCode agent。建议按角色选择最低足够模型与推理档位，并只在安全、权限、迁移、大 diff 或项目评测证明有收益时临时升级。
 
-“官方事实”来自下列官方文档；“本项目建议”是结合角色职责（`scripts/agent-assets/roles.json`、`scripts/agent-assets/bodies/*.md`）和现有配置（`scripts/agent-assets/default-config.json`）作出的路由决策，不是供应商承诺。
+“官方事实”来自下列官方文档；“本项目建议”是结合角色职责（`agent-build/config/roles.json`、`agent-build/templates/*.md`）和现有配置（`agent-build/config/default-config.json`）作出的路由决策，不是供应商承诺。
 
 ## 能力与价格排序
 
@@ -101,7 +101,7 @@ DeepSWE 的“探索代码库、实现多文件修改、运行测试、提交 pa
 
 ## 相对当前配置的变化
 
-当前值以 `scripts/agent-assets/default-config.json` 为准，角色语义以 `scripts/agent-assets/roles.json` 与对应 `scripts/agent-assets/bodies/*.md` 为准。
+当前值以 `agent-build/config/default-config.json` 为准，角色语义以 `agent-build/config/roles.json` 与对应 `agent-build/templates/*.md` 为准。
 
 - `coding`：Sol/high → Terra/medium；日常路由先用平衡档，复杂任务按动态规则升级。
 - `planning`：Sol/xhigh → Sol/high；保留旗舰模型，去掉默认过高 reasoning。
@@ -144,6 +144,6 @@ DeepSWE 的“探索代码库、实现多文件修改、运行测试、提交 pa
 
 ### 仓库来源
 
-- 角色清单、职责和委派关系：`scripts/agent-assets/roles.json`。
-- 角色边界、审查门禁与任务语义：`scripts/agent-assets/bodies/*.md`（重点为 `coding.md`、`full-stack-coder.md`、`code-reviewer.md`、`document-maintainer.md`）。
-- 当前三执行面默认模型配置：`scripts/agent-assets/default-config.json`。
+- 角色清单、职责和委派关系：`agent-build/config/roles.json`。
+- 角色边界、审查门禁与任务语义：`agent-build/templates/*.md`（重点为 `coding.md`、`full-stack-coder.md`、`code-reviewer.md`、`document-maintainer.md`）。
+- 当前三执行面默认模型配置：`agent-build/config/default-config.json`。

@@ -7,17 +7,18 @@ import test from 'node:test';
 import { parse as parseToml } from '@iarna/toml';
 import YAML from 'yaml';
 
-import { MARKER_END, MARKER_START, updateManagedMarker } from '../scripts/private/managed-content.mjs';
-import { loadAgentAssets } from '../scripts/private/asset-catalog.mjs';
-import { capabilityEvidence, capabilityMatrix, evaluateOpenCodePermission } from '../scripts/private/platform-adapter.mjs';
-import { applyTransaction, recoverTransaction } from '../scripts/private/transaction.mjs';
+import { MARKER_END, MARKER_START, updateManagedMarker } from '../agent-build/runtime/managed-content.mjs';
+import { loadAgentAssets } from '../agent-build/runtime/asset-catalog.mjs';
+import { capabilityEvidence, capabilityMatrix, evaluateOpenCodePermission } from '../agent-build/runtime/platform-adapter.mjs';
+import { applyTransaction, recoverTransaction } from '../agent-build/runtime/transaction.mjs';
 
 const root = resolve(import.meta.dirname, '..');
-const installer = resolve(root, 'scripts/install.mjs');
-const agentAssets = resolve(root, 'scripts/agent-assets');
+const installer = resolve(root, 'agent-build/install.mjs');
+const configDir = resolve(root, 'agent-build/config');
+const templatesDir = resolve(root, 'agent-build/templates');
 const executionSkill = `run-${['M', 'att'].join('').toLowerCase()}-spec-to-completion`;
-const catalog = JSON.parse(readFileSync(resolve(agentAssets, 'roles.json'), 'utf8'));
-const policies = JSON.parse(readFileSync(resolve(agentAssets, 'policies.json'), 'utf8')).policies;
+const catalog = JSON.parse(readFileSync(resolve(configDir, 'roles.json'), 'utf8'));
+const policies = JSON.parse(readFileSync(resolve(configDir, 'policies.json'), 'utf8')).policies;
 const managedSkillDirectories = [
   'generate-ai-work-flow-agents',
   'switch-ai-work-flow-env',
@@ -149,12 +150,12 @@ test('repository-owned artifacts use AI Work Flow terminology', () => {
 test('terminology detection excludes test assertions but still scans managed artifacts', () => {
   const paths = repositoryOwnedArtifactPaths();
   assert.ok(!paths.includes('test/agent-workflow.test.mjs'));
-  assert.ok(paths.includes('scripts/agent-assets/routing.md'));
+  assert.ok(paths.includes('agent-build/config/routing.md'));
 });
 
 test('every role has one role-specific body template and a compiled governance body', () => {
   const expected = catalog.roles.map((role) => `${role.id}.md`).sort();
-  const bodies = resolve(agentAssets, 'bodies');
+  const bodies = templatesDir;
   const assets = loadAgentAssets();
   assert.deepEqual(readdirSync(bodies).sort(), expected);
   for (const name of expected) {
@@ -215,14 +216,14 @@ test('compiled governance is scoped to each role concern', () => {
 test('managed prompt documents use the Markdown layout', () => {
   const entries = [
     ['docs/prompt-format.md', readFileSync(resolve(root, 'docs/prompt-format.md'), 'utf8')],
-    ['routing.md', readFileSync(resolve(agentAssets, 'routing.md'), 'utf8')],
+    ['routing.md', readFileSync(resolve(configDir, 'routing.md'), 'utf8')],
     ...managedSkillDirectories.map((directory) => [
       `skills/${directory}/SKILL.md`,
       readFileSync(resolve(root, 'skills', directory, 'SKILL.md'), 'utf8')
     ]),
     ...catalog.roles.map((role) => [
-      `bodies/${role.id}.md`,
-      readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8')
+      `templates/${role.id}.md`,
+      readFileSync(resolve(templatesDir, `${role.id}.md`), 'utf8')
     ])
   ];
 
@@ -246,7 +247,7 @@ test('role bodies derive their common structure and reply sections from the cata
   };
 
   for (const role of catalog.roles) {
-    const body = readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8');
+    const body = readFileSync(resolve(templatesDir, `${role.id}.md`), 'utf8');
     assert.match(body, new RegExp(`^# ${role.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), role.id);
     assert.match(body, new RegExp(`你是 \\*\\*${role.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*。`), role.id);
     for (const heading of ['职责', '工作边界', '回复格式']) assert.match(body, new RegExp(`^## ${heading}$`, 'm'), `${role.id}: ${heading}`);
@@ -286,7 +287,7 @@ test('installation and platform generation retain the managed prompt content', (
   }
   assert.doesNotMatch(readFileSync(resolve(root, 'skills/run-matt-spec-to-completion/agents/openai.yaml'), 'utf8'), /^  default_prompt:/m);
 
-  assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), readFileSync(resolve(agentAssets, 'routing.md'), 'utf8'));
+  assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), readFileSync(resolve(configDir, 'routing.md'), 'utf8'));
   const runtime = resolve(paths.config, 'ai-work-flow/execution-runtime/execution-cli.mjs');
   assert.ok(existsSync(runtime));
   assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/execution-runtime/handoff-result-schema.json')));
@@ -307,9 +308,9 @@ test('installation and platform generation retain the managed prompt content', (
 });
 
 test('routing defines automatic scoped local commits after confirmed implementation', () => {
-  const gitCommitter = readFileSync(resolve(agentAssets, 'bodies/git-committer.md'), 'utf8');
-  const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const gitCommitter = readFileSync(resolve(templatesDir, 'git-committer.md'), 'utf8');
+  const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
   const compiled = loadAgentAssets().compiledBodies;
   const paths = environment();
   const result = install(paths);
@@ -345,9 +346,9 @@ test('routing defines automatic scoped local commits after confirmed implementat
 });
 
 test('implementation commits precede the committed-range dual-axis review', () => {
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
-  const coder = readFileSync(resolve(agentAssets, 'bodies/full-stack-coder.md'), 'utf8');
-  const committer = readFileSync(resolve(agentAssets, 'bodies/git-committer.md'), 'utf8');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
+  const coder = readFileSync(resolve(templatesDir, 'full-stack-coder.md'), 'utf8');
+  const committer = readFileSync(resolve(templatesDir, 'git-committer.md'), 'utf8');
   const skill = readFileSync(resolve(root, 'skills/git-commit/SKILL.md'), 'utf8');
   const protocol = readFileSync(resolve(root, 'skills', executionSkill, 'references/completion-protocol.md'), 'utf8');
   const requiredScopeContract = [
@@ -466,7 +467,7 @@ test('init creates the default environment without creating a legacy config', ()
 
 test('init ignores a legacy config when creating the default environment', () => {
   const paths = environment();
-  const legacyConfig = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
+  const legacyConfig = JSON.parse(readFileSync(resolve(configDir, 'default-config.json'), 'utf8'));
   legacyConfig.roles.coding.codex.model = 'legacy-config-model';
   legacyConfig.version = 0;
   mkdirSync(resolve(paths.config, 'ai-work-flow'), { recursive: true });
@@ -516,7 +517,7 @@ test('install migrates only a completely missing planning role and preserves spa
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
   const migrated = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
-  const defaults = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
+  const defaults = JSON.parse(readFileSync(resolve(configDir, 'default-config.json'), 'utf8'));
   assert.deepEqual(migrated.roles.planning, defaults.roles.planning);
   assert.equal(migrated.roles.coding.codex.model, 'preserved-model');
   assert.equal(readFileSync(overlayPath, 'utf8'), overlay);
@@ -575,7 +576,7 @@ test('install atomically adds a completely missing task planner to default confi
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
   const migrated = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
-  const defaults = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
+  const defaults = JSON.parse(readFileSync(resolve(configDir, 'default-config.json'), 'utf8'));
   assert.deepEqual(migrated.roles['task-planner'], defaults.roles['task-planner']);
   assert.equal(migrated.roles.coding.codex.model, 'preserved-model');
   assert.equal(readFileSync(overlayPath, 'utf8'), overlay);
@@ -694,7 +695,7 @@ test('a failed install plan leaves planning migration, runtime, assets, and agen
   writeFileSync(defaultEnvironmentPath(paths), before);
 
   const runtime = resolve(paths.config, 'ai-work-flow/agent-workflow.mjs');
-  const installedRoles = resolve(paths.config, 'ai-work-flow/agent-assets/roles.json');
+  const installedRoles = resolve(paths.config, 'ai-work-flow/config/roles.json');
   mkdirSync(resolve(installedRoles, '..'), { recursive: true });
   writeFileSync(runtime, 'preserved runtime\n');
   writeFileSync(installedRoles, 'preserved assets\n');
@@ -737,8 +738,8 @@ test('install validates managed skill trees before committing planning migration
 });
 
 test('coding owns discovery routing while generated prompts retain it', () => {
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
-  const source = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
+  const source = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -751,7 +752,7 @@ test('coding owns discovery routing while generated prompts retain it', () => {
     assert.match(content, /不得将发现阶段.*后续执行角色/);
   }
   assert.equal(
-    readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/coding.md'), 'utf8'),
+    readFileSync(resolve(paths.config, 'ai-work-flow/templates/coding.md'), 'utf8'),
     source
   );
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
@@ -765,10 +766,10 @@ test('coding owns discovery routing while generated prompts retain it', () => {
 
 test('project navigation is a managed global skill and stores indexes in the project workflow directory', () => {
   const skill = readFileSync(resolve(root, 'skills/project-code-navigation/SKILL.md'), 'utf8');
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
-  const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
-  const explorer = readFileSync(resolve(agentAssets, 'bodies/file-explorer.md'), 'utf8');
-  const coder = readFileSync(resolve(agentAssets, 'bodies/full-stack-coder.md'), 'utf8');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
+  const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
+  const explorer = readFileSync(resolve(templatesDir, 'file-explorer.md'), 'utf8');
+  const coder = readFileSync(resolve(templatesDir, 'full-stack-coder.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -793,7 +794,7 @@ test('project navigation is a managed global skill and stores indexes in the pro
 
 test('full stack coder delegates unknown file discovery to file explorer', () => {
   const coderRole = catalog.roles.find((role) => role.id === 'full-stack-coder');
-  const coder = readFileSync(resolve(agentAssets, 'bodies/full-stack-coder.md'), 'utf8');
+  const coder = readFileSync(resolve(templatesDir, 'full-stack-coder.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -824,7 +825,7 @@ test('full stack coder delegates unknown file discovery to file explorer', () =>
 
 test('review roles declare one non-recursive aggregation hop', () => {
   const byId = new Map(catalog.roles.map((role) => [role.id, role]));
-  const reviewer = readFileSync(resolve(agentAssets, 'bodies/code-reviewer.md'), 'utf8');
+  const reviewer = readFileSync(resolve(templatesDir, 'code-reviewer.md'), 'utf8');
 
   assert.match(byId.get('code-reviewer').description, /仅由 Coding 调用/);
   assert.match(byId.get('code-reviewer').description, /双轴审查编排/);
@@ -858,7 +859,7 @@ test('generated delegation contracts prevent same-role recursion', () => {
 });
 
 test('workflow browser automation requires an explicit user request', () => {
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -884,8 +885,8 @@ test('planning workflow resolves material user decisions before writing a plan a
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
 
-  const planningWriter = readFileSync(resolve(agentAssets, 'bodies/planning-writer.md'), 'utf8');
-  const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
+  const planningWriter = readFileSync(resolve(templatesDir, 'planning-writer.md'), 'utf8');
+  const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
   const compiledCoding = loadAgentAssets().compiledBodies.get('coding');
 
   assert.match(planningWriter, /\.ai-work-flow\/plans\/<plan-id>\/plan\.md/);
@@ -905,7 +906,7 @@ test('planning workflow resolves material user decisions before writing a plan a
   }
 
   assert.equal(
-    readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/planning-writer.md'), 'utf8'),
+    readFileSync(resolve(paths.config, 'ai-work-flow/templates/planning-writer.md'), 'utf8'),
     planningWriter
   );
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
@@ -919,7 +920,7 @@ test('planning workflow resolves material user decisions before writing a plan a
 });
 
 test('planning writer fixed template keeps a blank line after every section heading', () => {
-  const body = readFileSync(resolve(agentAssets, 'bodies/planning-writer.md'), 'utf8');
+  const body = readFileSync(resolve(templatesDir, 'planning-writer.md'), 'utf8');
   const template = body.match(/```markdown\n([\s\S]*?)\n```/)?.[1];
   assert.ok(template, 'planning writer fixed template');
   for (const heading of [
@@ -986,7 +987,7 @@ test('planning is an opt-in primary that delegates discovery and plan writing', 
     delegation: 'allowed'
   });
 
-  const defaults = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
+  const defaults = JSON.parse(readFileSync(resolve(configDir, 'default-config.json'), 'utf8'));
   assert.deepEqual(defaults.roles.planning, defaults.roles['planning-writer']);
 });
 
@@ -1033,7 +1034,7 @@ test('install generates the task planner subagent on every platform', () => {
   assert.deepEqual(taskPlanner.delegates, []);
   assert.equal(taskPlanner.policy, 'write-tasks');
 
-  const defaults = JSON.parse(readFileSync(resolve(agentAssets, 'default-config.json'), 'utf8'));
+  const defaults = JSON.parse(readFileSync(resolve(configDir, 'default-config.json'), 'utf8'));
   assert.ok(defaults.roles['task-planner']);
 
   const paths = environment();
@@ -1074,7 +1075,7 @@ test('task planning delegation and generated permissions stay narrowly scoped', 
 });
 
 test('planning prompt converges one decision at a time and emits the complete fixed plan template', () => {
-  const body = readFileSync(resolve(agentAssets, 'bodies/planning.md'), 'utf8');
+  const body = readFileSync(resolve(templatesDir, 'planning.md'), 'utf8');
   const prompt = loadAgentAssets().compiledBodies.get('planning');
   const expectedSections = [
     'Plan Metadata',
@@ -1127,9 +1128,9 @@ test('planning prompt converges one decision at a time and emits the complete fi
 });
 
 test('planning confirms plan splitting and commits only final planning artifacts', () => {
-  const planning = readFileSync(resolve(agentAssets, 'bodies/planning.md'), 'utf8');
-  const planningWriter = readFileSync(resolve(agentAssets, 'bodies/planning-writer.md'), 'utf8');
-  const taskPlanner = readFileSync(resolve(agentAssets, 'bodies/task-planner.md'), 'utf8');
+  const planning = readFileSync(resolve(templatesDir, 'planning.md'), 'utf8');
+  const planningWriter = readFileSync(resolve(templatesDir, 'planning-writer.md'), 'utf8');
+  const taskPlanner = readFileSync(resolve(templatesDir, 'task-planner.md'), 'utf8');
 
   assert.match(planning, /\.ai-work-flow\/plans\/<plan-id>\/plan\.md/);
   assert.match(planning, /先.*输出完整计划.*再询问.*拆分.*不拆分/s);
@@ -1156,7 +1157,7 @@ test('planning confirms plan splitting and commits only final planning artifacts
 });
 
 test('task planner emits a deterministic dependency-safe task artifact contract', () => {
-  const body = readFileSync(resolve(agentAssets, 'bodies/task-planner.md'), 'utf8');
+  const body = readFileSync(resolve(templatesDir, 'task-planner.md'), 'utf8');
   for (const field of ['task_id:', 'order:', 'blocked_by:', 'source_plan:', 'source_plan_digest:', 'write_scope:']) {
     assert.match(body, new RegExp(field), field);
   }
@@ -1182,7 +1183,7 @@ test('task planner emits a deterministic dependency-safe task artifact contract'
 });
 
 test('task planner wraps each complete task artifact in a markdown fenced code block', () => {
-  const source = readFileSync(resolve(agentAssets, 'bodies/task-planner.md'), 'utf8');
+  const source = readFileSync(resolve(templatesDir, 'task-planner.md'), 'utf8');
   const completeTaskFence = /```markdown\n# NN - <Task title>\n\n- task_id:[\s\S]*- order:[\s\S]*- blocked_by: `<task IDs or none>`\n- source_plan: `\.\.\/plan\.md`[\s\S]*- source_plan_digest:[\s\S]*- write_scope: `<exclusive paths or modules>`\n\n## Outcome[\s\S]*## Implementation Checklist\n\n- \[ \] 实施项[\s\S]*## Acceptance Criteria\n\n- \[ \][\s\S]*## Verification Steps\n\n- \[ \][\s\S]*## Out of Scope[\s\S]*```/;
   assert.match(source, completeTaskFence);
   assert.match(source, /不得在 fenced code block 外输出 task 文件正文/);
@@ -1198,7 +1199,7 @@ test('task planner wraps each complete task artifact in a markdown fenced code b
 });
 
 test('coding executes single or split plans through validated task frontiers', () => {
-  const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
+  const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
   const assertions = [
     /File Explorer.*plan\.md.*已被 Git 跟踪.*planning commit.*digest.*干净/s,
     /\$project-code-navigation/,
@@ -1223,10 +1224,10 @@ test('coding executes single or split plans through validated task frontiers', (
 });
 
 test('implementation roles preserve planning and task commit boundaries', () => {
-  const coder = readFileSync(resolve(agentAssets, 'bodies/full-stack-coder.md'), 'utf8');
-  const committer = readFileSync(resolve(agentAssets, 'bodies/git-committer.md'), 'utf8');
-  const reviewer = readFileSync(resolve(agentAssets, 'bodies/code-reviewer.md'), 'utf8');
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const coder = readFileSync(resolve(templatesDir, 'full-stack-coder.md'), 'utf8');
+  const committer = readFileSync(resolve(templatesDir, 'git-committer.md'), 'utf8');
+  const reviewer = readFileSync(resolve(templatesDir, 'code-reviewer.md'), 'utf8');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
 
   assert.match(coder, /task 模式.*`write_scope`.*自己的 task checkbox/s);
   assert.match(coder, /不得.*其他 task/s);
@@ -1255,8 +1256,9 @@ test('planning assets and generated prompts contain no outside planning referenc
   const paths = environment();
   assert.equal(install(paths).status, 0);
   const sourcePaths = repositoryOwnedArtifactPaths().filter((path) => (
-    path.startsWith('scripts/agent-assets/')
-    || path.startsWith('scripts/private/')
+    path.startsWith('agent-build/config/')
+    || path.startsWith('agent-build/templates/')
+    || path.startsWith('agent-build/runtime/')
     || path === 'README.md'
     || path === '.ai-work-flow/index/feature-navigation.md'
   ));
@@ -1316,7 +1318,7 @@ test('all platforms generate a non-writing planning coordinator without changing
 test('OpenCode derives its default agent from the role catalog', () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
-  const rolePath = resolve(paths.config, 'ai-work-flow/agent-assets/roles.json');
+  const rolePath = resolve(paths.config, 'ai-work-flow/config/roles.json');
   const installedCatalog = JSON.parse(readFileSync(rolePath, 'utf8'));
   installedCatalog.roles.find((role) => role.id === 'coding').default_primary = false;
   installedCatalog.roles.find((role) => role.id === 'planning').default_primary = true;
@@ -1329,8 +1331,8 @@ test('OpenCode derives its default agent from the role catalog', () => {
 });
 
 test('structured dual-axis review controls the final integration gate', () => {
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
-  const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
+  const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -1357,10 +1359,10 @@ test('structured dual-axis review controls the final integration gate', () => {
 });
 
 test('review agents preserve the AI Work Flow committed-range contract', () => {
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
   const bodies = Object.fromEntries(['code-reviewer', 'review-standards', 'review-spec'].map((role) => [
     role,
-    readFileSync(resolve(agentAssets, 'bodies', `${role}.md`), 'utf8')
+    readFileSync(resolve(templatesDir, `${role}.md`), 'utf8')
   ]));
   const commands = [
     'git rev-parse <fixed-point>',
@@ -1406,8 +1408,8 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
 });
 
 test('routing is the sole source for retry and stop-lock governance', () => {
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
-  const source = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
+  const source = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -1435,7 +1437,7 @@ test('routing is the sole source for retry and stop-lock governance', () => {
     for (const assertion of assertions) assert.match(content, assertion);
   }
   assert.equal(
-    readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/coding.md'), 'utf8'),
+    readFileSync(resolve(paths.config, 'ai-work-flow/templates/coding.md'), 'utf8'),
     source
   );
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
@@ -1497,7 +1499,7 @@ test('platform generation enforces the declared workspace access where supported
 });
 
 test('capability reporting reflects adapter limits and rejects invalid policy catalogs before writing', () => {
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -1533,7 +1535,7 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
 
   const generated = agentPath(paths, 'codex', 'coding', 'toml');
   const before = readFileSync(generated, 'utf8');
-  const policyPath = resolve(paths.config, 'ai-work-flow/agent-assets/policies.json');
+  const policyPath = resolve(paths.config, 'ai-work-flow/config/policies.json');
   const invalid = JSON.parse(readFileSync(policyPath, 'utf8'));
   invalid.policies.coding.unknown_capability = 'none';
   writeFileSync(policyPath, JSON.stringify(invalid));
@@ -1543,9 +1545,9 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
   assert.equal(readFileSync(generated, 'utf8'), before);
 
   writeFileSync(policyPath, JSON.stringify({ version: 1, policies }));
-  const invalidRoles = JSON.parse(readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/roles.json'), 'utf8'));
+  const invalidRoles = JSON.parse(readFileSync(resolve(paths.config, 'ai-work-flow/config/roles.json'), 'utf8'));
   invalidRoles.roles[0].delegates.push('missing-role');
-  writeFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/roles.json'), JSON.stringify(invalidRoles));
+  writeFileSync(resolve(paths.config, 'ai-work-flow/config/roles.json'), JSON.stringify(invalidRoles));
   const invalidDelegate = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
   assert.equal(invalidDelegate.status, 1);
   assert.match(invalidDelegate.stderr, /delegates to an unknown role/);
@@ -1555,7 +1557,7 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
 test('only writer bodies require git diff reporting', () => {
   const writers = new Set(['document-maintainer', 'planning-writer', 'task-planner', 'full-stack-coder']);
   for (const role of catalog.roles) {
-    const body = readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8');
+    const body = readFileSync(resolve(templatesDir, `${role.id}.md`), 'utf8');
     assert.equal(body.includes('git diff --name-only'), writers.has(role.id), role.id);
   }
 });
@@ -1574,7 +1576,7 @@ test('generated agent descriptions prominently use their title-cased display nam
     assert.ok(readFileSync(agentPath(paths, 'codex', role.id, 'toml'), 'utf8').includes(`description = ${JSON.stringify(description)}`));
     assert.ok(readFileSync(agentPath(paths, 'claude', role.id, 'md'), 'utf8').includes(`description: ${JSON.stringify(description)}`));
     assert.ok(readFileSync(agentPath(paths, 'opencode', role.id, 'md'), 'utf8').includes(`description: ${JSON.stringify(description)}`));
-    assert.ok(readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8').includes(`你是 **${displayName}**。`));
+    assert.ok(readFileSync(resolve(templatesDir, `${role.id}.md`), 'utf8').includes(`你是 **${displayName}**。`));
     assert.ok(compiled.get(role.id).includes(`你是 **${displayName}**。`));
   }
 });
@@ -1717,7 +1719,7 @@ test('Codex generation transaction removes only the legacy reviewer file and rej
 test('installation removes obsolete managed templates and execution modules', () => {
   const paths = environment();
   assert.equal(install(paths).status, 0);
-  const obsoleteBody = resolve(paths.config, 'ai-work-flow/agent-assets/bodies', `${legacyPrimaryAgentId}.md`);
+  const obsoleteBody = resolve(paths.config, 'ai-work-flow/templates', `${legacyPrimaryAgentId}.md`);
   writeFileSync(obsoleteBody, 'obsolete body\n');
   for (const platformRoot of [resolve(paths.home, '.codex'), resolve(paths.home, '.claude'), resolve(paths.config, 'opencode')]) {
     const skillRoot = resolve(platformRoot, 'skills/run-matt-spec-to-completion');
@@ -1888,15 +1890,15 @@ test('the installed asset catalog rejects inconsistent templates before generati
   assert.equal(install(paths).status, 0);
   const generated = agentPath(paths, 'codex', 'coding', 'toml');
   writeFileSync(generated, 'preserved agent\n');
-  writeFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/coding.md'), '');
+  writeFileSync(resolve(paths.config, 'ai-work-flow/templates/coding.md'), '');
 
   const validation = runInstalledWorkflow(paths, 'validate');
   assert.equal(validation.status, 1);
-  assert.match(validation.stderr, /Agent asset catalog is invalid:[\s\S]*Body template is empty: coding\.md/);
+  assert.match(validation.stderr, /Agent asset catalog is invalid:[\s\S]*Template is empty: coding\.md/);
 
   const generation = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
   assert.equal(generation.status, 1);
-  assert.match(generation.stderr, /Body template is empty: coding\.md/);
+  assert.match(generation.stderr, /Template is empty: coding\.md/);
   assert.equal(readFileSync(generated, 'utf8'), 'preserved agent\n');
 });
 
@@ -2196,9 +2198,11 @@ test('environment file not found gives clear error', () => {
 });
 
 function copiedAssets() {
-  const destination = resolve(fixture(), 'agent-assets');
-  cpSync(agentAssets, destination, { recursive: true });
-  return destination;
+  const dest = resolve(fixture(), 'agent-assets');
+  cpSync(configDir, dest, { recursive: true });
+  const templatesDest = resolve(fixture(), 'agent-assets-templates');
+  cpSync(templatesDir, templatesDest, { recursive: true });
+  return { config: dest, templates: templatesDest };
 }
 
 test('catalog compiles referenced routing sections and rejects invalid governance relationships', () => {
@@ -2221,17 +2225,17 @@ test('catalog compiles referenced routing sections and rejects invalid governanc
     (catalog) => { catalog.roles[0].routing_sections = ['missing-section']; }
   ]) {
     const root = copiedAssets();
-    const path = resolve(root, 'roles.json');
+    const path = resolve(root.config, 'roles.json');
     const catalog = JSON.parse(readFileSync(path, 'utf8'));
     mutate(catalog);
     writeFileSync(path, `${JSON.stringify(catalog, null, 2)}\n`);
-    assert.throws(() => loadAgentAssets(root), /Agent asset catalog is invalid/);
+    assert.throws(() => loadAgentAssets(root.config, root.templates), /Agent asset catalog is invalid/);
   }
 });
 
 test('catalog rejects declared delegation paths deeper than the platform limit', () => {
   const root = copiedAssets();
-  const path = resolve(root, 'roles.json');
+  const path = resolve(root.config, 'roles.json');
   const catalog = JSON.parse(readFileSync(path, 'utf8'));
   const standards = catalog.roles.find((role) => role.id === 'review-standards');
   standards.delegates = ['review-spec'];
@@ -2239,7 +2243,7 @@ test('catalog rejects declared delegation paths deeper than the platform limit',
   writeFileSync(path, `${JSON.stringify(catalog, null, 2)}\n`);
 
   assert.throws(
-    () => loadAgentAssets(root),
+    () => loadAgentAssets(root.config, root.templates),
     /Role delegation exceeds max depth 2: coding -> code-reviewer -> review-standards -> review-spec/
   );
 });
@@ -2302,7 +2306,7 @@ test('OpenCode reviewer configuration permits the fixed git diff command declare
     const agent = parseFrontmatter(readFileSync(agentPath(paths, 'opencode', role.id, 'md'), 'utf8'));
     assert.equal(agent.permission.bash, 'allow', role.id);
   }
-  const diff = spawnSync('git', ['diff', '--no-ext-diff', 'HEAD...HEAD', '--', 'scripts/private/platform-adapter.mjs'], { cwd: root, encoding: 'utf8' });
+  const diff = spawnSync('git', ['diff', '--no-ext-diff', 'HEAD...HEAD', '--', 'agent-build/runtime/platform-adapter.mjs'], { cwd: root, encoding: 'utf8' });
   assert.equal(diff.status, 0, diff.stderr);
 });
 

@@ -115,7 +115,7 @@ function validatePolicy(name, policy, errors) {
   }
 }
 
-function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames, assetRoot) {
+function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames, configRoot, templatesRoot) {
   const errors = [];
   if (!isPlainObject(catalog) || catalog.version !== 1 || !Array.isArray(catalog.roles)) {
     errors.push('roles.json must contain version: 1 and a roles array.');
@@ -156,7 +156,7 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
   validateDelegateGraph(roles, errors);
   validateDelegateDepth(roles, errors);
 
-  const routing = readFileSync(resolve(assetRoot, 'routing.md'), 'utf8');
+  const routing = readFileSync(resolve(configRoot, 'routing.md'), 'utf8');
   const sections = parseRoutingSections(routing, errors);
   const referenced = new Set();
   for (const role of roles) for (const section of role.routing_sections ?? []) {
@@ -185,13 +185,13 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
 
   const expectedBodies = ids.map((id) => `${id}.md`);
   for (const name of expectedBodies) {
-    if (!bodyNames.includes(name)) errors.push(`Missing body template: ${name}.`);
+    if (!bodyNames.includes(name)) errors.push(`Missing template: ${name}.`);
   }
   for (const name of bodyNames) {
-    if (!expectedBodies.includes(name)) errors.push(`Body template has no catalog role: ${name}.`);
+    if (!expectedBodies.includes(name)) errors.push(`Template has no catalog role: ${name}.`);
   }
   for (const name of expectedBodies.filter((body) => bodyNames.includes(body))) {
-    if (!readFileSync(resolve(assetRoot, 'bodies', name), 'utf8').trim()) errors.push(`Body template is empty: ${name}.`);
+    if (!readFileSync(resolve(templatesRoot, name), 'utf8').trim()) errors.push(`Template is empty: ${name}.`);
   }
   if (errors.length) fail(`Agent asset catalog is invalid:\n${errors.join('\n')}`);
   return { routing, sections };
@@ -205,18 +205,19 @@ function delegationContract(role) {
   return `## 运行时委派约束\n\n当前角色 ID 是 \`${role.id}\`。${boundary}`;
 }
 
-export function loadAgentAssets(assetRoot = resolve(import.meta.dirname, '..', 'agent-assets')) {
-  const root = resolve(assetRoot);
-  const catalog = readJson(resolve(root, 'roles.json'));
-  const policyDocument = readJson(resolve(root, 'policies.json'));
-  const defaults = readJson(resolve(root, 'default-config.json'));
-  const bodyNames = readdirSync(resolve(root, 'bodies'), { withFileTypes: true })
+export function loadAgentAssets(configRoot = resolve(import.meta.dirname, '..', 'config'), templatesRoot = resolve(import.meta.dirname, '..', 'templates')) {
+  const config = resolve(configRoot);
+  const templates = resolve(templatesRoot);
+  const catalog = readJson(resolve(config, 'roles.json'));
+  const policyDocument = readJson(resolve(config, 'policies.json'));
+  const defaults = readJson(resolve(config, 'default-config.json'));
+  const bodyNames = readdirSync(templates, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
     .map((entry) => entry.name);
-  const { routing, sections } = validateAssetRelationships(catalog, policyDocument, defaults, bodyNames, root);
+  const { routing, sections } = validateAssetRelationships(catalog, policyDocument, defaults, bodyNames, config, templates);
   const bodies = new Map(catalog.roles.map((role) => [
     role.id,
-    readFileSync(resolve(root, 'bodies', `${role.id}.md`), 'utf8').trimEnd()
+    readFileSync(resolve(templates, `${role.id}.md`), 'utf8').trimEnd()
   ]));
   const routingDigest = createHash('sha256').update(routing).digest('hex');
   const compiledBodies = new Map(catalog.roles.map((role) => [
@@ -224,7 +225,8 @@ export function loadAgentAssets(assetRoot = resolve(import.meta.dirname, '..', '
     `<!-- ai-work-flow:routing-digest=${routingDigest} sections=${role.routing_sections.join(',')} -->\n\n${delegationContract(role)}\n\n${role.routing_sections.map((id) => sections.get(id)).join('\n\n')}\n\n${bodies.get(role.id)}`
   ]));
   return {
-    root,
+    configRoot: config,
+    templatesRoot: templates,
     roles: catalog.roles,
     policies: policyDocument.policies,
     defaults,

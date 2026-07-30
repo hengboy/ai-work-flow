@@ -13,13 +13,13 @@
 在仓库根目录执行：
 
 ```sh
-node scripts/install.mjs
+node agent-build/install.mjs
 ```
 
 安装会完成以下工作：
 
 - 将自定义技能（`run-matt-spec-to-completion`、`generate-ai-work-flow-agents`、`switch-ai-work-flow-env`、`project-code-navigation`、`git-commit`）同步到 Codex、Claude Code 和 OpenCode 的全局 Skills 目录，并安装共享 execution runtime 及其依赖
-- 创建并默认直接使用 `~/.config/ai-work-flow/environments/default.json` 和 `routing.md`；仓库中的 `scripts/agent-assets/default-config.json` 仅作为初始化模板
+- 创建并默认直接使用 `~/.config/ai-work-flow/environments/default.json` 和 `routing.md`；仓库中的 `agent-build/config/default-config.json` 仅作为初始化模板
 - 生成三端的 12 个受管理 agent
 - 更新三端的路由配置，并从角色目录的 `default_primary` 设置 OpenCode 默认 agent；默认仍为 `coding`
 - 保留无关的全局 Skills、agents 和工具配置
@@ -27,27 +27,27 @@ node scripts/install.mjs
 默认安装会处理全部平台。只生成指定平台的 agents 时，可以使用：
 
 ```sh
-node scripts/install.mjs --platform codex
-node scripts/install.mjs --platform claude,opencode
+node agent-build/install.mjs --platform codex
+node agent-build/install.mjs --platform claude,opencode
 ```
 
 首次安装前想查看将要写入的路径，可使用：
 
 ```sh
-node scripts/install.mjs --dry-run
+node agent-build/install.mjs --dry-run
 ```
 
 ## 命令
 
 ```sh
 # 初始化配置和路由，不生成平台 agents
-node scripts/install.mjs init
+node agent-build/install.mjs init
 
 # 检查配置，不写入文件
-node scripts/install.mjs validate
+node agent-build/install.mjs validate
 
 # 查看命令格式
-node scripts/install.mjs --help
+node agent-build/install.mjs --help
 ```
 
 `install` 是完整流程：同步 Skills、初始化配置和路由、安装运行时文件，然后生成 agents。`init` 和 `validate` 适合安装或排查问题；配置更新后的 agents 重新生成应通过 `$generate-ai-work-flow-agents` 完成。
@@ -96,7 +96,7 @@ OpenCode 对继承主会话模型或未设置原生 `variant/options` 的角色�
 环境切换：
 
 ```sh
-node scripts/install.mjs env use <name>
+node agent-build/install.mjs env use <name>
 ```
 
 非默认环境由 `.environment` 标记选择。`env use default` 通过删除该标记选择默认环境；无标记时已使用默认环境。该命令会先验证目标环境，再以单个事务重新生成所有已管理平台的 agents 并更新标记；任一步失败时会恢复原有 agents 和环境选择。事务日志是未经信任的恢复输入，只有通过受信根、目标、备份和符号链接检查后才会执行恢复；非法日志保留现场并停止。
