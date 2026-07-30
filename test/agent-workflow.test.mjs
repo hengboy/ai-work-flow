@@ -990,6 +990,42 @@ test('planning is an opt-in primary that delegates discovery and plan writing', 
   assert.deepEqual(defaults.roles.planning, defaults.roles['planning-writer']);
 });
 
+test('researcher stores Markdown reports in a narrow project research directory', () => {
+  const researcher = catalog.roles.find((role) => role.id === 'researcher');
+  const policy = policies[researcher.policy];
+  const prompt = loadAgentAssets().compiledBodies.get('researcher');
+  assert.deepEqual(researcher.tools, ['WebSearch', 'WebFetch', 'Write']);
+  assert.deepEqual(policy, {
+    filesystem: 'write',
+    shell: 'none',
+    network: 'official',
+    browser: 'none',
+    git: 'none',
+    write_scope: 'research',
+    delegation: 'none'
+  });
+  assert.match(prompt, /只使用外部官方来源/);
+  assert.match(prompt, /不得读取或枚举本地项目内容/);
+  assert.match(prompt, /`\.ai-work-flow\/research\/<research-topic>\.md`/);
+  assert.match(prompt, /`\.ai-work-flow\/research\/` 不存在时可以创建该目录，但不得创建其子目录/);
+  assert.match(prompt, /Markdown/);
+
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  const openCode = parseFrontmatter(readFileSync(agentPath(paths, 'opencode', 'researcher', 'md'), 'utf8'));
+  assert.deepEqual(openCode.permission.edit, {
+    '*': 'deny',
+    '.ai-work-flow/research/*.md': 'allow',
+    '.ai-work-flow/research/*/*.md': 'deny'
+  });
+  for (const key of ['read', 'glob', 'grep', 'bash']) assert.equal(openCode.permission[key], 'deny', key);
+  for (const path of ['src/report.md', '.ai-work-flow/research/topic.txt', '.ai-work-flow/research/nested/topic.md']) {
+    assert.equal(evaluateOpenCodePermission(researcher, policy, 'edit', path), 'deny', path);
+  }
+  assert.equal(evaluateOpenCodePermission(researcher, policy, 'edit', '.ai-work-flow/research/official-api.md'), 'allow');
+});
+
 test('install generates the task planner subagent on every platform', () => {
   const taskPlanner = catalog.roles.find((role) => role.id === 'task-planner');
   assert.equal(catalog.roles.length, 12);
@@ -1432,6 +1468,12 @@ test('platform generation enforces the declared workspace access where supported
           '*': 'deny',
           '.ai-work-flow/plans/*/tasks/??-*.md': 'allow',
           '.ai-work-flow/plans/*/tasks/*/*': 'deny'
+        }, role.id);
+      } else if (role.id === 'researcher') {
+        assert.deepEqual(openCode.permission.edit, {
+          '*': 'deny',
+          '.ai-work-flow/research/*.md': 'allow',
+          '.ai-work-flow/research/*/*.md': 'deny'
         }, role.id);
       } else {
         assert.equal(openCode.permission.edit, role.tools.some((tool) => tool === 'Edit' || tool === 'Write') ? 'allow' : 'deny', role.id);
@@ -2175,7 +2217,7 @@ test('catalog compiles referenced routing sections and rejects invalid governanc
       catalog.roles.find((role) => role.id === 'file-explorer').default_primary = true;
     },
     (catalog) => { catalog.roles.find((role) => role.id === 'file-explorer').delegates = ['coding']; },
-    (catalog) => { catalog.roles.find((role) => role.id === 'researcher').tools = ['Read']; },
+    (catalog) => { catalog.roles.find((role) => role.id === 'researcher').tools = ['Bash']; },
     (catalog) => { catalog.roles[0].routing_sections = ['missing-section']; }
   ]) {
     const root = copiedAssets();

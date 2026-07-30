@@ -43,11 +43,11 @@
     {
       "id": "researcher",
       "name": "Researcher",
-      "description": "负责研究外部官方资料并报告带引用的发现。",
+      "description": "负责研究外部官方资料并将带引用的 Markdown 报告存入项目研究目录。",
       "kind": "subagent",
       "policy": "research",
       "delegates": [],
-      "tools": ["WebSearch", "WebFetch"],
+      "tools": ["WebSearch", "WebFetch", "Write"],
       "routing_sections": ["browser-governance"]
     },
     {

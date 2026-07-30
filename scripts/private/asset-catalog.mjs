@@ -11,7 +11,7 @@ const POLICY_CAPABILITIES = {
   network: new Set(['none', 'official']),
   browser: new Set(['none']),
   git: new Set(['none', 'read', 'write']),
-  write_scope: new Set(['none', 'docs', 'plans', 'tasks', 'code', 'git']),
+  write_scope: new Set(['none', 'docs', 'plans', 'tasks', 'research', 'code', 'git']),
   delegation: new Set(['none', 'allowed', 'review-only'])
 };
 const ROLE_KINDS = new Set(['primary', 'subagent', 'reviewer']);

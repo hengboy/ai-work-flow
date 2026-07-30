@@ -163,6 +163,13 @@ export function opencodePermission(role, policy) {
       '.ai-work-flow/plans/*/tasks/*/*': 'deny'
     };
   }
+  if (policy.write_scope === 'research') {
+    permission.edit = {
+      '*': 'deny',
+      '.ai-work-flow/research/*.md': 'allow',
+      '.ai-work-flow/research/*/*.md': 'deny'
+    };
+  }
   return permission;
 }
 
