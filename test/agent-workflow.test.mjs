@@ -32,11 +32,13 @@ const defaultSkillPrompts = new Map([
   ['git-commit', '使用 `$git-commit` 生成中文 Conventional Commits 提交信息并创建受控本地提交。']
 ]);
 
-function assertPromptLayout(source, name) {
+function assertPromptLayout(source, name, { replyFormat = true } = {}) {
   const prose = source.replace(/^```[\s\S]*?^```$/gm, '');
   assert.equal((prose.match(/^# [^\n]+$/gm) ?? []).length, 1, `${name} needs one primary title`);
-  assert.match(prose, /^## 回复格式$/m, `${name} needs a reply format`);
-  assert.match(prose, /\*\*(?:状态|结论|阻塞|结果|更新|注意|完成|发现|提交结果|严重)：\*\*/, `${name} needs a bold response label`);
+  if (replyFormat) {
+    assert.match(prose, /^## 回复格式$/m, `${name} needs a reply format`);
+    assert.match(prose, /\*\*(?:状态|结论|阻塞|结果|更新|注意|完成|发现|提交结果|严重)：\*\*/, `${name} needs a bold response label`);
+  }
   assert.doesNotMatch(prose, /^#{1,3} [^\n]+\n(?!\n)/m, `${name} headings need a following blank line`);
 }
 
@@ -163,6 +165,50 @@ test('every role has one role-specific body template and a compiled governance b
   }
 });
 
+test('compiled governance is scoped to each role concern', () => {
+  const assets = loadAgentAssets();
+  const compiled = assets.compiledBodies;
+  const expectedSections = {
+    coding: ['browser-governance', 'retry-governance', 'implementation-governance'],
+    planning: ['browser-governance', 'retry-governance'],
+    'file-explorer': ['browser-governance'],
+    researcher: ['browser-governance'],
+    'document-maintainer': ['browser-governance'],
+    'planning-writer': ['browser-governance'],
+    'full-stack-coder': ['browser-governance', 'retry-governance', 'implementation-governance'],
+    'git-committer': ['browser-governance', 'implementation-governance'],
+    'code-reviewer': ['browser-governance', 'retry-governance', 'review-governance'],
+    'review-standards': ['browser-governance', 'review-governance'],
+    'review-spec': ['browser-governance', 'review-governance']
+  };
+
+  for (const role of assets.roles) {
+    const prompt = compiled.get(role.id);
+    assert.deepEqual(role.routing_sections, expectedSections[role.id], role.id);
+    assert.match(prompt, /不得调用 Browser、Chrome DevTools 或 Playwright/, role.id);
+    assert.doesNotMatch(prompt, /Policy 与能力边界|`delegation_targets` 单独表示/, role.id);
+    assert.doesNotMatch(assets.bodies.get(role.id), /XDG_CONFIG_HOME.*routing\.md/, role.id);
+  }
+
+  const retryRoles = new Set(['coding', 'planning', 'full-stack-coder', 'code-reviewer']);
+  const implementationRoles = new Set(['coding', 'full-stack-coder', 'git-committer']);
+  const reviewRoles = new Set(['code-reviewer', 'review-standards', 'review-spec']);
+  for (const role of assets.roles) {
+    const prompt = compiled.get(role.id);
+    assert.equal(prompt.includes('每个子任务的首次尝试最多重试 2 次'), retryRoles.has(role.id), `${role.id}: retry`);
+    assert.equal(prompt.includes('确认方案后的实现阶段固定按以下顺序执行'), implementationRoles.has(role.id), `${role.id}: implementation`);
+    assert.equal(prompt.includes('两个端点必须可解析'), reviewRoles.has(role.id), `${role.id}: review`);
+  }
+
+  assert.doesNotMatch(compiled.get('coding'), /ReviewManifest|git diff --no-ext-diff/);
+  assert.doesNotMatch(compiled.get('planning'), /review_commit|PathChange|ReviewManifest/);
+  assert.doesNotMatch(compiled.get('researcher'), /review_commit|PathChange|ReviewManifest|每个子任务的首次尝试最多重试 2 次/);
+  assert.match(assets.bodies.get('planning'), /编码、修改源码或实施请求.*拒绝/);
+  assert.doesNotMatch(assets.routing, /planning-governance|Policy 与能力边界|^## 回复格式$/m);
+  const totalCompiledLength = [...compiled.values()].reduce((total, prompt) => total + prompt.length, 0);
+  assert.ok(totalCompiledLength < 35_000, `compiled prompts should stay focused, got ${totalCompiledLength} characters`);
+});
+
 test('managed prompt documents use the Markdown layout', () => {
   const entries = [
     ['docs/prompt-format.md', readFileSync(resolve(root, 'docs/prompt-format.md'), 'utf8')],
@@ -177,7 +223,7 @@ test('managed prompt documents use the Markdown layout', () => {
     ])
   ];
 
-  for (const [name, source] of entries) assertPromptLayout(source, name);
+  for (const [name, source] of entries) assertPromptLayout(source, name, { replyFormat: name !== 'routing.md' });
 });
 
 test('role bodies derive their common structure and reply sections from the catalog', () => {
@@ -276,13 +322,12 @@ test('routing defines automatic scoped local commits after confirmed implementat
     /该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实施阶段的提交授权/
   ];
 
-  assert.match(gitCommitter, /受管治理内容在生成时从 routing section 编译/);
   assert.match(gitCommitter, /\$git-commit/);
   assert.match(compiled.get('git-committer'), /不得再次向用户请求/);
-  assert.match(coding, /受管治理内容在生成时从 routing section 编译/);
   for (const body of [gitCommitter, coding]) {
     assert.doesNotMatch(body, /首次范围检查/);
     assert.doesNotMatch(body, /一次性白名单/);
+    assert.doesNotMatch(body, /routing\.md/);
   }
   for (const assertion of sharedAssertions) assert.match(routing, assertion);
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
@@ -336,23 +381,26 @@ test('implementation commits precede the committed-range dual-axis review', () =
   assert.doesNotMatch(skill, /\*\*提交结果：\*\*/);
 });
 
-test('generated codings preserve the automatic commit and fixed-range review contract', () => {
+test('generated implementation and review roles preserve their scoped contracts', () => {
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
 
-  const assertions = [
+  const implementationAssertions = [
     /Git Committer prepare -> Full Stack Coder -> Git Committer commit\/sync -> Code Reviewer -> Review Standards \+ Review Spec/,
     /不等待新的提交授权/,
-    /base_commit/,
-    /changed_paths/,
-    /固定 `fixed-point` 与 `review-commit`/,
+    /base_commit/
+  ];
+  const reviewAssertions = [
+    /固定的 `fixed-point` 与 `review-commit`/,
     /固定行窗口/,
     /只重试未完成分片并保持相同 SHA/
   ];
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
-    const generated = generatedBody(paths, platform, 'coding', extension);
-    for (const assertion of assertions) assert.match(generated, assertion, platform);
+    const coding = generatedBody(paths, platform, 'coding', extension);
+    const reviewer = generatedBody(paths, platform, 'code-reviewer', extension);
+    for (const assertion of implementationAssertions) assert.match(coding, assertion, `${platform}/coding`);
+    for (const assertion of reviewAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
   }
 });
 
@@ -618,17 +666,17 @@ test('install validates managed skill trees before committing planning migration
   assert.ok(!existsSync(agentPath(paths, 'codex', 'planning', 'toml')));
 });
 
-test('routing is the sole source for shared discovery governance', () => {
+test('coding owns discovery routing while generated prompts retain it', () => {
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
   const source = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
 
-  for (const content of [routing]) {
+  for (const content of [source]) {
     assert.match(content, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/);
     assert.match(content, /先委派 \*\*File Explorer\*\* 并等待其交接/);
-    assert.match(content, /当前会话已有交接时可复用/);
+    assert.match(content, /已有交接时可复用/);
     assert.match(content, /用户给出精确路径/);
     assert.match(content, /不得将发现阶段.*后续执行角色/);
   }
@@ -642,13 +690,13 @@ test('routing is the sole source for shared discovery governance', () => {
     assert.match(generated, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/, platform);
     assert.match(generated, /ai-work-flow:routing-digest=/, platform);
   }
-  assert.match(source, /受管治理内容在生成时从 routing section 编译/);
-  assert.doesNotMatch(source, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/);
+  assert.doesNotMatch(routing, /未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现/);
 });
 
 test('project navigation is a managed global skill and stores indexes in the project workflow directory', () => {
   const skill = readFileSync(resolve(root, 'skills/project-code-navigation/SKILL.md'), 'utf8');
   const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
   const explorer = readFileSync(resolve(agentAssets, 'bodies/file-explorer.md'), 'utf8');
   const coder = readFileSync(resolve(agentAssets, 'bodies/full-stack-coder.md'), 'utf8');
   const paths = environment();
@@ -658,16 +706,17 @@ test('project navigation is a managed global skill and stores indexes in the pro
   assert.match(skill, /^name: project-code-navigation$/m);
   assert.match(skill, /\.ai-work-flow\/index\//);
   assert.doesNotMatch(skill, /\.agents\/skills\/project-code-navigation/);
-  for (const source of [routing, explorer, coder]) assert.match(source, /\.ai-work-flow\/index\//);
-  assert.match(routing, /不得创建 `\.agents\/skills\/project-code-navigation\/`/);
+  for (const source of [coding, explorer, coder]) assert.match(source, /\.ai-work-flow\/index\//);
+  assert.match(coding, /不得写入 `\.agents\/skills\/project-code-navigation\/`/);
   assert.match(skill, /不得执行全局文件检索/);
   assert.match(skill, /同一轮改动中更新对应索引/);
   assert.match(skill, /新功能缺少导航索引视为未完成/);
-  assert.match(routing, /索引命中时直接读取记录的代码，禁止全局文件检索/);
-  assert.match(routing, /缺少索引的新功能视为未完成/);
+  assert.match(coding, /索引命中时直接使用记录的代码，禁止全局搜索无关路径/);
+  assert.match(coding, /缺少索引的新功能视为未完成/);
+  assert.doesNotMatch(routing, /project-code-navigation|\.ai-work-flow\/index\//);
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
-    assert.match(generatedBody(paths, platform, 'file-explorer', extension), /索引命中时直接读取记录的代码/);
+    assert.match(generatedBody(paths, platform, 'file-explorer', extension), /索引命中时交接其中记录的路径/);
     assert.match(generatedBody(paths, platform, 'full-stack-coder', extension), /同一轮改动中更新对应索引/);
   }
 });
@@ -706,7 +755,6 @@ test('full stack coder delegates unknown file discovery to file explorer', () =>
 test('review roles declare one non-recursive aggregation hop', () => {
   const byId = new Map(catalog.roles.map((role) => [role.id, role]));
   const reviewer = readFileSync(resolve(agentAssets, 'bodies/code-reviewer.md'), 'utf8');
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
 
   assert.match(byId.get('code-reviewer').description, /仅由 Coding 调用/);
   assert.match(byId.get('code-reviewer').description, /双轴审查编排/);
@@ -715,9 +763,9 @@ test('review roles declare one non-recursive aggregation hop', () => {
     assert.match(byId.get(role).description, /终端/);
   }
   assert.match(reviewer, /不得将整个双轴审查任务再次委派给另一个 Code Reviewer 或其他聚合审查角色/);
-  assert.match(routing, /Coding -> Code Reviewer -> Review Standards \/ Review Spec/);
-  assert.match(routing, /Code Reviewer 不得再次委派 Code Reviewer/);
-  assert.match(routing, /Review Standards 与 Review Spec 是终端角色/);
+  assert.deepEqual(byId.get('code-reviewer').delegates, ['review-standards', 'review-spec']);
+  assert.deepEqual(byId.get('review-standards').delegates, []);
+  assert.deepEqual(byId.get('review-spec').delegates, []);
 });
 
 test('generated delegation contracts prevent same-role recursion', () => {
@@ -756,8 +804,8 @@ test('workflow browser automation requires an explicit user request', () => {
   for (const assertion of assertions) assert.match(routing, assertion);
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
   for (const role of catalog.roles) {
-    const body = readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8');
-    assert.ok(body.includes('routing.md') || body.includes('routing section 编译'), role.id);
+    const prompt = loadAgentAssets().compiledBodies.get(role.id);
+    for (const assertion of assertions) assert.match(prompt, assertion, role.id);
   }
 });
 
@@ -768,12 +816,12 @@ test('planning workflow resolves material user decisions before writing a plan a
 
   const planningWriter = readFileSync(resolve(agentAssets, 'bodies/planning-writer.md'), 'utf8');
   const coding = readFileSync(resolve(agentAssets, 'bodies/coding.md'), 'utf8');
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const compiledCoding = loadAgentAssets().compiledBodies.get('coding');
 
   assert.match(planningWriter, /\.ai-work-flow\/plans\/<plan_id>\.md/);
   assert.match(planningWriter, /不得实施/);
-  assert.match(routing, /\*\*Planning Writer\*\* 写入计划、ADR/);
-  for (const content of [routing]) {
+  assert.match(compiledCoding, /\*\*Planning Writer\*\* 写入计划、ADR/);
+  for (const content of [compiledCoding]) {
     assert.match(content, /可通过工作区探索确认的事实委派 \*\*File Explorer\*\*/);
     assert.match(content, /会实质影响目标、范围、行为、取舍、兼容性、风险或验收标准/);
     assert.match(content, /每次只询问一个决策/);
@@ -790,7 +838,6 @@ test('planning workflow resolves material user decisions before writing a plan a
     readFileSync(resolve(paths.config, 'ai-work-flow/agent-assets/bodies/planning-writer.md'), 'utf8'),
     planningWriter
   );
-  assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generatedPlanningWriter = readFileSync(agentPath(paths, platform, 'planning-writer', extension), 'utf8');
     const generatedCoding = generatedBody(paths, platform, 'coding', extension);
@@ -798,8 +845,7 @@ test('planning workflow resolves material user decisions before writing a plan a
     assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedPlanningWriter) : generatedBody(paths, platform, 'planning-writer', extension), /不得实施/, platform);
     assert.match(generatedCoding, /每次只询问一个决策/, platform);
   }
-  assert.match(coding, /受管治理内容在生成时从 routing section 编译/);
-  assert.doesNotMatch(coding, /每次只询问一个决策/);
+  assert.match(coding, /每次只询问一个决策/);
 });
 
 test('planning is an opt-in primary that delegates discovery and plan writing', () => {
@@ -871,7 +917,7 @@ test('planning prompt converges one decision at a time and emits the complete fi
   assert.match(body, /先报告计划文件路径/);
   assert.match(body, /输出完整计划/);
   assert.match(prompt, /编码、修改源码或实施请求.*拒绝/);
-  assert.match(prompt, /首次提问必须以 `问题 1：` 开头/);
+  assert.match(prompt, /每个 Planning 会话从 `问题 1：` 开始/);
   assert.match(prompt, /同名方案冲突等后续问题也必须延续当前序号/);
   assert.match(prompt, /\*\*Planning Writer\*\* 不向用户提问/);
   assert.match(prompt, /Coding/);
@@ -982,10 +1028,10 @@ test('structured dual-axis review controls the final integration gate', () => {
   }
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generated = generatedBody(paths, platform, 'coding', extension);
-    assert.match(generated, /用户只能用确认的 finding IDs 选择修复/, platform);
+    assert.match(generated, /仅按用户确认的 finding IDs 委派修复/, platform);
   }
-  assert.match(coding, /受管治理内容在生成时从 routing section 编译/);
-  assert.doesNotMatch(coding, /用户只能用确认的 finding IDs 选择修复/);
+  assert.match(coding, /仅按用户确认的 finding IDs 委派修复/);
+  assert.doesNotMatch(coding, /ReviewManifest|git diff --no-ext-diff/);
 });
 
 test('review agents preserve the AI Work Flow committed-range contract', () => {
@@ -1003,8 +1049,9 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
   ];
 
   for (const command of commands) assert.ok(routing.includes(command), command);
+  const compiledBodies = loadAgentAssets().compiledBodies;
   for (const [role, body] of Object.entries(bodies)) {
-    const compiled = loadAgentAssets().compiledBodies.get(role);
+    const compiled = compiledBodies.get(role);
     assert.ok(compiled.includes('git diff <fixed-point>...<review-commit>'));
     assert.ok(compiled.includes('git log <fixed-point>..<review-commit> --oneline'));
     assert.match(body, /ReviewManifest/);
@@ -1012,10 +1059,11 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
   assert.match(routing, /完全相同的两个完整 SHA、diff 命令、commit list、规格来源、标准来源和完整文件\/窗口分片清单/);
   assert.match(routing, /禁止使用无参数 `git diff` 或 `git diff --cached`/);
   assert.match(bodies['code-reviewer'], /不得合并或跨轴重新排序/);
-  assert.match(bodies['code-reviewer'], /只根据不可变 `ReviewManifest` 调度审查/);
-  assert.match(bodies['code-reviewer'], /在全新子会话中只重试被阻塞的评审一次/);
-  assert.match(bodies['code-reviewer'], /不改变 manifest、digest、固定 SHA、分片范围、规格来源或标准来源/);
-  assert.match(bodies['code-reviewer'], /该次重试仍阻塞、失败或结果未知时也立即报告用户/);
+  assert.match(compiledBodies.get('code-reviewer'), /只根据不可变 `ReviewManifest` 调度审查/);
+  assert.match(compiledBodies.get('code-reviewer'), /在全新子会话中只重新发起被阻塞的评审一次/);
+  assert.match(compiledBodies.get('code-reviewer'), /无需改变 ReviewManifest、digest、固定 SHA、分片范围、规格来源或标准来源/);
+  assert.match(compiledBodies.get('code-reviewer'), /该次重试仍阻塞、失败或结果未知时，立即报告用户/);
+  assert.doesNotMatch(bodies['code-reviewer'], /git rev-parse|git diff --no-ext-diff/);
   assert.doesNotMatch(bodies['code-reviewer'], /\$code-review|已安装时|未安装时|Matt/);
   assert.match(bodies['review-standards'], /缺少任一项时阻塞/);
   assert.match(bodies['review-spec'], /缺少任一项时阻塞/);
@@ -1073,7 +1121,6 @@ test('routing is the sole source for retry and stop-lock governance', () => {
     const generated = generatedBody(paths, platform, 'coding', extension);
     assert.match(generated, /最多重试 2 次，共 3 次/, platform);
   }
-  assert.match(source, /受管治理内容在生成时从 routing section 编译/);
   assert.doesNotMatch(source, /最多重试 2 次，共 3 次/);
 });
 
@@ -1127,9 +1174,7 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(routing, /`delegation` 只表示角色能否发起委派/);
-  assert.match(routing, /`delegation_targets` 单独表示目标角色白名单是否由平台强制/);
-  assert.match(routing, /不得用 Task 开关代替目标白名单的能力证据/);
+  assert.doesNotMatch(routing, /Policy 与能力边界|`delegation_targets` 单独表示|不得用 Task 开关代替/);
   assert.match(result.stdout, /CAPABILITY codex\/coding:.*filesystem=unsupported.*delegation=instruction-only/);
   assert.match(result.stderr, /WARNING codex\/coding:.*delegation=instruction-only/);
   const status = run(paths, 'env', 'status');
@@ -1193,7 +1238,7 @@ test('generated agent descriptions prominently use their title-cased display nam
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
-  const routing = readFileSync(resolve(agentAssets, 'routing.md'), 'utf8');
+  const compiled = loadAgentAssets().compiledBodies;
 
   for (const role of catalog.roles) {
     const displayName = role.id.split('-').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
@@ -1203,7 +1248,7 @@ test('generated agent descriptions prominently use their title-cased display nam
     assert.ok(readFileSync(agentPath(paths, 'claude', role.id, 'md'), 'utf8').includes(`description: ${JSON.stringify(description)}`));
     assert.ok(readFileSync(agentPath(paths, 'opencode', role.id, 'md'), 'utf8').includes(`description: ${JSON.stringify(description)}`));
     assert.ok(readFileSync(resolve(agentAssets, 'bodies', `${role.id}.md`), 'utf8').includes(`你是 **${displayName}**。`));
-    assert.ok(routing.includes(`**${displayName}**`));
+    assert.ok(compiled.get(role.id).includes(`你是 **${displayName}**。`));
   }
 });
 
@@ -1834,7 +1879,7 @@ test('catalog compiles referenced routing sections and rejects invalid governanc
   const compiled = assets.compiledBodies.get('coding');
   assert.match(compiled, /ai-work-flow:routing-digest=/);
   assert.match(compiled, /\*\*Coding\*\* 是默认的面向用户入口/);
-  assert.doesNotMatch(assets.bodies.get('coding'), /\*\*Coding\*\* 是默认的面向用户入口/);
+  assert.match(assets.bodies.get('coding'), /\*\*Coding\*\* 是默认的面向用户入口/);
 
   for (const mutate of [
     (catalog) => { for (const role of catalog.roles) role.kind = 'subagent'; },

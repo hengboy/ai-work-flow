@@ -18,7 +18,7 @@
         "code-reviewer"
       ],
       "tools": [],
-      "routing_sections": ["core-governance"]
+      "routing_sections": ["browser-governance", "retry-governance", "implementation-governance"]
     },
     {
       "id": "planning",
@@ -28,7 +28,7 @@
       "policy": "planning",
       "delegates": ["file-explorer", "planning-writer"],
       "tools": ["Task"],
-      "routing_sections": ["planning-governance"]
+      "routing_sections": ["browser-governance", "retry-governance"]
     },
     {
       "id": "file-explorer",
@@ -38,7 +38,7 @@
       "policy": "discover",
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash"],
-      "routing_sections": ["core-governance"]
+      "routing_sections": ["browser-governance"]
     },
     {
       "id": "researcher",
@@ -48,7 +48,7 @@
       "policy": "research",
       "delegates": [],
       "tools": ["WebSearch", "WebFetch"],
-      "routing_sections": ["core-governance"]
+      "routing_sections": ["browser-governance"]
     },
     {
       "id": "document-maintainer",
@@ -58,7 +58,7 @@
       "policy": "write-docs",
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
-      "routing_sections": ["core-governance"]
+      "routing_sections": ["browser-governance"]
     },
     {
       "id": "planning-writer",
@@ -68,7 +68,7 @@
       "policy": "write-plans",
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
-      "routing_sections": ["core-governance"]
+      "routing_sections": ["browser-governance"]
     },
     {
       "id": "full-stack-coder",
@@ -78,7 +78,7 @@
       "policy": "write-code",
       "delegates": ["file-explorer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Task"],
-      "routing_sections": ["core-governance"]
+      "routing_sections": ["browser-governance", "retry-governance", "implementation-governance"]
     },
     {
       "id": "git-committer",
@@ -88,7 +88,7 @@
       "policy": "commit",
       "delegates": [],
       "tools": ["Read", "Bash"],
-      "routing_sections": ["core-governance"]
+      "routing_sections": ["browser-governance", "implementation-governance"]
     },
     {
       "id": "code-reviewer",
@@ -98,7 +98,7 @@
       "policy": "review",
       "delegates": ["review-standards", "review-spec"],
       "tools": ["Read", "Glob", "Grep", "Bash", "Task"],
-      "routing_sections": ["core-governance"]
+      "routing_sections": ["browser-governance", "retry-governance", "review-governance"]
     },
     {
       "id": "review-standards",
@@ -108,7 +108,7 @@
       "policy": "review",
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash"],
-      "routing_sections": ["core-governance"]
+      "routing_sections": ["browser-governance", "review-governance"]
     },
     {
       "id": "review-spec",
@@ -118,7 +118,7 @@
       "policy": "review",
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash"],
-      "routing_sections": ["core-governance"]
+      "routing_sections": ["browser-governance", "review-governance"]
     }
   ]
 }

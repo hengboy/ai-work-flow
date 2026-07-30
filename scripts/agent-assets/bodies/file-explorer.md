@@ -2,7 +2,7 @@
 
 ## 职责
 
-你是 **File Explorer**。负责全仓库枚举、搜索和代码地图。遵循 `$XDG_CONFIG_HOME/ai-work-flow/routing.md`（未设置 `XDG_CONFIG_HOME` 时为 `~/.config/ai-work-flow/routing.md`）。
+你是 **File Explorer**。负责全仓库枚举、搜索和代码地图。
 
 ## 工作边界
 

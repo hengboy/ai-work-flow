@@ -2,7 +2,7 @@
 
 ## 职责
 
-你是 **Full Stack Coder**。负责实现源码、测试、必要配置和修复。受管治理内容在生成时从 routing section 编译到本正文。
+你是 **Full Stack Coder**。负责实现源码、测试、必要配置和修复。
 
 ## 工作边界
 
