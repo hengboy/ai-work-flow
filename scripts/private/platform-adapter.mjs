@@ -120,10 +120,6 @@ function yamlValue(value) {
   return JSON.stringify(value);
 }
 
-function enforcesPlanningWriteScope(role, policy) {
-  return role.id === 'planning' && policy.write_scope === 'plans';
-}
-
 function claudeRender(role, settings, body, policy) {
   const frontmatter = [
     '---',
@@ -134,17 +130,6 @@ function claudeRender(role, settings, body, policy) {
     `tools: ${yamlValue(role.tools.length ? role.tools : ['Task'])}`,
     `permissionMode: ${yamlValue(claudePermission(policy))}`
   ];
-  if (enforcesPlanningWriteScope(role, policy)) {
-    frontmatter.push(`hooks: ${yamlValue({
-      PreToolUse: [{
-        matcher: 'Write',
-        hooks: [{
-          type: 'command',
-          command: 'node "${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/private/claude-plan-write-guard.mjs"'
-        }]
-      }]
-    })}`);
-  }
   return [
     ...frontmatter,
     '---',
@@ -168,14 +153,6 @@ export function opencodePermission(role, policy) {
     permission.glob = 'deny';
     permission.grep = 'deny';
     permission.bash = 'deny';
-  }
-  if (enforcesPlanningWriteScope(role, policy)) {
-    permission.edit = {
-      '*': 'deny',
-      '.ai-work-flow/plans/?*.md': 'allow',
-      '.ai-work-flow/plans/*/*.md': 'deny',
-      '.ai-work-flow/plans/* *.md': 'deny'
-    };
   }
   if (policy.delegation === 'allowed') permission.task = 'allow';
   if (policy.delegation === 'none') permission.task = 'deny';
@@ -346,7 +323,6 @@ function capabilityLevel(platform, role, capability, requested) {
     if (platform === 'opencode' && role.delegates.length === 0 && requested !== 'allowed' && !role.tools.includes('Task')) return 'enforced';
     return 'instruction-only';
   }
-  if (capability === 'write_scope' && role.id === 'planning' && requested === 'plans' && (platform === 'claude' || platform === 'opencode')) return 'enforced';
   if (capability === 'network' || capability === 'browser') return 'unsupported';
   if (platform === 'opencode' && capability === 'delegation') return 'enforced';
   return 'instruction-only';

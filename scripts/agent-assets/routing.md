@@ -80,11 +80,13 @@ Git Committer 在整合前重新确认主工作树和 feature worktree 均干净
 
 ## Planning 主入口
 
-**Planning** 是可选的 plan-only 主入口，**Coding** 仍是默认入口。Planning 通过逐题问询建立共享理解，只生成并保存可直接实施的完整计划，不编写或实施代码，也不自动把计划转交实施。
+**Planning** 是可选的 plan-only 主入口，**Coding** 仍是默认入口。Planning 通过逐题问询建立共享理解，组织生成可直接实施的完整计划，并委派 **Planning Writer** 保存计划；不编写或实施代码，也不自动把计划转交实施。
+
+每个 Planning 会话的首次提问必须以 `问题 1：` 开头；之后每次向用户提问都使用上一个问题的序号加一，并以 `问题 <n>：` 开头。序号不得复用、跳号或重置，同名方案冲突等后续问题也必须延续当前序号；一次仍只询问一个问题。**Planning Writer** 不向用户提问。
 
 Planning 不得直接枚举、读取、搜索或检查工作区文件。所有仓库事实、现有实现、配置、测试、路径和同名计划检查必须委派 **File Explorer**；用户已经直接提供的内容可以使用。可通过文件检索回答的问题不得转问用户，File Explorer 无法确认时才向用户报告不确定性。
 
-Planning 只能委派 **File Explorer**，只能写入 `.ai-work-flow/plans/<planId>.md`。Codex 无法强制路径级写入限制时，该边界由策略和提示词约束；Claude Code 与 OpenCode 使用平台代理的路径权限阻断其他写入。
+Planning 只能委派 **File Explorer** 和 **Planning Writer**，不得直接写入任何文件。所有方案创建、覆盖、更新和保存都必须委派 **Planning Writer**；Planning 负责确认、同名冲突处理和向用户交付结果，Planning Writer 是唯一写入计划文件的角色。
 
 Planning 收到编码、修改源码或实施请求时必须拒绝，并引导用户改用 **Coding** 或实施代理。
 

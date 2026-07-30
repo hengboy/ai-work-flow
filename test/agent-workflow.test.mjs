@@ -802,22 +802,22 @@ test('planning workflow resolves material user decisions before writing a plan a
   assert.doesNotMatch(coding, /每次只询问一个决策/);
 });
 
-test('planning is an opt-in primary that can only delegate repository discovery and write plans', () => {
+test('planning is an opt-in primary that delegates discovery and plan writing', () => {
   const planning = catalog.roles.find((role) => role.id === 'planning');
   const coding = catalog.roles.find((role) => role.id === 'coding');
   assert.equal(planning.kind, 'primary');
   assert.equal(planning.default_primary, undefined);
   assert.equal(coding.kind, 'primary');
   assert.equal(coding.default_primary, true);
-  assert.deepEqual(planning.delegates, ['file-explorer']);
-  assert.deepEqual(planning.tools, ['Write', 'Task']);
+  assert.deepEqual(planning.delegates, ['file-explorer', 'planning-writer']);
+  assert.deepEqual(planning.tools, ['Task']);
   assert.deepEqual(policies[planning.policy], {
-    filesystem: 'write',
+    filesystem: 'none',
     shell: 'none',
     network: 'none',
     browser: 'none',
     git: 'none',
-    write_scope: 'plans',
+    write_scope: 'none',
     delegation: 'allowed'
   });
 
@@ -852,6 +852,10 @@ test('planning prompt converges one decision at a time and emits the complete fi
   assert.match(body, /status: `ready-for-implementation`/);
   assert.match(body, /不适用.*`N\/A`.*原因/);
   assert.match(body, /每次只询问一个/);
+  assert.match(body, /每个 Planning 会话从 `问题 1：` 开始/);
+  assert.match(body, /上一个问题的序号加一/);
+  assert.match(body, /序号不得复用、跳号或重置/);
+  assert.match(body, /共享理解确认、同名方案冲突等后续问题也必须延续当前序号/);
   assert.match(body, /推荐答案.*理由.*取舍/);
   assert.match(body, /目标、成功标准、受众、范围、约束、现状、接口、数据流、失败处理、测试、兼容、迁移和发布策略/);
   assert.match(body, /具体场景.*边界/);
@@ -861,9 +865,15 @@ test('planning prompt converges one decision at a time and emits the complete fi
   assert.match(body, /\.ai-work-flow\/plans\/<planId>\.md/);
   assert.match(body, /同名.*完整更新.*更换 ID/);
   assert.match(body, /未经.*确认.*覆盖/);
+  assert.match(body, /所有方案创建、覆盖、更新和保存/);
+  assert.match(body, /Planning Writer/);
+  assert.match(body, /不得直接写入任何文件/);
   assert.match(body, /先报告计划文件路径/);
   assert.match(body, /输出完整计划/);
   assert.match(prompt, /编码、修改源码或实施请求.*拒绝/);
+  assert.match(prompt, /首次提问必须以 `问题 1：` 开头/);
+  assert.match(prompt, /同名方案冲突等后续问题也必须延续当前序号/);
+  assert.match(prompt, /\*\*Planning Writer\*\* 不向用户提问/);
   assert.match(prompt, /Coding/);
   assert.doesNotMatch(prompt, /https?:\/\/|github\.com/i);
 });
@@ -896,7 +906,7 @@ test('planning assets and generated prompts contain no outside planning referenc
   }
 });
 
-test('all platforms generate planning without changing the default primary', () => {
+test('all platforms generate a non-writing planning coordinator without changing the default primary', () => {
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -909,26 +919,19 @@ test('all platforms generate planning without changing the default primary', () 
   assert.equal(openCodePlanning.permission.glob, 'deny');
   assert.equal(openCodePlanning.permission.grep, 'deny');
   assert.equal(openCodePlanning.permission.bash, 'deny');
-  assert.deepEqual(openCodePlanning.permission.edit, {
-    '*': 'deny',
-    '.ai-work-flow/plans/?*.md': 'allow',
-    '.ai-work-flow/plans/*/*.md': 'deny',
-    '.ai-work-flow/plans/* *.md': 'deny'
-  });
+  assert.equal(openCodePlanning.permission.edit, 'deny');
   assert.equal(openCodePlanning.permission.task, 'allow');
   const planning = catalog.roles.find((role) => role.id === 'planning');
-  assert.equal(evaluateOpenCodePermission(planning, policies[planning.policy], 'edit', '.ai-work-flow/plans/ready-plan.md'), 'allow');
-  for (const filePath of ['src/app.js', '.ai-work-flow/plans/.md', '.ai-work-flow/plans/not valid.md', '.ai-work-flow/plans/nested/plan.md', '.ai-work-flow/plans/../../src/app.md']) {
+  for (const filePath of ['src/app.js', '.ai-work-flow/plans/ready-plan.md', '.ai-work-flow/plans/.md', '.ai-work-flow/plans/not valid.md', '.ai-work-flow/plans/nested/plan.md', '.ai-work-flow/plans/../../src/app.md']) {
     assert.equal(evaluateOpenCodePermission(planning, policies[planning.policy], 'edit', filePath), 'deny', filePath);
   }
 
   const claudePlanning = parseFrontmatter(readFileSync(agentPath(paths, 'claude', 'planning', 'md'), 'utf8'));
-  assert.deepEqual(claudePlanning.tools, ['Write', 'Task']);
-  assert.equal(claudePlanning.hooks.PreToolUse[0].matcher, 'Write');
-  assert.match(claudePlanning.hooks.PreToolUse[0].hooks[0].command, /claude-plan-write-guard\.mjs/);
+  assert.deepEqual(claudePlanning.tools, ['Task']);
+  assert.equal(Object.hasOwn(claudePlanning, 'hooks'), false);
   assert.equal(capabilityMatrix('codex', planning, policies[planning.policy]).write_scope, 'instruction-only');
-  assert.equal(capabilityMatrix('claude', planning, policies[planning.policy]).write_scope, 'enforced');
-  assert.equal(capabilityMatrix('opencode', planning, policies[planning.policy]).write_scope, 'enforced');
+  assert.equal(capabilityMatrix('claude', planning, policies[planning.policy]).write_scope, 'instruction-only');
+  assert.equal(capabilityMatrix('opencode', planning, policies[planning.policy]).write_scope, 'instruction-only');
 
   const planningWriter = catalog.roles.find((role) => role.id === 'planning-writer');
   assert.equal(capabilityMatrix('claude', planningWriter, policies[planningWriter.policy]).write_scope, 'instruction-only');
@@ -940,29 +943,6 @@ test('all platforms generate planning without changing the default primary', () 
 
   const openCode = JSON.parse(readFileSync(resolve(paths.config, 'opencode/opencode.json'), 'utf8'));
   assert.equal(openCode.default_agent, 'coding');
-});
-
-test('Claude planning write guard allows one plan file and rejects every other path', () => {
-  const project = fixture();
-  const guard = resolve(root, 'scripts/private/claude-plan-write-guard.mjs');
-  const check = (filePath) => spawnSync(process.execPath, [guard], {
-    cwd: project,
-    encoding: 'utf8',
-    input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: filePath } })
-  });
-
-  assert.equal(check('.ai-work-flow/plans/ready-plan.md').status, 0);
-  for (const filePath of ['src/app.js', '.ai-work-flow/plans/not valid.md', '.ai-work-flow/plans/nested/plan.md', '../escape.md']) {
-    const result = check(filePath);
-    assert.equal(result.status, 2, filePath);
-    assert.match(result.stderr, /Planning may only write/);
-  }
-
-  const outside = resolve(project, 'outside');
-  mkdirSync(resolve(project, '.ai-work-flow'), { recursive: true });
-  mkdirSync(outside);
-  symlinkSync(outside, resolve(project, '.ai-work-flow/plans'));
-  assert.equal(check('.ai-work-flow/plans/ready-plan.md').status, 2);
 });
 
 test('OpenCode derives its default agent from the role catalog', () => {
