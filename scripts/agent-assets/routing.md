@@ -8,6 +8,14 @@
 
 <!-- ai-work-flow:section-end -->
 
+<!-- ai-work-flow:section id="handoff-governance" -->
+
+## 交接读取边界
+
+只能读取用户或上游交接的精确路径及其直接依赖。需要未知路径、文件搜索或枚举时必须停止，并要求委派方先由 **File Explorer** 发现真实入口；不得自行使用 Glob、Grep、`find`、`rg` 或同类命令扩大读取范围。
+
+<!-- ai-work-flow:section-end -->
+
 <!-- ai-work-flow:section id="retry-governance" -->
 
 ## 子代理故障与重试

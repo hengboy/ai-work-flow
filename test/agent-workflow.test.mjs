@@ -173,8 +173,8 @@ test('compiled governance is scoped to each role concern', () => {
     planning: ['browser-governance', 'retry-governance'],
     'file-explorer': ['browser-governance'],
     researcher: ['browser-governance'],
-    'document-maintainer': ['browser-governance'],
-    'planning-writer': ['browser-governance'],
+    'document-maintainer': ['browser-governance', 'handoff-governance'],
+    'planning-writer': ['browser-governance', 'handoff-governance'],
     'full-stack-coder': ['browser-governance', 'retry-governance', 'implementation-governance'],
     'git-committer': ['browser-governance', 'implementation-governance'],
     'code-reviewer': ['browser-governance', 'retry-governance', 'review-governance'],
@@ -193,11 +193,13 @@ test('compiled governance is scoped to each role concern', () => {
   const retryRoles = new Set(['coding', 'planning', 'full-stack-coder', 'code-reviewer']);
   const implementationRoles = new Set(['coding', 'full-stack-coder', 'git-committer']);
   const reviewRoles = new Set(['code-reviewer', 'review-standards', 'review-spec']);
+  const handoffRoles = new Set(['document-maintainer', 'planning-writer']);
   for (const role of assets.roles) {
     const prompt = compiled.get(role.id);
     assert.equal(prompt.includes('每个子任务的首次尝试最多重试 2 次'), retryRoles.has(role.id), `${role.id}: retry`);
     assert.equal(prompt.includes('确认方案后的实现阶段固定按以下顺序执行'), implementationRoles.has(role.id), `${role.id}: implementation`);
     assert.equal(prompt.includes('两个端点必须可解析'), reviewRoles.has(role.id), `${role.id}: review`);
+    assert.equal(prompt.includes('需要未知路径、文件搜索或枚举时必须停止'), handoffRoles.has(role.id), `${role.id}: handoff`);
   }
 
   assert.doesNotMatch(compiled.get('coding'), /ReviewManifest|git diff --no-ext-diff/);

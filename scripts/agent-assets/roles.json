@@ -58,7 +58,7 @@
       "policy": "write-docs",
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
-      "routing_sections": ["browser-governance"]
+      "routing_sections": ["browser-governance", "handoff-governance"]
     },
     {
       "id": "planning-writer",
@@ -68,7 +68,7 @@
       "policy": "write-plans",
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
-      "routing_sections": ["browser-governance"]
+      "routing_sections": ["browser-governance", "handoff-governance"]
     },
     {
       "id": "full-stack-coder",
