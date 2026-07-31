@@ -2,3 +2,4 @@
 /skills/run-matt-spec-to-completion/node_modules/
 /docs/reports/
 /node_modules/
+/.playwright-mcp/
