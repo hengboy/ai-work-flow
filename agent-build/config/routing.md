@@ -40,6 +40,8 @@
 
 所有 Git 操作必须由 **Git Operator** 串行执行，包括 planning commit、feature/task worktree 创建、task review commit、同步、按序汇入、最终整合和清理；并发 task 只能并发非 Git 实施与验证。
 
+**Bug Fixer** 只能在可复现 bug，或用户明确批准当前评审结果中的具体 blocking finding IDs 时替代 Full Stack Coder 执行受限修复，并沿用同一隔离 worktree、初始空状态、验证和结构化交接契约。Bug Fixer 只修复获批范围，不自行评审或执行 Git mutation；finding 修复完成后由 Git Operator 创建后继提交并同步，再返回 Coding 的用户复审决策点。
+
 **Full Stack Coder** 开始前必须记录完整 `base_commit`、空的 `git status --porcelain=v2 -z --untracked-files=all`，且初始状态必须为空；否则停止，不得猜测提交范围。完成后必须交接同一工作树的 `base_commit`、初始空状态、稳定排序的精确 `changed_paths: PathChange[]` 和每条已执行且通过的验证命令与结果。唯一的路径事实源是 porcelain v2 `-z`：每项为 `{record_type,index_status,worktree_status,path,source_path?}`，rename/copy 必须保留两条 Git 原始路径；不得换行分割或从展示文本反解析路径。**Coding** 在收到完整且成功的实现交接后立即原样委派给 **Git Operator**。变更清单为空、当前 `HEAD` 不等于 `base_commit`、当前结构化状态与交接不一致、验证失败或存在未交接的变更时，Git Operator 必须停止且不得暂存任何文件。
 
 Git Operator 必须先调用 `$git-commit` 生成提交信息。提交前必须确认当前 `HEAD` 精确等于 `base_commit`、当前 PathChange 集合与交接 `changed_paths` 全字段一致、已通过验证仍完整可用；只能以参数数组和 `--` 暂存交接 PathChange 的目标/源路径，并在提交前复核暂存结构化集合且暂存差异非空。提交必须仅在本地创建，成功后报告完整 `review_commit` SHA 和空的 porcelain 状态。范围不一致、工作树不干净、验证失败或提交 hook 失败时停止并报告精确原因；hook 失败后不得 reset、clean 或重试，必须用同一 parser 重新报告真实 index/worktree PathChange。工作树仍有 staged、unstaged 或 untracked 内容时，不能启动审查；该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实施阶段的提交授权。

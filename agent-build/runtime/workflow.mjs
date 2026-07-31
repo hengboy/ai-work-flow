@@ -20,6 +20,10 @@ const LEGACY_ROLE_RENAMES = new Map([
   [LEGACY_GIT_OPERATOR_AGENT_ID, 'git-operator']
 ]);
 
+function compatibilityRoleDefaults(assets) {
+  return { 'bug-fixer': assets.defaults.roles['bug-fixer'] };
+}
+
 function usage() {
   return `Usage:
   node agent-build/install.mjs [--platform codex,claude,opencode] [--dry-run]
@@ -180,7 +184,15 @@ function loadConfig(assets, allowDefaults = false, platforms = [...PLATFORMS]) {
     }
     fail(`Missing ${paths.defaultEnvironment}. Run init first.`);
   }
-  return { ...loadResolvedConfiguration({ paths, roles: assets.roles, platforms }), paths };
+  return {
+    ...loadResolvedConfiguration({
+      paths,
+      roles: assets.roles,
+      platforms,
+      missingRoleDefaults: compatibilityRoleDefaults(assets)
+    }),
+    paths
+  };
 }
 
 function planLegacyRoleMigrations(paths) {
@@ -233,6 +245,10 @@ function loadInstallConfig(assets, platforms) {
   if (exists && isPlainObject(base?.roles) && !Object.hasOwn(base.roles, 'task-planner')) {
     base = structuredClone(base);
     base.roles['task-planner'] = structuredClone(assets.defaults.roles['task-planner']);
+  }
+  if (exists && isPlainObject(base?.roles) && !Object.hasOwn(base.roles, 'bug-fixer')) {
+    base = structuredClone(base);
+    base.roles['bug-fixer'] = structuredClone(assets.defaults.roles['bug-fixer']);
   }
   const resolved = loadResolvedConfiguration({
     paths,
@@ -319,7 +335,13 @@ function useEnvironment(name, dryRun) {
   assertSafeEnvironmentPaths(paths);
   if (!existsSync(paths.defaultEnvironment)) fail(`Missing ${paths.defaultEnvironment}. Run init first.`);
   const assets = loadAgentAssets();
-  const resolved = loadResolvedConfiguration({ paths, roles: assets.roles, platforms: [...PLATFORMS], environmentName: name });
+  const resolved = loadResolvedConfiguration({
+    paths,
+    roles: assets.roles,
+    platforms: [...PLATFORMS],
+    environmentName: name,
+    missingRoleDefaults: compatibilityRoleDefaults(assets)
+  });
   const platforms = managedPlatforms(paths);
   const generation = planGenerationFor(platforms, assets, resolved.config);
   const marker = name === 'default'
@@ -347,7 +369,12 @@ function createEnvironment(name) {
     if (error.code !== 'ENOENT') throw error;
   }
   const assets = loadAgentAssets();
-  const resolvedConfig = loadResolvedConfiguration({ paths, roles: assets.roles, platforms: [...PLATFORMS] }).config;
+  const resolvedConfig = loadResolvedConfiguration({
+    paths,
+    roles: assets.roles,
+    platforms: [...PLATFORMS],
+    missingRoleDefaults: compatibilityRoleDefaults(assets)
+  }).config;
   mkdirSync(paths.environments, { recursive: true });
   assertSafeEnvironmentPaths(paths);
   try {
@@ -454,7 +481,12 @@ export function runCli(argv) {
     if (options.envAction === 'status') {
       const paths = globalPaths();
       const assets = loadAgentAssets();
-      const resolved = loadResolvedConfiguration({ paths, roles: assets.roles, platforms: [...PLATFORMS] });
+      const resolved = loadResolvedConfiguration({
+        paths,
+        roles: assets.roles,
+        platforms: [...PLATFORMS],
+        missingRoleDefaults: compatibilityRoleDefaults(assets)
+      });
       console.log(`Environment: ${resolved.name}`);
       console.log(`Managed platforms: ${managedPlatforms(paths).join(', ')}`);
       const managed = managedPlatforms(paths);

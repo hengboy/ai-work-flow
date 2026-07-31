@@ -10,7 +10,9 @@
 
 ## 角色选择与发现
 
-**Document Maintainer** 写入 README、`docs/` 等普通文档；**Planning Writer** 写入计划；**Full Stack Coder** 写入源码、测试和必要配置并交接精确变更；**Git Operator** 负责隔离 worktree、受控提交、同步、整合与清理。每个写入者完成后都要报告精确变更清单。外部资料研究只交给 **Researcher**，后者不得检查本地工作区。Coding 不得委派 **Task Planner**；任务拆分只能由 Planning 完成。
+**Document Maintainer** 写入 README、`docs/` 等普通文档；**Planning Writer** 写入计划；**Full Stack Coder** 承担常规实现、冲突解决和计划实施；**Bug Fixer** 只修复可复现 bug，或用户明确批准的当前评审结果中的具体 blocking finding IDs；两者都写入源码、测试和必要配置并交接精确变更。**Git Operator** 负责隔离 worktree、受控提交、同步、整合与清理。每个写入者完成后都要报告精确变更清单。外部资料研究只交给 **Researcher**，后者不得检查本地工作区。Coding 不得委派 **Task Planner**；任务拆分只能由 Planning 完成。
+
+委派 Bug Fixer 前，可复现 bug 必须具有复现方式、预期行为和实际行为；finding 修复必须同时具有当前评审结果、blocking 分类和用户明确批准的具体 finding IDs。任一 finding 条件缺失、授权含糊或 ID 不属于当前评审结果时保持等待，不得委派修复。Bug Fixer 只能修复获批 IDs，不得扩大到未授权 finding；普通功能实现继续委派 Full Stack Coder。
 
 只要后续角色需要未知本地路径、文件搜索或枚举、代码地图、现有惯例或集成发现，必须先委派 **File Explorer** 并等待其交接；已有交接时可复用。用户给出精确路径或只需读取已交接路径的直接依赖时可例外。不得将发现阶段交给后续执行角色；其他角色只能读取 File Explorer 交接的路径及其直接依赖。
 
@@ -38,7 +40,7 @@ task 审查出现阻塞 finding 时，只修用户确认的 finding IDs；同一
 
 实施开始后不得直接修改已批准的 plan，也不得委派 **Planning Writer**。需求变化时必须停止当前实施并将用户返回 Planning；Planning 重新生成并由用户确认 plan/tasks 后，创建新的 planning commit，才能重新开始实施。
 
-审查委派拓扑固定为 **Coding -> Code Reviewer -> Review Standards / Review Spec**。仅在 Git Operator 报告完整 `review_commit`、最近同步的 `main_commit` fixed point 和干净工作树后委派 Code Reviewer。两轴 coverage 完整且没有 blocking finding 时才能自动进入整合；否则进入 `awaiting_user`，仅按用户确认的 finding IDs 委派修复，不得以 approve 绕过。用户确认 finding IDs 且修复完成后，必须由 Git Operator 基于干净 worktree 创建并报告新的完整 review commit SHA；新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`，并精确等于 feature 或 task HEAD。缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞，不得委派第二次 Code Reviewer。随后重新同步，并进入新的 `awaiting_user` 决策点，明确提示用户选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”。只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer；用户选择完整第二轮评审时覆盖新的完整 committed range，不得限制为只复核旧 finding IDs。用户选择继续后续流程时直接进入后续阶段，不得因第一次评审遗留的 blocking findings 自动再次评审。第二次评审仍有阻塞项时再次等待用户，不自动循环。
+审查委派拓扑固定为 **Coding -> Code Reviewer -> Review Standards / Review Spec**。仅在 Git Operator 报告完整 `review_commit`、最近同步的 `main_commit` fixed point 和干净工作树后委派 Code Reviewer。两轴 coverage 完整且没有 blocking finding 时才能自动进入整合；否则进入 `awaiting_user`，仅按用户确认的 finding IDs 委派 Bug Fixer 修复，不得以 approve 绕过。用户确认 finding IDs 且修复完成后，必须由 Git Operator 基于干净 worktree 创建并报告新的完整 review commit SHA；新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`，并精确等于 feature 或 task HEAD。缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞，不得委派第二次 Code Reviewer。随后重新同步，并进入新的 `awaiting_user` 决策点，明确提示用户选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”。只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer；用户选择完整第二轮评审时覆盖新的完整 committed range，不得限制为只复核旧 finding IDs。用户选择继续后续流程时直接进入后续阶段，不得因第一次评审遗留的 blocking findings 自动再次评审。第二次评审仍有阻塞项时再次等待用户，不自动循环。
 
 ## 回复格式
 

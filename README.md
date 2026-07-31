@@ -52,7 +52,7 @@ node agent-build/install.mjs --platform claude,opencode
 ${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/environments/default.json
 ```
 
-非默认环境使用同目录下的 `<name>.json`，由 `.environment` 标记选择；环境配置按角色、平台和字段覆盖默认值，未提供字段继续继承。OpenCode 的 `options` 例外：一旦覆盖就整体替换。默认环境必须保留全部受管理角色及三平台完整配置，非默认环境可以只记录差异。修改环境文件后，通过 `$generate-ai-work-flow-agents` 校验并重新生成，或直接依次运行 `validate` 和 `generate`；新会话才会读取更新后的 agents。环境切换应使用 `env use <name>`，不要手工改写 `.environment`。
+非默认环境使用同目录下的 `<name>.json`，由 `.environment` 标记选择；环境配置按角色、平台和字段覆盖默认值，未提供字段继续继承。OpenCode 的 `options` 例外：一旦覆盖就整体替换。默认环境必须保留全部受管理角色及三平台完整配置，非默认环境可以只记录差异。升级期间旧默认环境完全缺失 Bug Fixer 时，`validate` 和 `generate` 只在内存中使用该角色的默认配置且不改写环境文件，下一次完整安装会持久化补齐；已有但残缺的 Bug Fixer 配置仍会失败。修改环境文件后，通过 `$generate-ai-work-flow-agents` 校验并重新生成，或直接依次运行 `validate` 和 `generate`；新会话才会读取更新后的 agents。环境切换应使用 `env use <name>`，不要手工改写 `.environment`。
 
 平台配置按角色组织，例如：
 
@@ -189,7 +189,7 @@ AI Work Flow 自动执行时使用稳定唯一的 `worktree_id`。已有 `.workt
 
 ### 角色协作
 
-Coding 将任务路由给 File Explorer、Researcher、Document Maintainer、Planning Writer、Full Stack Coder、Git Operator 和 Code Reviewer；Planning 可调用 File Explorer、Planning Writer、Task Planner 和 Git Operator。Code Reviewer 再调用 Review Standards 与 Review Spec。Git 操作由 Git Operator 串行执行。
+Coding 将任务路由给 File Explorer、Researcher、Document Maintainer、Planning Writer、Full Stack Coder、Bug Fixer、Git Operator 和 Code Reviewer；Planning 可调用 File Explorer、Planning Writer、Task Planner 和 Git Operator。Bug Fixer 只处理可复现 bug 和用户明确批准的当前 blocking finding IDs，并可调用 File Explorer、Git Operator、Researcher 与 Document Maintainer。Code Reviewer 再调用 Review Standards 与 Review Spec。Git 操作由 Git Operator 串行执行。
 
 ### Planning 产物
 
@@ -258,6 +258,7 @@ Checkpoint 只接受当前格式；旧字段、旧绝对路径或未知格式不
 | Planning Writer | 只写目录式完整实施计划 |
 | Task Planner | 将已确认计划拆分为可跟踪任务 |
 | Full Stack Coder | 实现源码、测试、必要配置和修复 |
+| Bug Fixer | 受限修复可复现 bug 或获批 blocking finding；Codex `gpt-5.6-luna`/`max`，OpenCode `baibai/gpt-5.6-luna`/`max`，Claude `sonnet`/`high` |
 | Git Operator | 受控执行 Git 工作流 |
 | Code Reviewer | 编排 Standards + Spec 双轴评审 |
 | Review Standards / Review Spec | 分别执行标准与规范评审 |

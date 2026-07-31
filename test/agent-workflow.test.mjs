@@ -180,6 +180,7 @@ test('compiled governance is scoped to each role concern', () => {
     'planning-writer': ['browser-governance', 'handoff-governance'],
     'task-planner': ['browser-governance', 'handoff-governance'],
     'full-stack-coder': ['browser-governance', 'retry-governance', 'implementation-governance'],
+    'bug-fixer': ['browser-governance', 'retry-governance', 'implementation-governance'],
     'git-operator': ['browser-governance', 'implementation-governance'],
     'code-reviewer': ['browser-governance', 'retry-governance', 'review-governance'],
     'review-standards': ['browser-governance', 'review-governance'],
@@ -194,8 +195,8 @@ test('compiled governance is scoped to each role concern', () => {
     assert.doesNotMatch(assets.bodies.get(role.id), /XDG_CONFIG_HOME.*routing\.md/, role.id);
   }
 
-  const retryRoles = new Set(['coding', 'planning', 'full-stack-coder', 'code-reviewer']);
-  const implementationRoles = new Set(['coding', 'full-stack-coder', 'git-operator']);
+  const retryRoles = new Set(['coding', 'planning', 'full-stack-coder', 'bug-fixer', 'code-reviewer']);
+  const implementationRoles = new Set(['coding', 'full-stack-coder', 'bug-fixer', 'git-operator']);
   const reviewRoles = new Set(['code-reviewer', 'review-standards', 'review-spec']);
   const handoffRoles = new Set(['document-maintainer', 'planning-writer', 'task-planner']);
   for (const role of assets.roles) {
@@ -212,7 +213,7 @@ test('compiled governance is scoped to each role concern', () => {
   assert.match(assets.bodies.get('planning'), /编码、修改源码或实施请求.*拒绝/);
   assert.doesNotMatch(assets.routing, /planning-governance|Policy 与能力边界|^## 回复格式$/m);
   const totalCompiledLength = [...compiled.values()].reduce((total, prompt) => total + prompt.length, 0);
-  assert.ok(totalCompiledLength < 42_500, `compiled prompts should stay focused, got ${totalCompiledLength} characters`);
+  assert.ok(totalCompiledLength < 52_500, `compiled prompts should stay focused, got ${totalCompiledLength} characters`);
 });
 
 test('managed prompt documents use the Markdown layout', () => {
@@ -242,6 +243,7 @@ test('role bodies derive their common structure and reply sections from the cata
     'planning-writer': ['完成', '变更', '验证', '阻塞'],
     'task-planner': ['完成', '变更', '验证', '阻塞'],
     'full-stack-coder': ['完成', '变更', '验证', '阻塞'],
+    'bug-fixer': ['完成', '变更', '验证', '阻塞'],
     'git-operator': ['提交结果'],
     'code-reviewer': ['Standards', 'Spec', '结论', '测试缺口', '阻塞'],
     'review-standards': ['结论', '发现', '测试缺口', '阻塞'],
@@ -634,6 +636,67 @@ test('validate and install dry-run never write a missing task planner migration'
   assert.ok(!existsSync(agentPath(paths, 'codex', 'task-planner', 'toml')));
 });
 
+test('install atomically adds a completely missing bug fixer to default configuration', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  delete configuration.roles['bug-fixer'];
+  configuration.roles.coding.codex.model = 'preserved-model';
+  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(configuration, null, 2)}\n`);
+
+  const overlayPath = environmentPath(paths, 'sparse');
+  const overlay = `${JSON.stringify({
+    version: 1,
+    roles: { coding: { codex: { reasoning: 'low' } } }
+  }, null, 2)}\n`;
+  writeFileSync(overlayPath, overlay);
+  writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'sparse');
+
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  const migrated = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  const defaults = JSON.parse(readFileSync(resolve(configDir, 'default-config.json'), 'utf8'));
+  assert.deepEqual(migrated.roles['bug-fixer'], defaults.roles['bug-fixer']);
+  assert.equal(migrated.roles.coding.codex.model, 'preserved-model');
+  assert.equal(readFileSync(overlayPath, 'utf8'), overlay);
+  assert.match(readFileSync(agentPath(paths, 'codex', 'bug-fixer', 'toml'), 'utf8'), /model = "gpt-5\.6-luna"/);
+});
+
+test('validate and generation use a missing bug fixer default without rewriting the environment', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  delete configuration.roles['bug-fixer'];
+  const before = `${JSON.stringify(configuration, null, 2)}\n`;
+  writeFileSync(defaultEnvironmentPath(paths), before);
+
+  const validation = run(paths, 'validate');
+  assert.equal(validation.status, 0, validation.stderr);
+  assert.match(validation.stdout, /Configuration is valid/);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+
+  const generation = run(paths, 'generate');
+  assert.equal(generation.status, 0, generation.stderr);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+  assert.match(readFileSync(agentPath(paths, 'codex', 'bug-fixer', 'toml'), 'utf8'), /model = "gpt-5\.6-luna"/);
+  assert.match(readFileSync(agentPath(paths, 'claude', 'bug-fixer', 'md'), 'utf8'), /model: "sonnet"/);
+  assert.match(readFileSync(agentPath(paths, 'opencode', 'bug-fixer', 'md'), 'utf8'), /model: "baibai\/gpt-5\.6-luna"/);
+});
+
+test('validate rejects an existing partial bug fixer without rewriting the environment', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const configuration = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  delete configuration.roles['bug-fixer'].claude;
+  const before = `${JSON.stringify(configuration, null, 2)}\n`;
+  writeFileSync(defaultEnvironmentPath(paths), before);
+
+  const validation = run(paths, 'validate');
+  assert.equal(validation.status, 1);
+  assert.match(validation.stderr, /bug-fixer\.claude must be an object/);
+  assert.equal(readFileSync(defaultEnvironmentPath(paths), 'utf8'), before);
+});
+
 test('install rejects a conflicting inactive environment without writing any file', () => {
   const paths = environment();
   assert.equal(run(paths, 'init').status, 0);
@@ -855,6 +918,71 @@ test('full stack coder delegates unknown file discovery to file explorer', () =>
   assert.equal(openCode.permission.grep, 'deny');
 });
 
+test('bug fixer is a narrowly governed coding subagent on every platform', () => {
+  const role = catalog.roles.find((candidate) => candidate.id === 'bug-fixer');
+  const coding = catalog.roles.find((candidate) => candidate.id === 'coding');
+  const defaults = JSON.parse(readFileSync(resolve(configDir, 'default-config.json'), 'utf8'));
+  const body = readFileSync(resolve(templatesDir, 'bug-fixer.md'), 'utf8');
+
+  assert.equal(catalog.roles.length, 13);
+  assert.equal(role.kind, 'subagent');
+  assert.equal(role.policy, 'write-code');
+  assert.deepEqual(role.delegates, ['file-explorer', 'git-operator', 'researcher', 'document-maintainer']);
+  assert.deepEqual(role.tools, ['Read', 'Edit', 'Write', 'Bash', 'Task']);
+  assert.ok(coding.delegates.includes('bug-fixer'));
+  assert.ok(!role.delegates.includes('code-reviewer'));
+  assert.deepEqual(defaults.roles['bug-fixer'], {
+    codex: { model: 'gpt-5.6-luna', reasoning: 'max' },
+    claude: { model: 'sonnet', effort: 'high' },
+    opencode: { model: 'baibai/gpt-5.6-luna', variant: 'max', options: {} }
+  });
+  assert.match(body, /可复现 bug.*复现方式、预期行为和实际行为/s);
+  assert.match(body, /当前评审结果、`blocking` 分类和用户明确批准的具体 finding IDs/);
+  assert.match(body, /只修复获批 IDs/);
+  assert.match(body, /不得自行评审.*不得委派 \*\*Code Reviewer\*\*/s);
+  assert.match(body, /不得执行 Git mutation/);
+  assert.match(body, /必须委派 \*\*File Explorer\*\*/);
+  assert.match(body, /委派 \*\*Git Operator\*\*/);
+  assert.match(body, /新的完整 committed range/);
+  assert.match(body, /旧 finding 不得自动触发复审/);
+
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  const codex = parseToml(readFileSync(agentPath(paths, 'codex', 'bug-fixer', 'toml'), 'utf8'));
+  const claude = parseFrontmatter(readFileSync(agentPath(paths, 'claude', 'bug-fixer', 'md'), 'utf8'));
+  const openCode = parseFrontmatter(readFileSync(agentPath(paths, 'opencode', 'bug-fixer', 'md'), 'utf8'));
+  assert.equal(codex.model, 'gpt-5.6-luna');
+  assert.equal(codex.model_reasoning_effort, 'max');
+  assert.equal(claude.model, 'sonnet');
+  assert.equal(claude.effort, 'high');
+  assert.equal(openCode.model, 'baibai/gpt-5.6-luna');
+  assert.equal(openCode.variant, 'max');
+  assert.equal(openCode.permission.task, 'allow');
+  assert.equal(openCode.permission.glob, 'deny');
+  assert.equal(openCode.permission.grep, 'deny');
+
+  const readme = readFileSync(resolve(root, 'README.md'), 'utf8');
+  const navigation = readFileSync(resolve(root, '.ai-work-flow/index/feature-navigation.md'), 'utf8');
+  assert.match(readme, /Bug Fixer.*gpt-5\.6-luna.*max.*baibai\/gpt-5\.6-luna.*max.*sonnet.*high/);
+  assert.match(navigation, /13 个受管理角色.*Bug Fixer/);
+  assert.match(navigation, /agent-build\/templates\/bug-fixer\.md/);
+});
+
+test('coding routes only reproducible bugs or explicitly approved current blocking findings to bug fixer', () => {
+  const coding = loadAgentAssets().compiledBodies.get('coding');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
+  assert.match(coding, /可复现 bug.*复现方式、预期行为和实际行为/s);
+  assert.match(coding, /当前评审结果、blocking 分类和用户明确批准的具体 finding IDs/);
+  assert.match(coding, /任一 finding 条件缺失、授权含糊或 ID 不属于当前评审结果时保持等待/);
+  assert.match(coding, /只能修复获批 IDs，不得扩大到未授权 finding/);
+  assert.match(coding, /普通功能实现继续委派 Full Stack Coder/);
+  assert.match(coding, /仅按用户确认的 finding IDs 委派 Bug Fixer 修复/);
+  assert.match(routing, /Bug Fixer.*同一隔离 worktree.*结构化交接契约/s);
+  assert.match(routing, /不自行评审或执行 Git mutation/);
+  assert.match(routing, /Git Operator 创建后继提交并同步/);
+});
+
 test('review roles declare one non-recursive aggregation hop', () => {
   const byId = new Map(catalog.roles.map((role) => [role.id, role]));
   const reviewer = readFileSync(resolve(templatesDir, 'code-reviewer.md'), 'utf8');
@@ -1020,7 +1148,11 @@ test('planning is an opt-in primary that delegates discovery and plan writing', 
   });
 
   const defaults = JSON.parse(readFileSync(resolve(configDir, 'default-config.json'), 'utf8'));
-  assert.deepEqual(defaults.roles.planning, defaults.roles['planning-writer']);
+  assert.deepEqual(defaults.roles.planning, {
+    codex: { model: 'gpt-5.6-sol', reasoning: 'high' },
+    claude: { model: 'opus', effort: 'high' },
+    opencode: { model: 'baibai/gpt-5.6-sol', variant: 'high', options: {} }
+  });
 });
 
 test('researcher stores Markdown reports in a narrow project research directory', () => {
@@ -1061,7 +1193,7 @@ test('researcher stores Markdown reports in a narrow project research directory'
 
 test('install generates the task planner subagent on every platform', () => {
   const taskPlanner = catalog.roles.find((role) => role.id === 'task-planner');
-  assert.equal(catalog.roles.length, 12);
+  assert.equal(catalog.roles.length, 13);
   assert.equal(taskPlanner.kind, 'subagent');
   assert.deepEqual(taskPlanner.delegates, []);
   assert.equal(taskPlanner.policy, 'write-tasks');
@@ -1398,7 +1530,7 @@ test('structured dual-axis review controls the final integration gate', () => {
   assert.doesNotMatch(routing, /修复完成后必须再次同步并自动最终复审一次/);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generated = generatedBody(paths, platform, 'coding', extension);
-    assert.match(generated, /仅按用户确认的 finding IDs 委派修复/, platform);
+    assert.match(generated, /仅按用户确认的 finding IDs 委派 Bug Fixer 修复/, platform);
     assert.match(generated, /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/, platform);
     assert.match(generated, /只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer/, platform);
     assert.match(generated, /不得因第一次评审遗留的 blocking findings 自动再次评审/, platform);
@@ -1407,7 +1539,7 @@ test('structured dual-axis review controls the final integration gate', () => {
     assert.match(generated, /不得限制为只复核旧 finding IDs/, platform);
     assert.doesNotMatch(generated, /修复后重新同步并自动最终复审一次/, platform);
   }
-  assert.match(coding, /仅按用户确认的 finding IDs 委派修复/);
+  assert.match(coding, /仅按用户确认的 finding IDs 委派 Bug Fixer 修复/);
   assert.match(coding, /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/);
   assert.match(coding, /新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`/);
   assert.match(coding, /缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞/);
@@ -1641,7 +1773,7 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
 });
 
 test('only writer bodies require git diff reporting', () => {
-  const writers = new Set(['document-maintainer', 'planning-writer', 'task-planner', 'full-stack-coder']);
+  const writers = new Set(['document-maintainer', 'planning-writer', 'task-planner', 'full-stack-coder', 'bug-fixer']);
   for (const role of catalog.roles) {
     const body = readFileSync(resolve(templatesDir, `${role.id}.md`), 'utf8');
     assert.equal(body.includes('git diff --name-only'), writers.has(role.id), role.id);

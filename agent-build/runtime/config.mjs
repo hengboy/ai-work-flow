@@ -192,9 +192,23 @@ function readEnvironmentMarker(paths) {
   return name;
 }
 
-export function loadResolvedConfiguration({ paths, roles, platforms, environmentName = null, defaultConfiguration = null, environmentConfigurations = null }) {
+function applyMissingRoleDefaults(base, missingRoleDefaults) {
+  if (!isPlainObject(base?.roles) || !isPlainObject(missingRoleDefaults)) return base;
+  const missing = Object.entries(missingRoleDefaults).filter(([roleId]) => !Object.hasOwn(base.roles, roleId));
+  if (!missing.length) return base;
+  return {
+    ...base,
+    roles: {
+      ...base.roles,
+      ...Object.fromEntries(missing.map(([roleId, settings]) => [roleId, structuredClone(settings)]))
+    }
+  };
+}
+
+export function loadResolvedConfiguration({ paths, roles, platforms, environmentName = null, defaultConfiguration = null, environmentConfigurations = null, missingRoleDefaults = null }) {
   assertSafeEnvironmentPaths(paths);
-  const base = defaultConfiguration ?? readVerifiedEnvironment(paths.defaultEnvironment, paths);
+  const persistedBase = defaultConfiguration ?? readVerifiedEnvironment(paths.defaultEnvironment, paths);
+  const base = applyMissingRoleDefaults(persistedBase, missingRoleDefaults);
   const markerName = readEnvironmentMarker(paths);
   const name = environmentName ?? markerName;
   if (name !== 'default') assertEnvironmentName(name);
