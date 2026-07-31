@@ -233,7 +233,7 @@ test('managed prompt documents use the Markdown layout', () => {
 test('role bodies derive their common structure and reply sections from the catalog', () => {
   const replyLabels = {
     coding: ['协调状态', '已委派', '已收到', '结论', '阻塞'],
-    planning: ['状态', '计划文件', '计划内容', '阻塞'],
+    planning: ['状态', '方案目录', '计划文件', '阻塞'],
     'file-explorer': ['发现', '代码地图', '交接', '阻塞'],
     researcher: ['发现', '来源', '交接', '阻塞'],
     'document-maintainer': ['完成', '变更', '验证', '阻塞'],
@@ -1074,7 +1074,7 @@ test('task planning delegation and generated permissions stay narrowly scoped', 
   assert.equal(capabilityMatrix('opencode', taskPlanner, policies[taskPlanner.policy]).write_scope, 'instruction-only');
 });
 
-test('planning prompt converges one decision at a time and emits the complete fixed plan template', () => {
+test('planning prompt converges one decision at a time and writes the complete fixed plan template', () => {
   const body = readFileSync(resolve(templatesDir, 'planning.md'), 'utf8');
   const prompt = loadAgentAssets().compiledBodies.get('planning');
   const expectedSections = [
@@ -1117,8 +1117,10 @@ test('planning prompt converges one decision at a time and emits the complete fi
   assert.match(body, /所有方案创建、覆盖、更新和保存/);
   assert.match(body, /Planning Writer/);
   assert.match(body, /不得直接写入任何文件/);
-  assert.match(body, /先报告计划文件路径/);
-  assert.match(body, /输出完整计划/);
+  assert.match(body, /只报告方案目录和计划文件路径/);
+  assert.match(body, /提示用户打开文件查看/);
+  assert.match(body, /不得输出完整计划正文/);
+  assert.doesNotMatch(body, /\*\*计划内容：\*\*/);
   assert.match(prompt, /编码、修改源码或实施请求.*拒绝/);
   assert.match(prompt, /每个 Planning 会话从 `问题 1：` 开始/);
   assert.match(prompt, /同名方案冲突等后续问题也必须延续当前序号/);
@@ -1133,7 +1135,7 @@ test('planning confirms plan splitting and commits only final planning artifacts
   const taskPlanner = readFileSync(resolve(templatesDir, 'task-planner.md'), 'utf8');
 
   assert.match(planning, /\.ai-work-flow\/plans\/<plan-id>\/plan\.md/);
-  assert.match(planning, /先.*输出完整计划.*再询问.*拆分.*不拆分/s);
+  assert.match(planning, /只报告方案目录.*计划文件.*提示用户打开.*不得.*输出完整计划正文.*随后询问.*拆分.*不拆分/s);
   assert.match(planning, /不拆分.*不得创建 `tasks\/`.*一个 \*\*Full Stack Coder\*\*/s);
   assert.match(planning, /outcome.*blocked_by.*acceptance/s);
   assert.match(planning, /合并、拆细、调整依赖或验收/);
