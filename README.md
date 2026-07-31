@@ -78,6 +78,17 @@ Codex 的 `reasoning` 使用非空字符串；Claude Code 的 `effort` 只接受
 
 ## 工作流
 
+### 使用流程
+
+```text
+Planning 生成 plan.md -> 选择拆分或不拆分 -> 创建 planning commit -> 新会话由 Coding 实施 plan
+```
+
+1. 在 **Planning** 主代理中说明目标。Planning 逐项确认关键决策，并将完整计划写入 `.ai-work-flow/plans/<plan-id>/plan.md`。
+2. 选择是否拆分任务。不拆分时仅保留 `plan.md`，后续按单任务模式实施；拆分时生成同目录下的 `tasks/NN-short-name.md`，后续按依赖前沿实施。
+3. 确认计划和任务结构后，由 Planning 委派 Git Operator 创建只包含规划工件的本地 planning commit。Planning 到此结束，不实施代码。
+4. 打开新会话并使用默认的 **Coding** 主代理，明确要求实施计划，例如：`实施 .ai-work-flow/plans/<plan-id>/plan.md`。Coding 会验证 planning commit 和计划结构，再进入对应的单任务或拆分实施流程。
+
 ### 角色协作
 
 Coding 将任务路由给 File Explorer、Researcher、Document Maintainer、Planning Writer、Full Stack Coder、Git Operator 和 Code Reviewer；Planning 可调用 File Explorer、Planning Writer、Task Planner 和 Git Operator。Code Reviewer 再调用 Review Standards 与 Review Spec。Git 操作由 Git Operator 串行执行。
