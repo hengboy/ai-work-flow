@@ -19,7 +19,7 @@
     "planning": {
       "codex": {
         "model": "gpt-5.6-sol",
-        "reasoning": "xhigh"
+        "reasoning": "high"
       },
       "claude": {
         "model": "opus",
@@ -27,7 +27,7 @@
       },
       "opencode": {
         "model": "baibai/gpt-5.6-sol",
-        "variant": "xhigh",
+        "variant": "high",
         "options": {}
       }
     },
@@ -48,16 +48,16 @@
     },
     "git-operator": {
       "codex": {
-        "model": "gpt-5.6-luna",
-        "reasoning": "low"
+        "model": "gpt-5.6-terra",
+        "reasoning": "medium"
       },
       "claude": {
         "model": "haiku",
         "effort": "low"
       },
       "opencode": {
-        "model": "baibai/gpt-5.6-luna",
-        "variant": "low",
+        "model": "baibai/gpt-5.6-terra",
+        "variant": "medium",
         "options": {}
       }
     },
@@ -79,7 +79,7 @@
     "document-maintainer": {
       "codex": {
         "model": "gpt-5.6-luna",
-        "reasoning": "medium"
+        "reasoning": "low"
       },
       "claude": {
         "model": "haiku",
@@ -87,11 +87,26 @@
       },
       "opencode": {
         "model": "baibai/gpt-5.6-luna",
-        "variant": "medium",
+        "variant": "low",
         "options": {}
       }
     },
     "planning-writer": {
+      "codex": {
+        "model": "gpt-5.6-terra",
+        "reasoning": "medium"
+      },
+      "claude": {
+        "model": "opus",
+        "effort": "high"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-terra",
+        "variant": "medium",
+        "options": {}
+      }
+    },
+    "task-planner": {
       "codex": {
         "model": "gpt-5.6-sol",
         "reasoning": "medium"
@@ -103,21 +118,6 @@
       "opencode": {
         "model": "baibai/gpt-5.6-sol",
         "variant": "medium",
-        "options": {}
-      }
-    },
-    "task-planner": {
-      "codex": {
-        "model": "gpt-5.6-sol",
-        "reasoning": "xhigh"
-      },
-      "claude": {
-        "model": "opus",
-        "effort": "high"
-      },
-      "opencode": {
-        "model": "baibai/gpt-5.6-sol",
-        "variant": "xhigh",
         "options": {}
       }
     },
@@ -138,7 +138,7 @@
     },
     "code-reviewer": {
       "codex": {
-        "model": "gpt-5.6-sol",
+        "model": "gpt-5.6-terra",
         "reasoning": "medium"
       },
       "claude": {
@@ -146,7 +146,7 @@
         "effort": "high"
       },
       "opencode": {
-        "model": "baibai/gpt-5.6-sol",
+        "model": "baibai/gpt-5.6-terra",
         "variant": "medium",
         "options": {}
       }
