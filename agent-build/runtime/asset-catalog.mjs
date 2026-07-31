@@ -25,7 +25,8 @@ const TOOL_REQUIREMENTS = {
   Bash: ['shell', new Set(['read', 'write', 'git'])],
   WebSearch: ['network', new Set(['official'])],
   WebFetch: ['network', new Set(['official'])],
-  Task: ['delegation', new Set(['allowed', 'review-only'])]
+  Task: ['delegation', new Set(['allowed', 'review-only'])],
+  Skill: null
 };
 
 function unique(values) {
@@ -148,8 +149,8 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
       if (policy.delegation === 'review-only' && (role.delegates ?? []).some((id) => roles.find((candidate) => candidate.id === id)?.kind !== 'reviewer')) errors.push(`Role ${role.id} review-only delegation must target reviewers.`);
       for (const tool of role.tools ?? []) {
         const requirement = TOOL_REQUIREMENTS[tool];
-        if (!requirement) errors.push(`Role ${role.id} declares unknown tool: ${tool}.`);
-        else if (!requirement[1].has(policy[requirement[0]])) errors.push(`Role ${role.id} tool ${tool} conflicts with policy ${requirement[0]}=${policy[requirement[0]]}.`);
+        if (requirement === undefined) errors.push(`Role ${role.id} declares unknown tool: ${tool}.`);
+        else if (requirement && !requirement[1].has(policy[requirement[0]])) errors.push(`Role ${role.id} tool ${tool} conflicts with policy ${requirement[0]}=${policy[requirement[0]]}.`);
       }
     }
   }

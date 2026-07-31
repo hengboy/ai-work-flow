@@ -97,7 +97,7 @@
       "kind": "subagent",
       "policy": "commit",
       "delegates": [],
-      "tools": ["Read", "Bash"],
+      "tools": ["Read", "Bash", "Skill"],
       "routing_sections": ["browser-governance", "implementation-governance"]
     },
     {

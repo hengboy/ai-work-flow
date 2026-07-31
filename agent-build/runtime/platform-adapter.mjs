@@ -148,6 +148,9 @@ export function opencodePermission(role, policy) {
     const key = OPENCODE_TOOL_KEYS[tool];
     if (key) permission[key] = 'allow';
   }
+  if (role.id === 'git-operator' && role.tools.includes('Skill')) {
+    permission.skill = { '*': 'deny', 'git-commit': 'allow' };
+  }
   if (policy.filesystem === 'none') {
     permission.read = 'deny';
     permission.edit = 'deny';
