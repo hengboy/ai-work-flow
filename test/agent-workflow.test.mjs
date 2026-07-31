@@ -1217,9 +1217,11 @@ test('coding executes single or split plans through validated task frontiers', (
     /勾选.*没有证据.*阻塞/s,
     /通过审查.*按编号.*汇入 feature/s,
     /用户确认的 finding IDs/,
+    /阻塞修复后用户按统一门禁明确选择继续后续流程.*汇入 feature/s,
     /同一批.*结束.*不得启动新的依赖 task/s,
     /冲突.*一个 \*\*Full Stack Coder\*\*.*feature worktree.*验证.*评审/s,
     /最终.*同步.*main.*聚合.*双轴审查/s,
+    /main.*未前进.*任一评审条件.*阻塞修复后用户按统一门禁明确选择继续后续流程/s,
     /main.*未前进.*--ff-only/s
   ];
   for (const assertion of assertions) assert.match(coding, assertion);
@@ -1345,18 +1347,28 @@ test('structured dual-axis review controls the final integration gate', () => {
     /绝不审查未提交内容/,
     /blocking_findings/,
     /用户只能用确认的 finding IDs 选择修复/,
-    /修复完成后必须再次同步并自动最终复审一次/,
+    /修复完成后必须再次同步并进入新的 `awaiting_user` 决策点/,
+    /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/,
+    /只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer/,
+    /选择继续后续流程时直接进入后续阶段，不得因第一次评审遗留的 blocking findings 自动再次评审/,
     /`git merge --ff-only <review_commit>`/,
   ];
 
   for (const content of [routing]) {
     for (const assertion of assertions) assert.match(content, assertion);
   }
+  assert.doesNotMatch(routing, /修复完成后必须再次同步并自动最终复审一次/);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generated = generatedBody(paths, platform, 'coding', extension);
     assert.match(generated, /仅按用户确认的 finding IDs 委派修复/, platform);
+    assert.match(generated, /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/, platform);
+    assert.match(generated, /只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer/, platform);
+    assert.match(generated, /不得因第一次评审遗留的 blocking findings 自动再次评审/, platform);
+    assert.doesNotMatch(generated, /修复后重新同步并自动最终复审一次/, platform);
   }
   assert.match(coding, /仅按用户确认的 finding IDs 委派修复/);
+  assert.match(coding, /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/);
+  assert.doesNotMatch(coding, /修复后重新同步并自动最终复审一次/);
   assert.doesNotMatch(coding, /ReviewManifest|git diff --no-ext-diff/);
 });
 

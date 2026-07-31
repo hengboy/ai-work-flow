@@ -24,11 +24,11 @@
 
 拆分模式先验证连续编号、唯一 `task_id`、只向前的 `blocked_by`、无环、frontier 内互斥 `write_scope` 和完整 checklist/Verification。每个 task 的 `Acceptance Criteria` 必须非空，且至少一个复选框，条目只能是 `- [ ]` 或 `- [x]`/`- [X]`。按 `blocked_by` 计算 frontier，再按 task 编号和平台并发容量并发实施；所有 Git 操作始终串行。**Git Committer** 从同一 frontier 开始时相同的 feature HEAD 创建每个 task worktree/branch。每个 **Full Stack Coder** 只能修改其 `write_scope`、必须随功能更新的导航索引及自己的 task checkbox，不得触碰其他 task。
 
-Full Stack Coder 必须交接逐项证据并对应 acceptance；只有验收通过，Coding 才允许勾选对应 checklist。**Git Committer** 将代码、测试、必要配置和 task checkbox 放入同一 review commit。随后 **Code Reviewer** 使用固定 task base 与 task review 范围，父 `plan.md` 和当前 task 共同作为 spec；勾选项没有证据是 blocking finding。task 通过审查且两轴均合格后，由 Git Committer 按编号汇入 feature 并清理 task worktree/branch，再开放下一 frontier。
+Full Stack Coder 必须交接逐项证据并对应 acceptance；只有验收通过，Coding 才允许勾选对应 checklist。**Git Committer** 将代码、测试、必要配置和 task checkbox 放入同一 review commit。随后 **Code Reviewer** 使用固定 task base 与 task review 范围，父 `plan.md` 和当前 task 共同作为 spec；勾选项没有证据是 blocking finding。task 通过审查且两轴均合格，或阻塞修复后用户按统一门禁明确选择继续后续流程，才由 Git Committer 按编号汇入 feature 并清理 task worktree/branch，再开放下一 frontier。
 
-task 审查出现阻塞 finding 时，只修用户确认的 finding IDs；同一批已启动 task 可以结束，但不得启动新的依赖 task。汇入发生冲突时停止其他写入，只委派一个 **Full Stack Coder** 在 feature worktree 解决冲突，完整验证并对冲突结果重新评审，禁止整体 ours/theirs 或丢弃任一侧有效行为。
+task 审查出现阻塞 finding 时，只修用户确认的 finding IDs；同一批已启动 task 可以结束，但不得启动新的依赖 task。修复完成后的复审选择遵循下述统一门禁。汇入发生冲突时停止其他写入，只委派一个 **Full Stack Coder** 在 feature worktree 解决冲突，完整验证并对冲突结果重新评审，禁止整体 ours/theirs 或丢弃任一侧有效行为。
 
-全部 task 汇入后，Git Committer 最终同步 `main`，对 feature 完整 committed range 执行聚合的完整双轴审查。只有 coverage 完整、无阻塞 finding 且 `main` 自 fixed point 未前进，才可在主工作树 `--ff-only` 整合并清理；否则重新同步并评审最终提交。
+全部 task 汇入后，Git Committer 最终同步 `main`，对 feature 完整 committed range 执行聚合的完整双轴审查。只有 `main` 自 fixed point 未前进且满足以下任一评审条件，才可在主工作树 `--ff-only` 整合并清理：coverage 完整且无阻塞 finding；或阻塞修复后用户按统一门禁明确选择继续后续流程。否则重新同步并按统一门禁处理评审选择。
 
 ## 方案与审查门禁
 
@@ -38,7 +38,7 @@ task 审查出现阻塞 finding 时，只修用户确认的 finding IDs；同一
 
 实施开始后不得直接修改已批准的 plan，也不得委派 **Planning Writer**。需求变化时必须停止当前实施并将用户返回 Planning；Planning 重新生成并由用户确认 plan/tasks 后，创建新的 planning commit，才能重新开始实施。
 
-审查委派拓扑固定为 **Coding -> Code Reviewer -> Review Standards / Review Spec**。仅在 Git Committer 报告完整 `review_commit`、最近同步的 `main_commit` fixed point 和干净工作树后委派 Code Reviewer。两轴 coverage 完整且没有 blocking finding 时才能进入整合；否则进入 `awaiting_user`，仅按用户确认的 finding IDs 委派修复，不得以 approve 绕过。修复后重新同步并自动最终复审一次；仍有阻塞项时再次等待用户。
+审查委派拓扑固定为 **Coding -> Code Reviewer -> Review Standards / Review Spec**。仅在 Git Committer 报告完整 `review_commit`、最近同步的 `main_commit` fixed point 和干净工作树后委派 Code Reviewer。两轴 coverage 完整且没有 blocking finding 时才能自动进入整合；否则进入 `awaiting_user`，仅按用户确认的 finding IDs 委派修复，不得以 approve 绕过。用户确认 finding IDs 且修复完成后重新同步，并进入新的 `awaiting_user` 决策点，明确提示用户选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”。只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer；用户选择继续后续流程时直接进入后续阶段，不得因第一次评审遗留的 blocking findings 自动再次评审。第二次评审仍有阻塞项时再次等待用户，不自动循环。
 
 ## 回复格式
 
