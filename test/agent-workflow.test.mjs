@@ -1153,6 +1153,11 @@ test('planning is an opt-in primary that delegates discovery and plan writing', 
     claude: { model: 'opus', effort: 'high' },
     opencode: { model: 'baibai/gpt-5.6-sol', variant: 'high', options: {} }
   });
+  assert.deepEqual(defaults.roles['planning-writer'], {
+    codex: { model: 'gpt-5.6-terra', reasoning: 'medium' },
+    claude: { model: 'opus', effort: 'high' },
+    opencode: { model: 'baibai/gpt-5.6-terra', variant: 'medium', options: {} }
+  });
 });
 
 test('researcher stores Markdown reports in a narrow project research directory', () => {
