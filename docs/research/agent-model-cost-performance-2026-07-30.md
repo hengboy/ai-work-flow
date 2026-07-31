@@ -89,7 +89,7 @@ DeepSWE 的“探索代码库、实现多文件修改、运行测试、提交 pa
 | coding | gpt-5.6-terra/medium [C] | sonnet/medium [C] | baibai/gpt-5.6-terra medium [C] |
 | planning | gpt-5.6-sol/high [C] | opus/high [C] | baibai/gpt-5.6-sol high [C] |
 | file-explorer | gpt-5.6-luna/low [C] | haiku/low* [C] | baibai/gpt-5.6-luna low [C] |
-| git-committer | gpt-5.6-luna/medium [C] | haiku/low* [C] | baibai/gpt-5.6-luna medium [C] |
+| git-operator | gpt-5.6-luna/medium [C] | haiku/low* [C] | baibai/gpt-5.6-luna medium [C] |
 | researcher | gpt-5.6-terra/medium [C] | sonnet/medium [C] | baibai/gpt-5.6-terra medium [C] |
 | document-maintainer | gpt-5.6-luna/low [C] | haiku/low* [C] | baibai/gpt-5.6-luna low [C] |
 | planning-writer | gpt-5.6-sol/medium [C] | opus/high [C] | baibai/gpt-5.6-sol medium [C] |
@@ -106,7 +106,7 @@ DeepSWE 的“探索代码库、实现多文件修改、运行测试、提交 pa
 - `coding`：Sol/high → Terra/medium；日常路由先用平衡档，复杂任务按动态规则升级。
 - `planning`：Sol/xhigh → Sol/high；保留旗舰模型，去掉默认过高 reasoning。
 - `file-explorer`：Codex Luna/low 保持；Claude Haiku/low 保持但需验证 provider；OpenCode Luna/low 保持。
-- `git-committer`：Codex/OpenCode Luna low → medium；Claude Haiku/low 保持并需验证。提交虽清晰重复，但 Git 状态和 hook 失败处理值得保留基本推理预算。
+- `git-operator`：Codex/OpenCode Luna low → medium；Claude Haiku/low 保持并需验证。Git 操作虽清晰重复，但状态和 hook 失败处理值得保留基本推理预算。
 - `researcher`：Codex/OpenCode Luna/medium → Terra/medium；Claude Sonnet/medium 保持。研究任务需要长文档筛选、交叉核对和可靠引用，Terra/medium 是成本与稳定性之间更稳妥的折中；DeepSWE 不直接评测研究任务，因此标为 C 级职责判断。
 - `document-maintainer`：Codex Luna/medium → Luna/low；OpenCode Luna/medium → Luna/low；Claude Haiku/low 保持。
 - `planning-writer`：Codex/OpenCode Sol/xhigh → Sol/medium；Claude Opus/high 保持。保留旗舰模型处理跨模块计划和约束整合，同时将默认 reasoning 降到 medium 控制成本。

@@ -46,7 +46,7 @@
         "options": {}
       }
     },
-    "git-committer": {
+    "git-operator": {
       "codex": {
         "model": "gpt-5.6-luna",
         "reasoning": "low"

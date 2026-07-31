@@ -14,7 +14,7 @@
 ### 与既有计划的关系
 
 - `.ai-work-flow/plans/ai-work-flow-hardening-remediation-plan.md` 是更宽范围的历史整改计划；本计划只承接其中尚未实现或当前代码仍漂移的提示词/子代理契约，不重做已通过现有行为测试的路径、事务和 Checkpoint 完整性工作。
-- `.ai-work-flow/plans/git-committer-authorized-scope.md` 是历史提交授权方案；本计划保留其“结构化路径、特殊路径无歧义、不得按相关性扩权”的原则，但冻结更严格的计划提交门禁、实现干净基线和 stash 单独授权规则。
+- `.ai-work-flow/plans/git-operator-authorized-scope.md` 是历史提交授权方案；本计划保留其“结构化路径、特殊路径无歧义、不得按相关性扩权”的原则，但冻结更严格的计划提交门禁、实现干净基线和 stash 单独授权规则。
 - 两份旧计划不得作为第二事实来源，也不得在实施中被修改。若它们与当前代码事实、`CONTEXT.md` 的领域约束或本计划冻结决策冲突，以当前代码事实、`CONTEXT.md` 和本计划为准；若三者仍无法得出唯一行为，按停止条件重新规划。
 
 ## 需求
@@ -28,17 +28,17 @@
 7. **Primary 能力：** 区分“角色 kind 为唯一 primary”“平台配置支持默认 primary”“平台强制所有用户入口只能经 Orchestrator”三个事实。OpenCode 可报告其 `default_agent` 的实际配置级别；Codex/Claude 不得声称平台强制 Orchestrator 为唯一入口。项目级 shadow 存在时，不得继续报告有效默认入口。
 8. **环境配置与状态：** 配置按 `role -> platform -> field` 合并，OpenCode `options` 整体替换。`generate --platform` 只验证所选平台的最终字段，但仍验证全局 catalog、角色和未知字段。`env status` 以 `planGeneration` 生成的期望 bytes 为基准逐个对比磁盘，检查受管 marker/manifest 和有效平台配置，并检测项目级同名 agent、内联同名 agent 配置及旧/残留同名用户配置。
 9. **状态分类：** `in-sync` 表示期望文件 bytes、受管配置和有效角色解析均一致且无覆盖；`drifted` 表示受管目标缺失、被篡改、解析失败或 manifest 不一致；`shadowed` 表示项目级或更高优先级同名定义会覆盖受管角色。一个角色可附带多个原因，但 overall 按 `shadowed > drifted > in-sync` 汇总。输出只包含角色 ID、状态、受信路径类别、差异类型和非敏感 digest，不输出配置值或文件正文。
-10. **run-spec 状态机：** `skills/run-matt-spec-to-completion/SKILL.md` 必须给出每条命令的完整 `--repository`、`--feature`、按需 `--worktree` 参数，以及固定顺序 `begin-review -> record-review -> review-decision approve|fix -> Full Stack Coder 修复 -> Git Committer 追加提交 -> complete-review-fix -> integrate -> cleanup`。修复提交不可省略，`complete-review-fix` 只能记录已存在且晚于 `review_commit` 的干净追加提交。
+10. **run-spec 状态机：** `skills/run-matt-spec-to-completion/SKILL.md` 必须给出每条命令的完整 `--repository`、`--feature`、按需 `--worktree` 参数，以及固定顺序 `begin-review -> record-review -> review-decision approve|fix -> Full Stack Coder 修复 -> Git Operator 追加提交 -> complete-review-fix -> integrate -> cleanup`。修复提交不可省略，`complete-review-fix` 只能记录已存在且晚于 `review_commit` 的干净追加提交。
 11. **协议清理：** 清理 references、schemas 和 lib 中已经沉积的 `execution-plan.mjs`、`planId`、每阶段重复评审、旧文本 Completion 主协议等描述。JSON Handoff 是 canonical；旧文本 Completion 不再是正常路径，不得作为第二入口。旧 Checkpoint/协议不迁移、不兼容、不降级。
-12. **计划提交门禁：** 用户明确确认实施后，先由 Git Committer 接收独立 `plan_artifact_handoff`，只提交已批准的本计划文件。该提交成功且工作树恢复干净后，才记录新的 implementation `base_commit` 并启动 Full Stack Coder；plan artifact commit 不得混入 implementation review commit，也不得被审查成实现差异的一部分。
-13. **runtime-owned Git mutation：** merge、受限 worktree 生命周期、Checkpoint/execution record commit 是 canonical runtime 特例，必须明确标记，不伪装成 Git Committer。Ticket 实现、普通实现、计划工件和 review fix 提交仍由 Git Committer 协议负责。runtime 特例只能操作声明的路径、引用和固定提交消息格式。
+12. **计划提交门禁：** 用户明确确认实施后，先由 Git Operator 接收独立 `plan_artifact_handoff`，只提交已批准的本计划文件。该提交成功且工作树恢复干净后，才记录新的 implementation `base_commit` 并启动 Full Stack Coder；plan artifact commit 不得混入 implementation review commit，也不得被审查成实现差异的一部分。
+13. **runtime-owned Git mutation：** merge、受限 worktree 生命周期、Checkpoint/execution record commit 是 canonical runtime 特例，必须明确标记，不伪装成 Git Operator。Ticket 实现、普通实现、计划工件和 review fix 提交仍由 Git Operator 协议负责。runtime 特例只能操作声明的路径、引用和固定提交消息格式。
 14. **stash 授权：** 自动 stash 不属于一般实施确认。integration 发现 main 存在 execution record 之外的改动时默认阻塞；只有当前 execution 请求提供独立、明确的 stash 授权参数，runtime 在 mutation 前持久化该授权事实后，才可进入现有事务化 stash 状态机。不得从“确认实施”“同意整合”或旧计划推断授权。
 15. **审查分支：** review manifest 的 `spec_status=absent` 时只运行 Standards；`spec_status=present` 时运行 Standards + Spec。不得通过“未找到”静默推断 absent；调用者必须显式提供状态和来源检查结果。
 16. **统一 review manifest：** manifest 至少包含 `fixed_point`、`review_commit`、结构化 `commit_list`、`diff_command`、`spec_status`、`spec_source`、`standards_source`、稳定排序的 `shards`/shard IDs 和 manifest digest。所有叶子任务接收同一不可变 manifest；不得分别重算 `HEAD`、文件列表、命令或规格状态。
 17. **审查输出：** 移除不可验证的“400 字”硬限制。发现摘要与覆盖清单分字段记录；任何摘要预算都不得包含 manifest、shard IDs、已覆盖/未完成清单和必要文件行引用。未覆盖 shard 时审查不得完成。
 18. **Handoff 身份与一致性：** claim 持久化并返回 `claim_id`、`expected_role_id` 和 workflow `session_id`。JSON Handoff envelope 必须携带相同身份；runtime 同时校验 Ticket ID、claim 当前状态、role/session/claim identity，以及 envelope 与 payload 的 `status`、`summary`、`checks`、`error` 逐值一致。矛盾、重放或身份错误必须零状态推进失败。
-19. **结构化路径集合：** Full Stack Coder、Git Committer、Ticket completion、plan artifact handoff 和 runtime execution record commit 都使用由 `git status --porcelain=v2 -z --untracked-files=all` 派生的结构化数组，不再以换行分隔字符串集合表示路径。结构必须保留 index/worktree 状态、目标路径及 rename/copy 的源路径，支持空格、换行、引号、反斜杠、前导连字符和其他 Git 合法特殊字符。
-20. **hook 失败：** Git Committer 在 hook/commit 失败后重新读取 porcelain `-z`，分别报告 index 与 worktree 的真实结构化状态；不得笼统声称“未暂存”“工作树未变化”或自行 reset。失败后授权/交接按契约消费，后续动作必须重新建立状态证据。
+19. **结构化路径集合：** Full Stack Coder、Git Operator、Ticket completion、plan artifact handoff 和 runtime execution record commit 都使用由 `git status --porcelain=v2 -z --untracked-files=all` 派生的结构化数组，不再以换行分隔字符串集合表示路径。结构必须保留 index/worktree 状态、目标路径及 rename/copy 的源路径，支持空格、换行、引号、反斜杠、前导连字符和其他 Git 合法特殊字符。
+20. **hook 失败：** Git Operator 在 hook/commit 失败后重新读取 porcelain `-z`，分别报告 index 与 worktree 的真实结构化状态；不得笼统声称“未暂存”“工作树未变化”或自行 reset。失败后授权/交接按契约消费，后续动作必须重新建立状态证据。
 21. **代码导航职责：** `project-code-navigation` Skill 只负责使用索引或维护 `.ai-work-flow/index/`，不直接修改源码；源码实现始终归 Full Stack Coder。索引命中后必须聚焦验证入口职责及请求所需直接依赖，不能只因路径存在就认定有效，也不能无理由扩大全仓搜索。
 22. **Environment Skills：** `generate-ai-work-flow-agents` 描述字段级合并和 OpenCode options 整体替换；单平台生成遵循 CLI 单平台验证语义。`switch-ai-work-flow-env` 只执行 `env`/`env list` 和一次事务化 `env use <name>`，不再事后重复 `validate`/`generate`。
 23. **角色与 catalog：** `roles.json` 的 description 改为“触发条件 + 必需输入 + 排除条件”。catalog 验证 role kind 枚举、恰好一个 primary、role/tool/delegate 唯一性、policy 完整性、delegate-policy 一致性、委派环、工具与权限关系、routing section 引用以及 body 一一对应；任一错误在 planned write 前停止。
@@ -53,9 +53,9 @@
 
 **步骤：**
 
-1. Git Committer 记录 `plan_base_commit=$(git rev-parse HEAD)`，用 porcelain v2 `-z` 读取完整状态；状态必须只包含 `.ai-work-flow/plans/prompt-agent-constraint-hardening/prompt-agent-constraint-hardening-plan.md`。
+1. Git Operator 记录 `plan_base_commit=$(git rev-parse HEAD)`，用 porcelain v2 `-z` 读取完整状态；状态必须只包含 `.ai-work-flow/plans/prompt-agent-constraint-hardening/prompt-agent-constraint-hardening-plan.md`。
 2. Orchestrator 传递独立 `plan_artifact_handoff`：`plan_id`、计划路径、`plan_base_commit`、结构化 `changed_paths`、用户确认事实和计划校验结果。它不能复用 Full Stack Coder handoff，也不能夹带任何实现文件。
-3. Git Committer 只暂存该精确路径，提交信息固定遵循 `$git-commit`，意图为 `docs(plan): 批准 prompt agent 约束加固计划`；提交成功后记录完整 `plan_commit` 和空 porcelain 状态。
+3. Git Operator 只暂存该精确路径，提交信息固定遵循 `$git-commit`，意图为 `docs(plan): 批准 prompt agent 约束加固计划`；提交成功后记录完整 `plan_commit` 和空 porcelain 状态。
 4. 以 `plan_commit` 作为 implementation `base_commit`。Full Stack Coder 开始前再次确认工作树为空；后续 implementation review manifest 的 `fixed_point` 必须是 `plan_commit` 或基于它冻结的后续阶段基线，不能把 plan commit 纳入 implementation diff。
 
 **完成条件：** 计划是独立提交、当前工作树干净、implementation baseline 已冻结。
@@ -129,7 +129,7 @@
 **文件：**
 
 - `agent-build/config/routing.md`
-- `agent-build/templates/{orchestrator,full-stack-coder,git-committer,code-reviewer,review-standards,review-spec}.md`
+- `agent-build/templates/{orchestrator,full-stack-coder,git-operator,code-reviewer,review-standards,review-spec}.md`
 - `skills/git-commit/SKILL.md`
 - `execution-runtime/handoff-result-schema.json`
 - `skills/run-matt-spec-to-completion/completion-result-schema.json`
@@ -141,7 +141,7 @@
 **步骤：**
 
 1. 定义共享 `PathChange` 数据：`record_type`、`index_status`、`worktree_status`、`path`，rename/copy 时必需 `source_path`。所有字段保存 Git 原始路径字符串；比较按结构字段逐值进行，不按展示文本、排序副作用或换行拆分。
-2. 在 Git helper 中集中解析 `git status --porcelain=v2 -z --untracked-files=all`；Full Stack Coder handoff、plan artifact handoff、Git Committer 复核、Ticket completion 和 execution record commit 共用该 parser。暂存仍使用参数数组和 `--`，rename/copy 同时覆盖源/目标 pathspec。
+2. 在 Git helper 中集中解析 `git status --porcelain=v2 -z --untracked-files=all`；Full Stack Coder handoff、plan artifact handoff、Git Operator 复核、Ticket completion 和 execution record commit 共用该 parser。暂存仍使用参数数组和 `--`，rename/copy 同时覆盖源/目标 pathspec。
 3. 将 canonical completion payload 的 `tests` 收敛为 `checks`；envelope 与 payload 的 `status`、`summary`、`checks`、可选 `error` 必须完全相同。旧文本 `RESULT/COMMITS/TESTS` adapter 从正常执行路径和 canonical 文档中移除，不提供降级。
 4. `claim` 接受调用者在委派前生成的 workflow `session_id` 和 `expected_role_id`，在 feature lock 内生成不可猜测 `claim_id` 并持久化到 in-progress Ticket。worker 收到三项身份并原样返回；`record-ticket` 对 claim、role、session、ticket、状态和 payload 一致性做一次性校验，成功或 blocked 后 claim 不可重放。
 5. 定义不可变 `ReviewManifest`：完整 SHA、结构化 commit list、固定 diff command、显式 spec 状态/来源、标准来源、稳定 shard 清单和 digest。Code Reviewer 只根据 manifest 调度；Standards/Spec 输入持有相同 digest 和完整 manifest。`spec_status=absent` 仅 Standards，`present` 才双轴。
@@ -172,15 +172,15 @@
 **步骤：**
 
 1. 以 `execution-cli.mjs` 为唯一状态转换入口核对每条命令。Skill 示例统一使用绝对/规范化 `<repository>`、`<feature>`、`<worktree>` 参数，不再省略依赖上下文；stdout 保持单 JSON，stderr 只诊断。
-2. `begin-review` 生成并返回统一 manifest；`record-review` 校验 manifest digest、coverage 和 findings；`review-decision` 只接受 `approve|fix`。fix 路径强制 Full Stack Coder 修改/验证后，由 Git Committer按阶段 3 路径协议创建晚于 `review_commit` 的追加提交，再调用 `complete-review-fix`。
-3. Skill 固定命令顺序：全部 Ticket done -> `begin-review` -> Code Reviewer -> `record-review` -> `review-decision approve|fix`；approve 后 `integrate`，fix 后 Full Stack Coder -> Git Committer -> `complete-review-fix` -> `integrate`；若结果为 merged/cleanup 未完成，再 `cleanup`。每一步写明进入和完成状态。
+2. `begin-review` 生成并返回统一 manifest；`record-review` 校验 manifest digest、coverage 和 findings；`review-decision` 只接受 `approve|fix`。fix 路径强制 Full Stack Coder 修改/验证后，由 Git Operator 按阶段 3 路径协议创建晚于 `review_commit` 的追加提交，再调用 `complete-review-fix`。
+3. Skill 固定命令顺序：全部 Ticket done -> `begin-review` -> Code Reviewer -> `record-review` -> `review-decision approve|fix`；approve 后 `integrate`，fix 后 Full Stack Coder -> Git Operator -> `complete-review-fix` -> `integrate`；若结果为 merged/cleanup 未完成，再 `cleanup`。每一步写明进入和完成状态。
 4. 删除/更正 references 中不存在的 `execution-plan.mjs` module、`planId` 术语、每阶段重复 review 和文本 Completion canonical 描述。只保留当前 `execution-plan.json`、Checkpoint、JSON Handoff 和单次固定 manifest 审查。
 5. 定义 runtime-owned Git allowlist：仅可创建/核验 `feat/<feature>` 与该 feature worktree、合并 checkpoint 固定的 `review_commit|fix_commit`、删除已验证的该 worktree，以及提交 `.scratch/<feature>/execution-plan.json`、`checkpoint.json` 和同目录 `issues/*.md` 的 execution records。禁止通配扩大到其他 `.scratch` feature 或用户文件。
-6. execution record commit 消息由 runtime 固定为 `chore(ai-work-flow): record <feature> execution`（`<feature>` 已通过 slug 校验）；这是 canonical runtime 特例，不调用或冒充 Git Committer。普通实现、Ticket、plan 和 fix commit 仍必须经过 Git Committer 契约。
+6. execution record commit 消息由 runtime 固定为 `chore(ai-work-flow): record <feature> execution`（`<feature>` 已通过 slug 校验）；这是 canonical runtime 特例，不调用或冒充 Git Operator。普通实现、Ticket、plan 和 fix commit 仍必须经过 Git Operator 契约。
 7. integration 检测无关 main 改动时，若本次 `integrate` 没有独立显式 `--allow-stash true`，在任何 stash/merge/checkpoint mutation 前阻塞。参数存在时先在 feature lock 内持久化 authorization，再执行现有 stash operation/reference/restore/drop 状态；恢复只消费已持久化授权，不能补推断。
 8. 保持现有 feature lock、Checkpoint integrity、Git ancestry、worktree identity 与崩溃恢复约束；新命令或字段不能绕过 state store。旧 schema 数据明确拒绝，不迁移。
 
-**完成条件：** 临时仓库完整走通 approve 和 fix 两条路径；fix 分支确有追加 Git Committer commit；integrate/cleanup 可恢复；无 stash flag 时 main 无关改动零 mutation 阻塞，有 flag 时按持久状态恢复；runtime commit 只含 allowlist 路径并使用固定消息。
+**完成条件：** 临时仓库完整走通 approve 和 fix 两条路径；fix 分支确有追加 Git Operator commit；integrate/cleanup 可恢复；无 stash flag 时 main 无关改动零 mutation 阻塞，有 flag 时按持久状态恢复；runtime commit 只含 allowlist 路径并使用固定消息。
 
 **停止条件：** 任一 Checkpoint mutation 绕过 execution CLI/state store；runtime 需要提交实现代码或计划；stash 授权只能从自然语言/实施确认推断；merge 端点不等于 manifest 批准端点；execution record path 集合包含另一个 feature 或用户文件。
 
@@ -329,7 +329,7 @@
 | 路径 | rename/copy/空格/换行/引号/前导连字符精确提交 | 换行 split、pathspec 注入、授权后路径集合变化、遗漏源路径 |
 | Hook | 成功 hook 后 clean commit | hook 失败、hook 新增 staged/unstaged 内容时准确区分 index/worktree 且不 reset |
 | run-spec approve | begin/record/approve/integrate/cleanup 完成 | 缺 repository/feature/worktree、空 diff、非法 ancestry、未记录 review |
-| run-spec fix | coder 修复、Git Committer 追加提交、complete fix 后 integrate | 无 fix commit、fix commit 不晚于 review、工作树脏、checks 空、自动复审 |
+| run-spec fix | coder 修复、Git Operator 追加提交、complete fix 后 integrate | 无 fix commit、fix commit 不晚于 review、工作树脏、checks 空、自动复审 |
 | Runtime Git | allowlist worktree/merge/record commit | runtime 提交实现/plan、merge 非批准 SHA、execution record 越 feature 路径 |
 | Stash | 显式 flag 后可崩溃恢复 | 无独立授权遇 main 改动零 mutation 阻塞；从实施确认推断授权 |
 | 安装隔离 | 临时 HOME/XDG 三平台安装和生成 | 真实 HOME/XDG 任一目标 mtime/content 变化 |
@@ -357,7 +357,7 @@
 
 ## 范围外
 
-- 不修改 `.ai-work-flow/plans/ai-work-flow-hardening-remediation-plan.md`、`.ai-work-flow/plans/git-committer-authorized-scope.md` 或其他历史计划以消除文字冲突。
+- 不修改 `.ai-work-flow/plans/ai-work-flow-hardening-remediation-plan.md`、`.ai-work-flow/plans/git-operator-authorized-scope.md` 或其他历史计划以消除文字冲突。
 - 不直接修改、生成或清理 `~/.codex`、`~/.claude`、`~/.config/opencode`、真实 `~/.config/ai-work-flow` 及其用户配置；不读取凭据、token、环境变量值或用户 options 内容用于报告。
 - 不新增平台、角色、review 轴、tracker、UI、浏览器自动化或网络功能。
 - 不把 instruction-only 约束模拟成 sandbox，不承诺平台无法表达的唯一入口、只读 shell、网络或委派强制力。
@@ -377,5 +377,5 @@
 - `spec_status=absent` 由调用者在固定 review 端点后显式声明并记录检查依据；没有规格时跳过 Review Spec 是冻结行为，不视为审查不完整。
 - 临时 Git 仓库可以配置受控 hook、包含特殊路径并创建 project-level agent fixture；测试不会调用可见浏览器或真实网络。
 - 用户确认实施意味着允许阶段 0 的单独 plan artifact 本地提交，以及计划提交完成后按正常流水线创建实现/review fix 本地提交；该确认不包含 stash，stash 必须由 `integrate --allow-stash true` 单独表达。
-- runtime-owned execution record commit 是 canonical runtime 的窄特例，固定路径和消息足以审计；它不需要伪装调用 Git Committer，也不削弱其他提交必须走 Git Committer 的规则。
+- runtime-owned execution record commit 是 canonical runtime 的窄特例，固定路径和消息足以审计；它不需要伪装调用 Git Operator，也不削弱其他提交必须走 Git Operator 的规则。
 - 完成源码和临时安装验证后，是否更新真实安装仍由用户在后续操作中决定，并通过 `generate-ai-work-flow-agents` Skill 执行。

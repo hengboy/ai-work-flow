@@ -20,7 +20,7 @@
 | File Explorer 与 Researcher | 发现、代码地图或来源、交接 |
 | 写作与实现角色 | 完成、变更、验证或阻塞 |
 | 审查角色 | 结论、按严重性分组的发现、测试缺口；Code Reviewer 分列 Standards 与 Spec |
-| Git Committer | 提交结果；范围不清时仅输出其固定停止句 |
+| Git Operator | 提交结果；范围不清时仅输出其固定停止句 |
 | 生成、切换与执行 Skill | 结果、更新或状态、注意或阻塞 |
 
 ## 受管标记

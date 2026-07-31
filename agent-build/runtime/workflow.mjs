@@ -14,6 +14,11 @@ const ROOT = resolve(import.meta.dirname, '..', '..');
 const SKILLS_ROOT = resolve(ROOT, 'skills');
 const PLATFORMS = new Set(['codex', 'claude', 'opencode']);
 const LEGACY_PRIMARY_AGENT_ID = 'orchestrator';
+const LEGACY_GIT_OPERATOR_AGENT_ID = 'git-committer';
+const LEGACY_ROLE_RENAMES = new Map([
+  [LEGACY_PRIMARY_AGENT_ID, 'coding'],
+  [LEGACY_GIT_OPERATOR_AGENT_ID, 'git-operator']
+]);
 
 function usage() {
   return `Usage:
@@ -134,8 +139,10 @@ function planCoreRuntime(assets, lifecycle, paths) {
   addSourceTree(plan, assets.configRoot, resolve(paths.dir, 'config'));
   addSourceTree(plan, assets.templatesRoot, resolve(paths.dir, 'templates'));
   addSourceTree(plan, resolve(ROOT, 'execution-runtime'), resolve(paths.dir, 'execution-runtime'));
-  const legacyBody = resolve(paths.dir, 'templates', `${LEGACY_PRIMARY_AGENT_ID}.md`);
-  if (existsSync(legacyBody)) plan.push({ type: 'delete', path: legacyBody });
+  for (const legacyRoleId of LEGACY_ROLE_RENAMES.keys()) {
+    const legacyBody = resolve(paths.dir, 'templates', `${legacyRoleId}.md`);
+    if (existsSync(legacyBody)) plan.push({ type: 'delete', path: legacyBody });
+  }
   return plan;
 }
 
@@ -176,7 +183,7 @@ function loadConfig(assets, allowDefaults = false, platforms = [...PLATFORMS]) {
   return { ...loadResolvedConfiguration({ paths, roles: assets.roles, platforms }), paths };
 }
 
-function planLegacyPrimaryRoleMigration(paths) {
+function planLegacyRoleMigrations(paths) {
   if (!existsSync(paths.environments)) return { configurations: new Map(), writes: new Map() };
   const files = readdirSync(paths.environments, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
@@ -189,14 +196,21 @@ function planLegacyPrimaryRoleMigration(paths) {
     const path = environmentPath(paths, name);
     assertSafeEnvironmentPaths({ ...paths, defaultEnvironment: path });
     const configuration = readJson(path);
-    if (!isPlainObject(configuration?.roles) || !Object.hasOwn(configuration.roles, LEGACY_PRIMARY_AGENT_ID)) continue;
-    if (Object.hasOwn(configuration.roles, 'coding')) {
-      fail(`Configuration contains both roles.${LEGACY_PRIMARY_AGENT_ID} and roles.coding: ${path}`);
+    if (!isPlainObject(configuration?.roles)) continue;
+    let roles = configuration.roles;
+    let changed = false;
+    for (const [legacyRoleId, currentRoleId] of LEGACY_ROLE_RENAMES) {
+      if (!Object.hasOwn(roles, legacyRoleId)) continue;
+      if (Object.hasOwn(roles, currentRoleId)) {
+        fail(`Configuration contains both roles.${legacyRoleId} and roles.${currentRoleId}: ${path}`);
+      }
+      roles = Object.fromEntries(Object.entries(roles).map(([roleId, value]) => [
+        roleId === legacyRoleId ? currentRoleId : roleId,
+        value
+      ]));
+      changed = true;
     }
-    const roles = Object.fromEntries(Object.entries(configuration.roles).map(([roleId, value]) => [
-      roleId === LEGACY_PRIMARY_AGENT_ID ? 'coding' : roleId,
-      value
-    ]));
+    if (!changed) continue;
     const migrated = { ...configuration, roles };
     configurations.set(path, migrated);
     writes.set(path, `${JSON.stringify(migrated, null, 2)}\n`);
@@ -208,7 +222,7 @@ function loadInstallConfig(assets, platforms) {
   const paths = globalPaths();
   assertSafeEnvironmentPaths(paths);
   const exists = existsSync(paths.defaultEnvironment);
-  const migration = planLegacyPrimaryRoleMigration(paths);
+  const migration = planLegacyRoleMigrations(paths);
   let base = exists
     ? migration.configurations.get(paths.defaultEnvironment) ?? readJson(paths.defaultEnvironment)
     : structuredClone(assets.defaults);

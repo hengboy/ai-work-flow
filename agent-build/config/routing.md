@@ -34,19 +34,19 @@
 
 ## 实施、提交与整合
 
-确认方案后的实现阶段固定按以下顺序执行：**Git Committer prepare -> Full Stack Coder -> Git Committer commit/sync -> Code Reviewer -> Review Standards + Review Spec -> Git Committer integrate/cleanup**。Coding 为每个普通实施生成稳定唯一的 `worktree_id`，分支为 `ai-work-flow/<worktree_id>`，路径为 `.worktrees/<worktree_id>`，并把同一路径传给所有实现和评审角色。Git Committer 在创建前幂等维护共享 Git `info/exclude` 的 `/.worktrees/`；已有路径只能在仓库身份、分支和任务基点全部匹配时恢复，否则停止。Full Stack Coder 只能在该干净 worktree 实现或解决冲突；不得使用整体 `ours/theirs`、删除任一侧实现或机械拼接来解决冲突，无法保留两边有效行为时请求用户裁决。Git Committer 收到完整实现交接后不等待新的提交授权，创建本地 review commit 并同步最新 `main`，再由 Code Reviewer 审查。`run-matt-spec-to-completion` 的 Ticket 子代理也在同一隔离 worktree 契约下执行。提交失败、工作树不干净或测试失败时不得启动审查。
+确认方案后的实现阶段固定按以下顺序执行：**Git Operator prepare -> Full Stack Coder -> Git Operator commit/sync -> Code Reviewer -> Review Standards + Review Spec -> Git Operator integrate/cleanup**。Coding 为每个普通实施生成稳定唯一的 `worktree_id`，分支为 `ai-work-flow/<worktree_id>`，路径为 `.worktrees/<worktree_id>`，并把同一路径传给所有实现和评审角色。Git Operator 在创建前幂等维护共享 Git `info/exclude` 的 `/.worktrees/`；已有路径只能在仓库身份、分支和任务基点全部匹配时恢复，否则停止。Full Stack Coder 只能在该干净 worktree 实现或解决冲突；不得使用整体 `ours/theirs`、删除任一侧实现或机械拼接来解决冲突，无法保留两边有效行为时请求用户裁决。Git Operator 收到完整实现交接后不等待新的提交授权，创建本地 review commit 并同步最新 `main`，再由 Code Reviewer 审查。`run-matt-spec-to-completion` 的 Ticket 子代理也在同一隔离 worktree 契约下执行。提交失败、工作树不干净或测试失败时不得启动审查。
 
 用户明确确认方案或要求实施，即授权为该实现阶段创建仅本地的 review commit；不需要在首次暂存前再次逐项请求授权。此授权不包含 push、amend、reset、clean、stash、切换或删除分支、标签操作，且不包含方案范围之外的已有变更。
 
-所有 Git 操作必须由 **Git Committer** 串行执行，包括 planning commit、feature/task worktree 创建、task review commit、同步、按序汇入、最终整合和清理；并发 task 只能并发非 Git 实施与验证。
+所有 Git 操作必须由 **Git Operator** 串行执行，包括 planning commit、feature/task worktree 创建、task review commit、同步、按序汇入、最终整合和清理；并发 task 只能并发非 Git 实施与验证。
 
-**Full Stack Coder** 开始前必须记录完整 `base_commit`、空的 `git status --porcelain=v2 -z --untracked-files=all`，且初始状态必须为空；否则停止，不得猜测提交范围。完成后必须交接同一工作树的 `base_commit`、初始空状态、稳定排序的精确 `changed_paths: PathChange[]` 和每条已执行且通过的验证命令与结果。唯一的路径事实源是 porcelain v2 `-z`：每项为 `{record_type,index_status,worktree_status,path,source_path?}`，rename/copy 必须保留两条 Git 原始路径；不得换行分割或从展示文本反解析路径。**Coding** 在收到完整且成功的实现交接后立即原样委派给 **Git Committer**。变更清单为空、当前 `HEAD` 不等于 `base_commit`、当前结构化状态与交接不一致、验证失败或存在未交接的变更时，Git Committer 必须停止且不得暂存任何文件。
+**Full Stack Coder** 开始前必须记录完整 `base_commit`、空的 `git status --porcelain=v2 -z --untracked-files=all`，且初始状态必须为空；否则停止，不得猜测提交范围。完成后必须交接同一工作树的 `base_commit`、初始空状态、稳定排序的精确 `changed_paths: PathChange[]` 和每条已执行且通过的验证命令与结果。唯一的路径事实源是 porcelain v2 `-z`：每项为 `{record_type,index_status,worktree_status,path,source_path?}`，rename/copy 必须保留两条 Git 原始路径；不得换行分割或从展示文本反解析路径。**Coding** 在收到完整且成功的实现交接后立即原样委派给 **Git Operator**。变更清单为空、当前 `HEAD` 不等于 `base_commit`、当前结构化状态与交接不一致、验证失败或存在未交接的变更时，Git Operator 必须停止且不得暂存任何文件。
 
-Git Committer 必须先调用 `$git-commit` 生成提交信息。提交前必须确认当前 `HEAD` 精确等于 `base_commit`、当前 PathChange 集合与交接 `changed_paths` 全字段一致、已通过验证仍完整可用；只能以参数数组和 `--` 暂存交接 PathChange 的目标/源路径，并在提交前复核暂存结构化集合且暂存差异非空。提交必须仅在本地创建，成功后报告完整 `review_commit` SHA 和空的 porcelain 状态。范围不一致、工作树不干净、验证失败或提交 hook 失败时停止并报告精确原因；hook 失败后不得 reset、clean 或重试，必须用同一 parser 重新报告真实 index/worktree PathChange。工作树仍有 staged、unstaged 或 untracked 内容时，不能启动审查；该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实施阶段的提交授权。
+Git Operator 必须先调用 `$git-commit` 生成提交信息。提交前必须确认当前 `HEAD` 精确等于 `base_commit`、当前 PathChange 集合与交接 `changed_paths` 全字段一致、已通过验证仍完整可用；只能以参数数组和 `--` 暂存交接 PathChange 的目标/源路径，并在提交前复核暂存结构化集合且暂存差异非空。提交必须仅在本地创建，成功后报告完整 `review_commit` SHA 和空的 porcelain 状态。范围不一致、工作树不干净、验证失败或提交 hook 失败时停止并报告精确原因；hook 失败后不得 reset、clean 或重试，必须用同一 parser 重新报告真实 index/worktree PathChange。工作树仍有 staged、unstaged 或 untracked 内容时，不能启动审查；该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实施阶段的提交授权。
 
-首次 review 的 blocking finding 修复完成后，Git Committer 必须基于修复后的干净 worktree 创建新的本地 review commit，并报告新的完整 SHA。新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`，并且新的 `review_commit` 必须精确等于 feature 或 task HEAD；该 SHA 是用户选择第二次 Code Reviewer 时唯一允许使用的 review commit。缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞，不得启动第二次评审。
+首次 review 的 blocking finding 修复完成后，Git Operator 必须基于修复后的干净 worktree 创建新的本地 review commit，并报告新的完整 SHA。新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`，并且新的 `review_commit` 必须精确等于 feature 或 task HEAD；该 SHA 是用户选择第二次 Code Reviewer 时唯一允许使用的 review commit。缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞，不得启动第二次评审。
 
-Git Committer 在整合前重新确认主工作树和 feature worktree 均干净、当前 `main` 精确等于评审 fixed point、feature HEAD 精确等于已通过审查的 review commit。若 `main` 已前进，返回 `resync_required`，先同步并重新评审最终提交。门禁通过后仅在主工作树运行 `git merge --ff-only <review_commit>`；主工作树无关改动默认阻塞，保留显式 stash 授权。成功后仅在 worktree 干净、分支已合并的前提下移除 worktree，并用 `git branch -d` 删除本地 feature 分支。
+Git Operator 在整合前重新确认主工作树和 feature worktree 均干净、当前 `main` 精确等于评审 fixed point、feature HEAD 精确等于已通过审查的 review commit。若 `main` 已前进，返回 `resync_required`，先同步并重新评审最终提交。门禁通过后仅在主工作树运行 `git merge --ff-only <review_commit>`；主工作树无关改动默认阻塞，保留显式 stash 授权。成功后仅在 worktree 干净、分支已合并的前提下移除 worktree，并用 `git branch -d` 删除本地 feature 分支。
 
 <!-- ai-work-flow:section-end -->
 
@@ -54,7 +54,7 @@ Git Committer 在整合前重新确认主工作树和 feature worktree 均干净
 
 ## AI Work Flow 审查契约
 
-**Code Reviewer** 仅在 Git Committer 报告完整 `review_commit` SHA 且 `git status --short` 为空时开始。审查范围由固定的 `fixed-point` 与 `review-commit` 两个完整提交 SHA 构成。普通实现和工作流评审均使用最近同步的 `main_commit` 作为 fixed point，且 review commit 必须精确等于 feature HEAD；用户直接指定 fixed point 时，将开始评审时的 `HEAD` 解析为 `review-commit`，不得在委派后重新解析。审查目标 worktree 的 `HEAD` 必须精确等于 `review-commit`；输入 prompt 中的 range、commit list 或 changed paths 与 ReviewManifest 任一不一致时预检阻塞。Code Reviewer 绝不审查未提交内容。Code Reviewer 委派前按顺序运行并保存以下命令及结果：
+**Code Reviewer** 仅在 Git Operator 报告完整 `review_commit` SHA 且 `git status --short` 为空时开始。审查范围由固定的 `fixed-point` 与 `review-commit` 两个完整提交 SHA 构成。普通实现和工作流评审均使用最近同步的 `main_commit` 作为 fixed point，且 review commit 必须精确等于 feature HEAD；用户直接指定 fixed point 时，将开始评审时的 `HEAD` 解析为 `review-commit`，不得在委派后重新解析。审查目标 worktree 的 `HEAD` 必须精确等于 `review-commit`；输入 prompt 中的 range、commit list 或 changed paths 与 ReviewManifest 任一不一致时预检阻塞。Code Reviewer 绝不审查未提交内容。Code Reviewer 委派前按顺序运行并保存以下命令及结果：
 
 ```bash
 git rev-parse <fixed-point>

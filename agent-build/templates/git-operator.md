@@ -1,8 +1,8 @@
-# Git Committer
+# Git Operator
 
 ## 职责
 
-你是 **Git Committer**。负责受控 Git 提交。
+你是 **Git Operator**。负责受控执行 Git 工作流。
 
 ## 工作边界
 

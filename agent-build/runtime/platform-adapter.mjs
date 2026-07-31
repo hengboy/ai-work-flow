@@ -8,6 +8,7 @@ import { applyTransaction } from './transaction.mjs';
 import { updateManagedMarker } from './managed-content.mjs';
 
 const LEGACY_PRIMARY_AGENT_ID = 'orchestrator';
+const LEGACY_GIT_OPERATOR_AGENT_ID = 'git-committer';
 const LEGACY_CODE_REVIEWER_AGENT = 'AGENT.md';
 const OPENCODE_PERMISSION_KEYS = ['read', 'edit', 'glob', 'grep', 'bash', 'task', 'skill', 'webfetch', 'websearch', 'question', 'external_directory'];
 const OPENCODE_TOOL_KEYS = {
@@ -387,8 +388,10 @@ export function planGeneration({ platform, paths, roles, policies, config, bodie
     if (!policy) fail(`Missing policy for role: ${role.id}`);
     addWrite(resolve(agentDir, `${role.id}.${strategy.extension}`), strategy.render(role, config.roles[role.id][platform], bodies.get(role.id), policy));
   }
-  const legacyAgentPath = resolve(agentDir, `${LEGACY_PRIMARY_AGENT_ID}.${strategy.extension}`);
-  if (isManagedLegacyAgent(legacyAgentPath)) plan.push({ type: 'delete', path: legacyAgentPath });
+  for (const legacyRoleId of [LEGACY_PRIMARY_AGENT_ID, LEGACY_GIT_OPERATOR_AGENT_ID]) {
+    const legacyAgentPath = resolve(agentDir, `${legacyRoleId}.${strategy.extension}`);
+    if (isManagedLegacyAgent(legacyAgentPath)) plan.push({ type: 'delete', path: legacyAgentPath });
+  }
 
   if (platform === 'codex') {
     const legacyReviewerPath = resolve(agentDir, 'code-reviewer', LEGACY_CODE_REVIEWER_AGENT);

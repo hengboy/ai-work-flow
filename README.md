@@ -52,7 +52,7 @@ node agent-build/install.mjs --help
 
 `install` 是完整流程：同步 Skills、初始化配置和路由、安装运行时文件，然后生成 agents。`init` 和 `validate` 适合安装或排查问题；配置更新后的 agents 重新生成应通过 `$generate-ai-work-flow-agents` 完成。
 
-升级安装时，如果全局 `environments/default.json` 完全缺少 `planning` 或 `task-planner`，安装器会从内置默认配置补入缺失角色，并将配置迁移、核心 runtime/资产和平台代理生成作为一个事务提交。已有角色即使字段残缺也不会被静默修复；此时安装会停止并保留原文件。`validate` 和 `--dry-run` 始终不写入文件，也不执行迁移。
+升级安装时，如果全局 `environments/default.json` 完全缺少 `planning` 或 `task-planner`，安装器会从内置默认配置补入缺失角色；仍使用 `git-committer` ID 的默认环境和稀疏环境会迁移为 `git-operator`。配置迁移、核心 runtime/资产和平台代理生成作为一个事务提交。已有角色即使字段残缺也不会被静默修复；此时安装会停止并保留原文件。`validate` 和 `--dry-run` 始终不写入文件，也不执行迁移。
 
 ## 模型配置
 
@@ -147,7 +147,7 @@ node "$runtime" begin-review --repository <repo> --feature <feature> --worktree 
 
 Planning 将已确认的完整计划写入目录式工件 `.ai-work-flow/plans/<plan-id>/plan.md`，并在计划展示后确认是否拆分任务以及是否创建 planning commit。可选的 `tasks/NN-short-name.md` 任务文件位于同一目录：没有 `tasks/` 表示单任务模式；存在且全部合法的任务文件表示拆分模式；空的或含无效任务文件的 `tasks/` 会阻塞实施。
 
-单任务模式由 Coding 只委派一个 **Full Stack Coder** 完成整个计划。拆分模式按 `blocked_by` 计算依赖前沿并发实施；每个 task 的代码、测试、必要配置和 checkbox 进入同一个 task review commit，经 **Code Reviewer** 对该 task 做 Standards + Spec 双轴评审后，Git Committer 按编号顺序汇入 feature，再开放下一前沿。全部 task 汇入后执行一次聚合双轴评审；只有评审覆盖完整、无阻塞 finding 且 `main` 未前进时，才以 `--ff-only` 整合。
+单任务模式由 Coding 只委派一个 **Full Stack Coder** 完成整个计划。拆分模式按 `blocked_by` 计算依赖前沿并发实施；每个 task 的代码、测试、必要配置和 checkbox 进入同一个 task review commit，经 **Code Reviewer** 对该 task 做 Standards + Spec 双轴评审后，Git Operator 按编号顺序汇入 feature，再开放下一前沿。全部 task 汇入后执行一次聚合双轴评审；只有评审覆盖完整、无阻塞 finding 且 `main` 未前进时，才以 `--ff-only` 整合。
 
 ## Skills
 
@@ -184,7 +184,7 @@ Planning 将已确认的完整计划写入目录式工件 `.ai-work-flow/plans/<
 
 ### 自动提交与审查
 
-确认实现后，角色按 **Full Stack Coder -> Git Committer -> Code Reviewer -> Review Standards + Review Spec** 自动推进。Code Reviewer 只审查提交后的固定 SHA 范围，绝不读取未提交内容。大差异会按固定端点的文件和行窗口分片，两个审查轴使用相同清单；中断时只重试未完成分片，端点不会变化。
+确认实现后，角色按 **Full Stack Coder -> Git Operator -> Code Reviewer -> Review Standards + Review Spec** 自动推进。Code Reviewer 只审查提交后的固定 SHA 范围，绝不读取未提交内容。大差异会按固定端点的文件和行窗口分片，两个审查轴使用相同清单；中断时只重试未完成分片，端点不会变化。
 
 ## AI Work Flow 评审与执行契约
 

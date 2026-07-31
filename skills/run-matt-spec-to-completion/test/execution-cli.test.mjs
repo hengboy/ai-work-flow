@@ -122,7 +122,7 @@ test("record-ticket rejects identity and envelope conflicts without advancing th
   const valid = handoff(claimed, payload);
 
   for (const invalid of [
-    { ...valid, role_id: "git-committer" },
+    { ...valid, role_id: "git-operator" },
     { ...valid, session_id: "other-session" },
     { ...valid, claim_id: "other-claim" },
     { ...valid, summary: "rewritten" },

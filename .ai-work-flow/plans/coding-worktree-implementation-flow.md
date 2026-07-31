@@ -9,11 +9,11 @@
 
 ## Implementation Changes
 
-- 扩展现有 **Git Committer**，不新增浅层角色，使其负责五个阶段：创建 worktree、受控提交、同步 `main`、最终整合、清理。Full Stack Coder 仍独占代码与冲突内容编辑，Code Reviewer 始终在 feature worktree 审查固定提交范围。
-- 普通流程固定为：`Git Committer prepare -> writable implementation roles -> Git Committer commit/sync -> Code Reviewer -> 用户确认阻塞修复 -> sync/review -> integrate -> cleanup`。Coding 必须把同一 worktree 路径传给所有实施与评审角色。
+- 扩展现有 **Git Operator**，不新增浅层角色，使其负责五个阶段：创建 worktree、受控提交、同步 `main`、最终整合、清理。Full Stack Coder 仍独占代码与冲突内容编辑，Code Reviewer 始终在 feature worktree 审查固定提交范围。
+- 普通流程固定为：`Git Operator prepare -> writable implementation roles -> Git Operator commit/sync -> Code Reviewer -> 用户确认阻塞修复 -> sync/review -> integrate -> cleanup`。Coding 必须把同一 worktree 路径传给所有实施与评审角色。
 - 普通任务使用稳定且唯一的 `worktree_id`，分支为 `ai-work-flow/<worktree_id>`，路径为 `.worktrees/<worktree_id>`；已有路径只能在仓库身份、分支和任务基点完全匹配时恢复，否则阻塞。
 - Worktree lifecycle 在创建前幂等维护共享 Git `info/exclude` 中的 `/.worktrees/`，避免主工作树出现 `?? .worktrees/`，同时保留现有路径、符号链接和仓库身份校验。
-- 为 Spec runtime 增加 `sync-main` 和 `complete-sync` 转换。同步记录精确 `main_commit`；无冲突时直接形成同步提交，冲突时返回精确未合并路径，由 Full Stack Coder 保留两边语义并验证，再由 Git Committer 完成合并提交。
+- 为 Spec runtime 增加 `sync-main` 和 `complete-sync` 转换。同步记录精确 `main_commit`；无冲突时直接形成同步提交，冲突时返回精确未合并路径，由 Full Stack Coder 保留两边语义并验证，再由 Git Operator 完成合并提交。
 - 禁止用整体 `ours/theirs`、删除一侧实现或机械拼接来“解决”冲突。无法同时保持两边有效行为时停止并请求用户裁决。
 - `begin-review` 的 fixed point 改为最近一次同步的 `main_commit`，review commit 必须等于 feature HEAD。若评审后 `main` 再次前进，`integrate` 在任何合并前返回 `resync_required`，重新同步并重新评审最终提交。
 - 最终整合要求：主工作树和 feature worktree 状态符合门禁、当前 `main` 等于评审 fixed point、feature HEAD 等于已通过评审的提交；随后在主工作树执行 `git merge --ff-only <review_commit>`。主工作树无关改动默认阻塞，不会被覆盖；保留现有显式 stash 授权能力。
@@ -35,7 +35,7 @@
 - 验证冲突解决提交必须重新测试和评审，未经评审的 SHA、过期 fixed point、脏 worktree 或不完整 coverage 均不能进入 `main`。
 - 验证阻塞发现必须等待用户选择，修复后自动复审一次；非阻塞建议会被报告但不会阻止整合。
 - 验证 `--ff-only` 整合、失败后的可恢复状态，以及成功后只删除已合并且干净的 worktree 和本地分支。
-- 更新三平台生成测试，确认 Coding、Full Stack Coder、Git Committer 和评审角色均收到相同 worktree 契约。
+- 更新三平台生成测试，确认 Coding、Full Stack Coder、Git Operator 和评审角色均收到相同 worktree 契约。
 - 保持当前 147 项基线测试通过，并运行新增 runtime 和生成测试及完整 `npm test`。
 - 本次实现自身也从当前本地 `main` 创建独立 worktree，完成提交和双轴评审；零阻塞后同步并合并回 `main`，不触碰现有其他 worktree。
 - 合并后运行完整安装，原子迁移当前全局 `orchestrator` 配置到 `coding`，生成 Codex、Claude Code、OpenCode agents，并用 `env status` 验证三平台均为 in-sync。

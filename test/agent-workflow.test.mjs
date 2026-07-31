@@ -112,6 +112,8 @@ function environmentPath(paths, name) {
 }
 
 const legacyPrimaryAgentId = 'orchestrator';
+const legacyGitOperatorAgentId = 'git-committer';
+const gitOperatorAgentId = 'git-operator';
 
 function agentPath(paths, platform, name, extension) {
   const base = platform === 'codex'
@@ -178,7 +180,7 @@ test('compiled governance is scoped to each role concern', () => {
     'planning-writer': ['browser-governance', 'handoff-governance'],
     'task-planner': ['browser-governance', 'handoff-governance'],
     'full-stack-coder': ['browser-governance', 'retry-governance', 'implementation-governance'],
-    'git-committer': ['browser-governance', 'implementation-governance'],
+    'git-operator': ['browser-governance', 'implementation-governance'],
     'code-reviewer': ['browser-governance', 'retry-governance', 'review-governance'],
     'review-standards': ['browser-governance', 'review-governance'],
     'review-spec': ['browser-governance', 'review-governance']
@@ -193,7 +195,7 @@ test('compiled governance is scoped to each role concern', () => {
   }
 
   const retryRoles = new Set(['coding', 'planning', 'full-stack-coder', 'code-reviewer']);
-  const implementationRoles = new Set(['coding', 'full-stack-coder', 'git-committer']);
+  const implementationRoles = new Set(['coding', 'full-stack-coder', 'git-operator']);
   const reviewRoles = new Set(['code-reviewer', 'review-standards', 'review-spec']);
   const handoffRoles = new Set(['document-maintainer', 'planning-writer', 'task-planner']);
   for (const role of assets.roles) {
@@ -240,7 +242,7 @@ test('role bodies derive their common structure and reply sections from the cata
     'planning-writer': ['完成', '变更', '验证', '阻塞'],
     'task-planner': ['完成', '变更', '验证', '阻塞'],
     'full-stack-coder': ['完成', '变更', '验证', '阻塞'],
-    'git-committer': ['提交结果'],
+    'git-operator': ['提交结果'],
     'code-reviewer': ['Standards', 'Spec', '结论', '测试缺口', '阻塞'],
     'review-standards': ['结论', '发现', '测试缺口', '阻塞'],
     'review-spec': ['结论', '发现', '测试缺口', '阻塞']
@@ -308,7 +310,7 @@ test('installation and platform generation retain the managed prompt content', (
 });
 
 test('routing defines automatic scoped local commits after confirmed implementation', () => {
-  const gitCommitter = readFileSync(resolve(templatesDir, 'git-committer.md'), 'utf8');
+  const gitOperator = readFileSync(resolve(templatesDir, 'git-operator.md'), 'utf8');
   const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
   const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
   const compiled = loadAgentAssets().compiledBodies;
@@ -327,9 +329,9 @@ test('routing defines automatic scoped local commits after confirmed implementat
     /该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实施阶段的提交授权/
   ];
 
-  assert.match(gitCommitter, /\$git-commit/);
-  assert.match(compiled.get('git-committer'), /不得再次向用户请求/);
-  for (const body of [gitCommitter, coding]) {
+  assert.match(gitOperator, /\$git-commit/);
+  assert.match(compiled.get('git-operator'), /不得再次向用户请求/);
+  for (const body of [gitOperator, coding]) {
     assert.doesNotMatch(body, /首次范围检查/);
     assert.doesNotMatch(body, /一次性白名单/);
     assert.doesNotMatch(body, /routing\.md/);
@@ -338,9 +340,9 @@ test('routing defines automatic scoped local commits after confirmed implementat
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
 
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
-    const generatedCommitter = readFileSync(agentPath(paths, platform, 'git-committer', extension), 'utf8');
+    const generatedOperator = readFileSync(agentPath(paths, platform, 'git-operator', extension), 'utf8');
     const generatedCoding = readFileSync(agentPath(paths, platform, 'coding', extension), 'utf8');
-    assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedCommitter) : generatedBody(paths, platform, 'git-committer', extension), /不得再次向用户请求/, platform);
+    assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedOperator) : generatedBody(paths, platform, 'git-operator', extension), /不得再次向用户请求/, platform);
     assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedCoding) : generatedBody(paths, platform, 'coding', extension), /确认方案后的实现阶段固定/, platform);
   }
 });
@@ -348,7 +350,7 @@ test('routing defines automatic scoped local commits after confirmed implementat
 test('implementation commits precede the committed-range dual-axis review', () => {
   const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
   const coder = readFileSync(resolve(templatesDir, 'full-stack-coder.md'), 'utf8');
-  const committer = readFileSync(resolve(templatesDir, 'git-committer.md'), 'utf8');
+  const operator = readFileSync(resolve(templatesDir, 'git-operator.md'), 'utf8');
   const skill = readFileSync(resolve(root, 'skills/git-commit/SKILL.md'), 'utf8');
   const protocol = readFileSync(resolve(root, 'skills', executionSkill, 'references/completion-protocol.md'), 'utf8');
   const requiredScopeContract = [
@@ -360,12 +362,12 @@ test('implementation commits precede the committed-range dual-axis review', () =
     /当前结构化状态与交接不一致/
   ];
 
-  assert.match(routing, /Full Stack Coder.*Git Committer.*Code Reviewer[\s\S]*Review Standards.*Review Spec/);
+  assert.match(routing, /Full Stack Coder.*Git Operator.*Code Reviewer[\s\S]*Review Standards.*Review Spec/);
   assert.match(routing, /提交失败、工作树不干净或测试失败时不得启动审查/);
   for (const assertion of requiredScopeContract) assert.match(routing, assertion);
   for (const assertion of requiredScopeContract.slice(0, 5)) assert.match(loadAgentAssets().compiledBodies.get('full-stack-coder'), assertion);
-  assert.match(loadAgentAssets().compiledBodies.get('git-committer'), /参数数组和 `--` 暂存/);
-  assert.match(loadAgentAssets().compiledBodies.get('git-committer'), /当前 `HEAD` 精确等于 `base_commit`/);
+  assert.match(loadAgentAssets().compiledBodies.get('git-operator'), /参数数组和 `--` 暂存/);
+  assert.match(loadAgentAssets().compiledBodies.get('git-operator'), /当前 `HEAD` 精确等于 `base_commit`/);
   assert.match(skill, /<type>\[optional scope\]\[optional !\]: <description>/);
   assert.match(skill, /使用 `feat` 表示新增功能，使用 `fix` 表示修复 bug/);
   assert.match(skill, /`build`、`chore`、`ci`、`docs`、`style`、`refactor`、`perf` 或 `test`/);
@@ -392,7 +394,7 @@ test('generated implementation and review roles preserve their scoped contracts'
   assert.equal(result.status, 0, result.stderr);
 
   const implementationAssertions = [
-    /Git Committer prepare -> Full Stack Coder -> Git Committer commit\/sync -> Code Reviewer -> Review Standards \+ Review Spec/,
+    /Git Operator prepare -> Full Stack Coder -> Git Operator commit\/sync -> Code Reviewer -> Review Standards \+ Review Spec/,
     /不等待新的提交授权/,
     /base_commit/
   ];
@@ -555,6 +557,36 @@ test('install atomically migrates the legacy primary role in default and sparse 
   assert.deepEqual(migratedOverlay.roles['full-stack-coder'], sparseOverlay.roles['full-stack-coder']);
   assert.equal(migratedOverlay.roles[legacyPrimaryAgentId], undefined);
   assert.match(readFileSync(agentPath(paths, 'codex', 'coding', 'toml'), 'utf8'), /model_reasoning_effort = "low"/);
+});
+
+test('install atomically migrates the renamed Git Operator role in default and sparse environments', () => {
+  const paths = environment();
+  assert.equal(run(paths, 'init').status, 0);
+  const defaultConfig = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  defaultConfig.roles[legacyGitOperatorAgentId] = defaultConfig.roles[gitOperatorAgentId];
+  delete defaultConfig.roles[gitOperatorAgentId];
+  defaultConfig.roles[legacyGitOperatorAgentId].codex.model = 'migrated-git-model';
+  writeFileSync(defaultEnvironmentPath(paths), `${JSON.stringify(defaultConfig, null, 2)}\n`);
+
+  const sparseOverlay = {
+    version: 1,
+    roles: {
+      [legacyGitOperatorAgentId]: { codex: { reasoning: 'medium' } }
+    }
+  };
+  const overlayPath = environmentPath(paths, 'sparse');
+  writeFileSync(overlayPath, `${JSON.stringify(sparseOverlay, null, 2)}\n`);
+  writeFileSync(resolve(paths.config, 'ai-work-flow/.environment'), 'sparse');
+
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  const migratedDefault = JSON.parse(readFileSync(defaultEnvironmentPath(paths), 'utf8'));
+  const migratedOverlay = JSON.parse(readFileSync(overlayPath, 'utf8'));
+  assert.equal(migratedDefault.roles[gitOperatorAgentId].codex.model, 'migrated-git-model');
+  assert.equal(migratedDefault.roles[legacyGitOperatorAgentId], undefined);
+  assert.deepEqual(migratedOverlay.roles[gitOperatorAgentId], sparseOverlay.roles[legacyGitOperatorAgentId]);
+  assert.equal(migratedOverlay.roles[legacyGitOperatorAgentId], undefined);
+  assert.match(readFileSync(agentPath(paths, 'codex', gitOperatorAgentId, 'toml'), 'utf8'), /model_reasoning_effort = "medium"/);
 });
 
 test('install atomically adds a completely missing task planner to default configuration', () => {
@@ -954,8 +986,8 @@ test('coding stops implementation when an approved plan needs to change', () => 
   assert.match(prompt, /需求变化.*停止当前实施.*Planning.*重新生成.*确认.*planning commit/s);
 });
 
-test('git committer rejects completed checkboxes from a planning commit', () => {
-  const prompt = loadAgentAssets().compiledBodies.get('git-committer');
+test('git operator rejects completed checkboxes from a planning commit', () => {
+  const prompt = loadAgentAssets().compiledBodies.get('git-operator');
   assert.match(prompt, /planning commit.*所有存在的 checkbox.*未勾选/s);
   assert.match(prompt, /`\[x\]`.*`\[X\]`.*阻塞/s);
 });
@@ -975,7 +1007,7 @@ test('planning is an opt-in primary that delegates discovery and plan writing', 
   assert.equal(planning.default_primary, undefined);
   assert.equal(coding.kind, 'primary');
   assert.equal(coding.default_primary, true);
-  assert.deepEqual(planning.delegates, ['file-explorer', 'planning-writer', 'task-planner', 'git-committer']);
+  assert.deepEqual(planning.delegates, ['file-explorer', 'planning-writer', 'task-planner', 'git-operator']);
   assert.deepEqual(planning.tools, ['Task']);
   assert.deepEqual(policies[planning.policy], {
     filesystem: 'none',
@@ -1049,7 +1081,7 @@ test('task planning delegation and generated permissions stay narrowly scoped', 
   const planning = catalog.roles.find((role) => role.id === 'planning');
   const coding = catalog.roles.find((role) => role.id === 'coding');
   const taskPlanner = catalog.roles.find((role) => role.id === 'task-planner');
-  assert.deepEqual(planning.delegates, ['file-explorer', 'planning-writer', 'task-planner', 'git-committer']);
+  assert.deepEqual(planning.delegates, ['file-explorer', 'planning-writer', 'task-planner', 'git-operator']);
   assert.ok(!coding.delegates.includes('task-planner'));
   assert.deepEqual(policies[taskPlanner.policy], {
     filesystem: 'write',
@@ -1143,7 +1175,7 @@ test('planning confirms plan splitting and commits only final planning artifacts
   assert.match(planning, /用户明确确认当前展示的完整任务草案后.*写入 `tasks\/`/s);
   assert.match(planning, /沉默、继续讨论、选择拆分或只确认收到草案.*不构成颗粒度确认/s);
   assert.match(planning, /plan.*digest.*全部失效.*重新生成/s);
-  assert.match(planning, /main.*仅规划工件.*Git Committer/s);
+  assert.match(planning, /main.*仅规划工件.*Git Operator/s);
   assert.match(planning, /planning commit.*SHA/);
   assert.match(planning, /不得实施/);
 
@@ -1229,7 +1261,7 @@ test('coding executes single or split plans through validated task frontiers', (
 
 test('implementation roles preserve planning and task commit boundaries', () => {
   const coder = readFileSync(resolve(templatesDir, 'full-stack-coder.md'), 'utf8');
-  const committer = readFileSync(resolve(templatesDir, 'git-committer.md'), 'utf8');
+  const operator = readFileSync(resolve(templatesDir, 'git-operator.md'), 'utf8');
   const reviewer = readFileSync(resolve(templatesDir, 'code-reviewer.md'), 'utf8');
   const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
 
@@ -1237,12 +1269,12 @@ test('implementation roles preserve planning and task commit boundaries', () => 
   assert.match(coder, /不得.*其他 task/s);
   assert.match(coder, /逐项.*acceptance.*证据/s);
 
-  assert.match(committer, /planning commit.*直接在 `main`/s);
-  assert.match(committer, /仅规划工件.*精确 PathChange/s);
-  assert.match(committer, /Planning Writer.*Task Planner.*交接.*一致/s);
-  assert.match(committer, /task worktree.*task review commit.*按编号.*汇入/s);
-  assert.match(committer, /所有 Git 操作.*串行/);
-  assert.match(committer, /不得.*push.*amend.*reset.*clean.*隐式 stash.*跳过.*hook/s);
+  assert.match(operator, /planning commit.*直接在 `main`/s);
+  assert.match(operator, /仅规划工件.*精确 PathChange/s);
+  assert.match(operator, /Planning Writer.*Task Planner.*交接.*一致/s);
+  assert.match(operator, /task worktree.*task review commit.*按编号.*汇入/s);
+  assert.match(operator, /所有 Git 操作.*串行/);
+  assert.match(operator, /不得.*push.*amend.*reset.*clean.*隐式 stash.*跳过.*hook/s);
 
   assert.match(reviewer, /task base.*task review commit/s);
   assert.match(reviewer, /父 `plan\.md`.*当前 task.*spec/s);
@@ -1337,7 +1369,7 @@ test('OpenCode derives its default agent from the role catalog', () => {
 test('structured dual-axis review controls the final integration gate', () => {
   const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
   const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
-  const committer = readFileSync(resolve(templatesDir, 'git-committer.md'), 'utf8');
+  const operator = readFileSync(resolve(templatesDir, 'git-operator.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -1380,8 +1412,8 @@ test('structured dual-axis review controls the final integration gate', () => {
   assert.match(coding, /新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`/);
   assert.match(coding, /缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞/);
   assert.match(coding, /不得限制为只复核旧 finding IDs/);
-  assert.match(committer, /修复后的干净 feature 或 task worktree 创建新的本地 review commit/);
-  assert.match(committer, /不得把旧 SHA 交给第二次 Code Reviewer/);
+  assert.match(operator, /修复后的干净 feature 或 task worktree 创建新的本地 review commit/);
+  assert.match(operator, /不得把旧 SHA 交给第二次 Code Reviewer/);
   assert.doesNotMatch(coding, /修复后重新同步并自动最终复审一次/);
   assert.doesNotMatch(coding, /ReviewManifest|git diff --no-ext-diff/);
 });
@@ -1440,9 +1472,9 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
-    const generatedCommitter = generatedBody(paths, platform, 'git-committer', extension);
-    assert.match(generatedCommitter, /新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`/, platform);
-    assert.match(generatedCommitter, /缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞/, platform);
+    const generatedOperator = generatedBody(paths, platform, 'git-operator', extension);
+    assert.match(generatedOperator, /新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`/, platform);
+    assert.match(generatedOperator, /缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞/, platform);
     for (const role of Object.keys(bodies)) {
       const generated = generatedBody(paths, platform, role, extension);
       assert.ok(generated.includes('git diff <fixed-point>...<review-commit>'), `${platform}/${role}`);
@@ -1787,6 +1819,25 @@ test('installation removes obsolete managed templates and execution modules', ()
     assert.ok(!existsSync(resolve(skillRoot, 'lib', `execution-${legacyPrimaryAgentId}.mjs`)));
     assert.ok(!existsSync(resolve(skillRoot, 'test', `execution-${legacyPrimaryAgentId}.test.mjs`)));
     assert.ok(existsSync(resolve(skillRoot, 'lib/execution-coding.mjs')));
+  }
+});
+
+test('installation removes obsolete managed Git Committer templates and generated agents', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const obsoleteTemplate = resolve(paths.config, 'ai-work-flow/templates', `${legacyGitOperatorAgentId}.md`);
+  writeFileSync(obsoleteTemplate, 'obsolete template\n');
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const currentAgent = agentPath(paths, platform, gitOperatorAgentId, extension);
+    writeFileSync(agentPath(paths, platform, legacyGitOperatorAgentId, extension), readFileSync(currentAgent, 'utf8'));
+  }
+
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(!existsSync(obsoleteTemplate));
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    assert.ok(!existsSync(agentPath(paths, platform, legacyGitOperatorAgentId, extension)), platform);
+    assert.ok(existsSync(agentPath(paths, platform, gitOperatorAgentId, extension)), platform);
   }
 });
 
