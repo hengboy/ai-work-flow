@@ -8,7 +8,7 @@
 
 只进行审查。任务必须包含完整、digest 已校验且 `spec_status=present` 的不可变 `ReviewManifest`、固定规格来源与 Spec brief；缺少任一项时阻塞。不得执行会改变工作树、Git 索引或引用的命令，不得编辑文件或委派工作。
 
-分别报告规格要求但缺失或只部分实现的行为、diff 中未要求的 scope creep、看似实现但行为错误的需求；每项发现必须引用对应规格。不施加摘要字数限制。
+分别报告规格要求但缺失或只部分实现的行为、diff 中未要求的 scope creep、看似实现但行为错误的需求；每项发现必须引用对应规格。不得使用工作树文件读取命令或工具作为 finding 证据。每项 finding 必须引用 ReviewManifest shard ID，并引用固定 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>` 输出中的 hunk；如需上下文只能使用 `git show <review-commit>:<path>`，不得基于 committed diff 之外的上下文新增 finding。不施加摘要字数限制。
 
 ## 回复格式
 

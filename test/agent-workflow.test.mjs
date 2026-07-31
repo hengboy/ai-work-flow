@@ -210,7 +210,7 @@ test('compiled governance is scoped to each role concern', () => {
   assert.match(assets.bodies.get('planning'), /编码、修改源码或实施请求.*拒绝/);
   assert.doesNotMatch(assets.routing, /planning-governance|Policy 与能力边界|^## 回复格式$/m);
   const totalCompiledLength = [...compiled.values()].reduce((total, prompt) => total + prompt.length, 0);
-  assert.ok(totalCompiledLength < 40_000, `compiled prompts should stay focused, got ${totalCompiledLength} characters`);
+  assert.ok(totalCompiledLength < 42_500, `compiled prompts should stay focused, got ${totalCompiledLength} characters`);
 });
 
 test('managed prompt documents use the Markdown layout', () => {
@@ -1337,6 +1337,7 @@ test('OpenCode derives its default agent from the role catalog', () => {
 test('structured dual-axis review controls the final integration gate', () => {
   const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
   const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
+  const committer = readFileSync(resolve(templatesDir, 'git-committer.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -1351,6 +1352,11 @@ test('structured dual-axis review controls the final integration gate', () => {
     /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/,
     /只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer/,
     /选择继续后续流程时直接进入后续阶段，不得因第一次评审遗留的 blocking findings 自动再次评审/,
+    /基于修复后的干净 worktree 创建新的本地 review commit/,
+    /新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`/,
+    /新的 `review_commit` 必须精确等于 feature 或 task HEAD/,
+    /缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞/,
+    /第二次完整双轴评审覆盖新的 committed range，不得限制为只复核旧 finding IDs/,
     /`git merge --ff-only <review_commit>`/,
   ];
 
@@ -1364,10 +1370,18 @@ test('structured dual-axis review controls the final integration gate', () => {
     assert.match(generated, /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/, platform);
     assert.match(generated, /只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer/, platform);
     assert.match(generated, /不得因第一次评审遗留的 blocking findings 自动再次评审/, platform);
+    assert.match(generated, /新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`/, platform);
+    assert.match(generated, /缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞/, platform);
+    assert.match(generated, /不得限制为只复核旧 finding IDs/, platform);
     assert.doesNotMatch(generated, /修复后重新同步并自动最终复审一次/, platform);
   }
   assert.match(coding, /仅按用户确认的 finding IDs 委派修复/);
   assert.match(coding, /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/);
+  assert.match(coding, /新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`/);
+  assert.match(coding, /缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞/);
+  assert.match(coding, /不得限制为只复核旧 finding IDs/);
+  assert.match(committer, /修复后的干净 feature 或 task worktree 创建新的本地 review commit/);
+  assert.match(committer, /不得把旧 SHA 交给第二次 Code Reviewer/);
   assert.doesNotMatch(coding, /修复后重新同步并自动最终复审一次/);
   assert.doesNotMatch(coding, /ReviewManifest|git diff --no-ext-diff/);
 });
@@ -1396,20 +1410,39 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
   }
   assert.match(routing, /完全相同的两个完整 SHA、diff 命令、commit list、规格来源、标准来源和完整文件\/窗口分片清单/);
   assert.match(routing, /禁止使用无参数 `git diff` 或 `git diff --cached`/);
+  assert.match(routing, /审查目标 worktree 的 `HEAD` 必须精确等于 `review-commit`/);
+  assert.match(routing, /输入 prompt 中的 range、commit list 或 changed paths 与 ReviewManifest 任一不一致时预检阻塞/);
+  assert.match(routing, /不得使用工作树文件读取命令或工具作为 finding 证据/);
+  assert.match(routing, /每项 finding 必须引用 ReviewManifest shard ID/);
+  assert.match(routing, /引用 `git diff --no-ext-diff <fixed-point>\.\.\.<review-commit> -- <paths>` 的 hunk/);
+  assert.match(routing, /只能使用 `git show <review-commit>:<path>`/);
+  assert.match(routing, /不得基于 committed diff 之外的上下文新增 finding/);
   assert.match(bodies['code-reviewer'], /不得合并或跨轴重新排序/);
+  assert.match(bodies['code-reviewer'], /工作树文件读取命令或工具/);
+  assert.match(bodies['code-reviewer'], /ReviewManifest shard ID/);
+  assert.match(bodies['code-reviewer'], /git show <review-commit>:<path>/);
   assert.match(compiledBodies.get('code-reviewer'), /只根据不可变 `ReviewManifest` 调度审查/);
   assert.match(compiledBodies.get('code-reviewer'), /在全新子会话中只重新发起被阻塞的评审一次/);
   assert.match(compiledBodies.get('code-reviewer'), /无需改变 ReviewManifest、digest、固定 SHA、分片范围、规格来源或标准来源/);
   assert.match(compiledBodies.get('code-reviewer'), /该次重试仍阻塞、失败或结果未知时，立即报告用户/);
-  assert.doesNotMatch(bodies['code-reviewer'], /git rev-parse|git diff --no-ext-diff/);
+  assert.doesNotMatch(bodies['code-reviewer'], /git rev-parse/);
   assert.doesNotMatch(bodies['code-reviewer'], /\$code-review|已安装时|未安装时|Matt/);
   assert.match(bodies['review-standards'], /缺少任一项时阻塞/);
+  assert.match(bodies['review-standards'], /ReviewManifest shard ID/);
+  assert.match(bodies['review-standards'], /git diff --no-ext-diff <fixed-point>\.\.\.<review-commit> -- <paths>/);
+  assert.match(bodies['review-standards'], /git show <review-commit>:<path>/);
   assert.match(bodies['review-spec'], /缺少任一项时阻塞/);
+  assert.match(bodies['review-spec'], /ReviewManifest shard ID/);
+  assert.match(bodies['review-spec'], /git diff --no-ext-diff <fixed-point>\.\.\.<review-commit> -- <paths>/);
+  assert.match(bodies['review-spec'], /git show <review-commit>:<path>/);
 
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const generatedCommitter = generatedBody(paths, platform, 'git-committer', extension);
+    assert.match(generatedCommitter, /新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`/, platform);
+    assert.match(generatedCommitter, /缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞/, platform);
     for (const role of Object.keys(bodies)) {
       const generated = generatedBody(paths, platform, role, extension);
       assert.ok(generated.includes('git diff <fixed-point>...<review-commit>'), `${platform}/${role}`);
@@ -1417,6 +1450,11 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
         assert.match(generated, /在全新子会话中只重新发起被阻塞的评审一次/, platform);
         assert.match(generated, /该次重试仍阻塞、失败或结果未知时，立即报告用户/, platform);
       }
+      assert.match(generated, /不得使用工作树文件读取命令或工具作为 finding 证据/, `${platform}/${role}`);
+      assert.match(generated, /每项 finding 必须引用 ReviewManifest shard ID/, `${platform}/${role}`);
+      assert.match(generated, /只能使用 `git show <review-commit>:<path>`/, `${platform}/${role}`);
+      assert.match(generated, /审查目标 worktree 的 `HEAD` 必须精确等于 `review-commit`/, `${platform}/${role}`);
+      assert.match(generated, /输入 prompt 中的 range、commit list 或 changed paths 与 ReviewManifest 任一不一致时预检阻塞/, `${platform}/${role}`);
     }
   }
 });

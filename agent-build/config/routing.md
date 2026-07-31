@@ -44,6 +44,8 @@
 
 Git Committer 必须先调用 `$git-commit` 生成提交信息。提交前必须确认当前 `HEAD` 精确等于 `base_commit`、当前 PathChange 集合与交接 `changed_paths` 全字段一致、已通过验证仍完整可用；只能以参数数组和 `--` 暂存交接 PathChange 的目标/源路径，并在提交前复核暂存结构化集合且暂存差异非空。提交必须仅在本地创建，成功后报告完整 `review_commit` SHA 和空的 porcelain 状态。范围不一致、工作树不干净、验证失败或提交 hook 失败时停止并报告精确原因；hook 失败后不得 reset、clean 或重试，必须用同一 parser 重新报告真实 index/worktree PathChange。工作树仍有 staged、unstaged 或 untracked 内容时，不能启动审查；该状态应作为范围或实现阻塞报告，而不是向用户重新请求同一实施阶段的提交授权。
 
+首次 review 的 blocking finding 修复完成后，Git Committer 必须基于修复后的干净 worktree 创建新的本地 review commit，并报告新的完整 SHA。新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`，并且新的 `review_commit` 必须精确等于 feature 或 task HEAD；该 SHA 是用户选择第二次 Code Reviewer 时唯一允许使用的 review commit。缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞，不得启动第二次评审。
+
 Git Committer 在整合前重新确认主工作树和 feature worktree 均干净、当前 `main` 精确等于评审 fixed point、feature HEAD 精确等于已通过审查的 review commit。若 `main` 已前进，返回 `resync_required`，先同步并重新评审最终提交。门禁通过后仅在主工作树运行 `git merge --ff-only <review_commit>`；主工作树无关改动默认阻塞，保留显式 stash 授权。成功后仅在 worktree 干净、分支已合并的前提下移除 worktree，并用 `git branch -d` 删除本地 feature 分支。
 
 <!-- ai-work-flow:section-end -->
@@ -52,7 +54,7 @@ Git Committer 在整合前重新确认主工作树和 feature worktree 均干净
 
 ## AI Work Flow 审查契约
 
-**Code Reviewer** 仅在 Git Committer 报告完整 `review_commit` SHA 且 `git status --short` 为空时开始。审查范围由固定的 `fixed-point` 与 `review-commit` 两个完整提交 SHA 构成。普通实现和工作流评审均使用最近同步的 `main_commit` 作为 fixed point，且 review commit 必须精确等于 feature HEAD；用户直接指定 fixed point 时，将开始评审时的 `HEAD` 解析为 `review-commit`，不得在委派后重新解析。Code Reviewer 绝不审查未提交内容。Code Reviewer 委派前按顺序运行并保存以下命令及结果：
+**Code Reviewer** 仅在 Git Committer 报告完整 `review_commit` SHA 且 `git status --short` 为空时开始。审查范围由固定的 `fixed-point` 与 `review-commit` 两个完整提交 SHA 构成。普通实现和工作流评审均使用最近同步的 `main_commit` 作为 fixed point，且 review commit 必须精确等于 feature HEAD；用户直接指定 fixed point 时，将开始评审时的 `HEAD` 解析为 `review-commit`，不得在委派后重新解析。审查目标 worktree 的 `HEAD` 必须精确等于 `review-commit`；输入 prompt 中的 range、commit list 或 changed paths 与 ReviewManifest 任一不一致时预检阻塞。Code Reviewer 绝不审查未提交内容。Code Reviewer 委派前按顺序运行并保存以下命令及结果：
 
 ```bash
 git rev-parse <fixed-point>
@@ -62,11 +64,11 @@ git diff <fixed-point>...<review-commit>
 git log <fixed-point>..<review-commit> --oneline
 ```
 
-两个端点必须可解析，fixed point 必须是 review commit 的祖先，三点 diff 必须非空。`git status --short` 只用于确认工作树干净；存在 staged、unstaged 或 untracked 内容时阻塞，不得读取或评价其内容。评审发现只允许来自固定的 committed diff，禁止使用无参数 `git diff` 或 `git diff --cached` 扩大范围。
+两个端点必须可解析，fixed point 必须是 review commit 的祖先，三点 diff 必须非空。`git status --short` 只用于确认工作树干净；存在 staged、unstaged 或 untracked 内容时阻塞，不得读取或评价其内容。评审发现只允许来自固定的 committed diff，禁止使用无参数 `git diff` 或 `git diff --cached` 扩大范围。Code Reviewer 及两个叶子不得使用工作树文件读取命令或工具作为 finding 证据，例如无 revision 的 `sed`、`cat`、`rg` 或直接打开 path。每项 finding 必须引用 ReviewManifest shard ID，并引用 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>` 的 hunk；如需上下文，只能使用 `git show <review-commit>:<path>`，且不得基于 committed diff 之外的上下文新增 finding。
 
 Code Reviewer 只根据不可变 `ReviewManifest` 调度审查。ReviewManifest 固定两个完整 SHA、结构化 commit list、changed paths、checks、diff command、显式 spec status/source、standards source、稳定 shard IDs 和 digest。Code Reviewer 先以 `git diff --name-only <fixed-point>...<review-commit>` 生成稳定排序的完整文件清单，按文件拆分可读取的分片；每个分片固定使用 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>`。单文件 diff 仍过大时，只对同一命令输出读取固定行窗口。**Review Standards** 与 **Review Spec** 必须收到完全相同的两个完整 SHA、diff 命令、commit list、规格来源、标准来源和完整文件/窗口分片清单，以及同一完整 ReviewManifest 与 digest；不得自行重算 `HEAD`、规格或分片。
 
-叶子评审分别返回 `{verdict, blocking_findings, advisory_findings, manifest_digest, coverage}`；每项 finding 具有稳定 ID、摘要和证据，coverage 与 findings summary 分字段返回。任一缺失、重复或越界 shard，或 digest 不一致都会阻塞汇总。两轴 coverage 完整且无阻塞 finding 才能自动进入整合，建议会保留并报告。任一阻塞 finding 进入 `awaiting_user`，用户只能用确认的 finding IDs 选择修复，不能 approve 绕过。用户确认 finding IDs 且修复完成后必须再次同步并进入新的 `awaiting_user` 决策点，明确提示用户选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”。只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer；用户选择继续后续流程时直接进入后续阶段，不得因第一次评审遗留的 blocking findings 自动再次评审。第二次评审仍有阻塞项时再次等待用户，不自动循环。输出截断、连接中断或结果未知时，只重试未完成分片并保持相同 SHA；重试耗尽后请求用户“继续”或“重试”，不得请求新的提交授权。
+叶子评审分别返回 `{verdict, blocking_findings, advisory_findings, manifest_digest, coverage}`；每项 finding 具有稳定 ID、摘要和证据，coverage 与 findings summary 分字段返回。任一缺失、重复或越界 shard，或 digest 不一致都会阻塞汇总。两轴 coverage 完整且无阻塞 finding 才能自动进入整合，建议会保留并报告。任一阻塞 finding 进入 `awaiting_user`，用户只能用确认的 finding IDs 选择修复，不能 approve 绕过。用户确认 finding IDs 且修复完成后必须再次同步并进入新的 `awaiting_user` 决策点，明确提示用户选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”。只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer；用户选择完整第二轮评审时，第二次完整双轴评审覆盖新的 committed range，不得限制为只复核旧 finding IDs。用户选择继续后续流程时直接进入后续阶段，不得因第一次评审遗留的 blocking findings 自动再次评审。第二次评审仍有阻塞项时再次等待用户，不自动循环。输出截断、连接中断或结果未知时，只重试未完成分片并保持相同 SHA；重试耗尽后请求用户“继续”或“重试”，不得请求新的提交授权。
 
 Review Standards 或 Review Spec 报告阻塞时，Code Reviewer 只有在无需改变 ReviewManifest、digest、固定 SHA、分片范围、规格来源或标准来源，不替叶子评审决定发现或结论，仅通过澄清任务输入或选择已授权执行方式即可消除阻塞时，才能记录明确裁决，并携带原 manifest 与裁决在全新子会话中只重新发起被阻塞的评审一次。需要修改固定输入、扩大范围、解释未批准需求或由用户作决定时必须直接报告用户。该次重试仍阻塞、失败或结果未知时，立即报告用户，不得再次自动重试；这是“子代理正常任务失败不可重试”规则的唯一审查例外。
 

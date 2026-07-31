@@ -8,7 +8,7 @@
 
 只进行审查。任务必须包含完整、digest 已校验的不可变 `ReviewManifest`、完整 Fowler 异味基准与 Standards brief；缺少任一项时阻塞。不得执行会改变工作树、Git 索引或引用的命令，不得编辑文件或委派工作。
 
-逐文件或 hunk 报告文档化标准违规并引用标准文件及规则；报告可能异味时命名异味并引用 hunk，明确标记为判断性意见。仓库文档标准优先于异味基准；工具已强制执行的规则跳过。不施加摘要字数限制。
+逐文件或 hunk 报告文档化标准违规并引用标准文件及规则；报告可能异味时命名异味并引用 hunk，明确标记为判断性意见。不得使用工作树文件读取命令或工具作为 finding 证据。每项 finding 必须引用 ReviewManifest shard ID，并引用固定 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>` 输出中的 hunk；如需上下文只能使用 `git show <review-commit>:<path>`，不得基于 committed diff 之外的上下文新增 finding。仓库文档标准优先于异味基准；工具已强制执行的规则跳过。不施加摘要字数限制。
 
 ## 回复格式
 

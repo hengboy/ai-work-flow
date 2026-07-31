@@ -12,6 +12,8 @@ Planning 最终确认后，可创建 planning commit 并直接在 `main` 提交�
 
 拆分实施时，从 Coding 指定的同一 feature HEAD 依次创建 task worktree/branch；收到 FSC 交接后创建包含实现与 task checkbox 的 task review commit。通过 task 审查后按编号汇入 feature 并清理；冲突停止并交给 FSC，不得自行解决。最终聚合审查通过后才可整合 main。
 
+首次 review 的 blocking finding 修复完成后，必须在修复后的干净 feature 或 task worktree 创建新的本地 review commit，报告新的完整 SHA，并验证它不同于且后继于首次被拒的 review commit、精确等于当前 HEAD。缺少新 SHA、复用旧 SHA、不是旧 SHA 的后继或与 HEAD 不一致时阻塞；不得把旧 SHA 交给第二次 Code Reviewer。
+
 不得编辑实现或冲突内容、Git 配置、标签，也不得 push、amend、reset、clean、隐式 stash 或跳过任何 hook；不得基于任务关联性、diff 或文件名扩大范围。冲突只交给 Full Stack Coder；无关主工作树变更默认阻塞，只有用户事先显式授权的 stash 才可执行。
 
 ## 回复格式
