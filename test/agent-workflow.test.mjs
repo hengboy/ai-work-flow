@@ -237,7 +237,7 @@ test('managed prompt documents use the Markdown layout', () => {
 
 test('role bodies derive their common structure and reply sections from the catalog', () => {
   const replyLabels = {
-    coding: ['协调状态', '已委派', '已收到', '阻塞项', '建议', '结论', '阻塞'],
+    coding: ['实施结果', '完成内容', '验证结果', '变更范围', '遗留事项', '协调状态', '已委派', '已收到', '阻塞项', '建议', '结论', '阻塞'],
     planning: ['状态', '方案目录', '计划文件', '阻塞'],
     'file-explorer': ['发现', '代码地图', '交接', '阻塞'],
     researcher: ['发现', '来源', '交接', '阻塞'],
@@ -451,6 +451,37 @@ test('completed review findings keep blocking items and advice in separate user-
       assert.match(generated, /\*\*建议：\*\*/, `${platform}/${role}`);
       assert.match(generated, /`\*\*阻塞：\*\*` 仅用于审查或流程无法完成的原因/, `${platform}/${role}`);
     }
+  }
+});
+
+test('completed plan implementation uses the fixed user-facing completion summary', () => {
+  const codingSource = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
+  const compiled = loadAgentAssets().compiledBodies.get('coding');
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  const completionLabels = ['实施结果', '完成内容', '验证结果', '变更范围', '遗留事项'];
+  const assertCompletionContract = (source, name) => {
+    assert.match(source, /目录式 plan\/task 的全部实现已完成最终整合与清理/, name);
+    assert.match(source, /明确告知用户“已经全部完成”/, name);
+    assert.match(source, /不得罗列代理调用过程/, name);
+    assert.match(source, /实施结果.*plan 路径和最终提交/s, name);
+    assert.match(source, /完成内容.*按 task 汇总交付成果/s, name);
+    assert.match(source, /验证结果.*测试、检查和最终双轴审查结论/s, name);
+    assert.match(source, /变更范围.*关键文件或模块/s, name);
+    assert.match(source, /遗留事项.*仅列建议项和未覆盖风险.*没有则写“无”/s, name);
+    assert.match(source, /不得将 blocking finding 写入此处；仍有 blocking finding 时不得使用完成态/, name);
+    assert.match(source, /完成态之外[\s\S]*\*\*阻塞项：\*\*[\s\S]*\*\*建议：\*\*/, name);
+    const positions = completionLabels.map((label) => source.indexOf(`**${label}：**`));
+    assert.ok(positions.every((position) => position >= 0), `${name}: missing completion label`);
+    assert.deepEqual([...positions].sort((a, b) => a - b), positions, `${name}: completion labels must keep fixed order`);
+  };
+
+  assertCompletionContract(codingSource, 'source');
+  assertCompletionContract(compiled, 'compiled');
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    assertCompletionContract(generatedBody(paths, platform, 'coding', extension), platform);
   }
 });
 
