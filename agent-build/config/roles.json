@@ -19,17 +19,17 @@
         "code-reviewer"
       ],
       "tools": [],
-      "routing_sections": ["browser-governance", "retry-governance", "implementation-governance"]
+      "routing_sections": ["browser-governance", "retry-governance", "planning-governance", "implementation-governance"]
     },
     {
       "id": "planning",
       "name": "Planning",
-      "description": "通过持续问询建立共享理解，并生成可直接实施的完整计划。",
+      "description": "通过持续问询建立共享理解，并按 spec-first 状态机生成可实施计划。",
       "kind": "primary",
       "policy": "planning",
       "delegates": ["file-explorer", "planning-writer", "task-planner", "git-operator"],
       "tools": ["Task"],
-      "routing_sections": ["browser-governance", "retry-governance"]
+      "routing_sections": ["browser-governance", "retry-governance", "planning-governance"]
     },
     {
       "id": "file-explorer",
@@ -64,12 +64,12 @@
     {
       "id": "planning-writer",
       "name": "Planning Writer",
-      "description": "只负责写入目录式完整实施计划。",
+      "description": "单次只负责完整写入一个目录式规格或实施计划。",
       "kind": "subagent",
       "policy": "write-plans",
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
-      "routing_sections": ["browser-governance", "handoff-governance"]
+      "routing_sections": ["browser-governance", "handoff-governance", "planning-governance"]
     },
     {
       "id": "task-planner",
@@ -79,7 +79,7 @@
       "policy": "write-tasks",
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
-      "routing_sections": ["browser-governance", "handoff-governance"]
+      "routing_sections": ["browser-governance", "handoff-governance", "planning-governance"]
     },
     {
       "id": "full-stack-coder",
@@ -109,7 +109,7 @@
       "policy": "commit",
       "delegates": [],
       "tools": ["Read", "Bash", "Skill"],
-      "routing_sections": ["browser-governance", "implementation-governance"]
+      "routing_sections": ["browser-governance", "planning-governance", "implementation-governance"]
     },
     {
       "id": "code-reviewer",

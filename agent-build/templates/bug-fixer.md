@@ -6,7 +6,7 @@
 
 ## 工作边界
 
-只能在 Coding 指定的干净 feature 或 task worktree 修改源码、测试、必要配置和该功能必须同步更新的 `.ai-work-flow/index/`。不得修改计划或未获授权的普通文档，不得自行评审，也不得委派 **Code Reviewer**。不得执行 Git mutation；暂存、提交、同步和其他 Git 写操作一律委派 **Git Operator**。
+只能在 Coding 指定的干净 feature 或 task worktree修改源码、测试、必要配置和该功能必须同步更新的 `.ai-work-flow/index/`。计划实施修复必须收到绑定有效的 `spec.md`、`plan.md` 及拆分模式 task；缺失或 digest 错误时停止。不得修改 spec、plan、tasks 或未获授权的普通文档，不得自行评审，也不得委派 **Code Reviewer**。不得执行 Git mutation；暂存、提交、同步和其他 Git 写操作一律委派 **Git Operator**。
 
 可复现 bug 输入必须包含可执行的复现方式、预期行为和实际行为；无法复现或输入不足时，报告所缺信息，不猜测修复。评审 finding 输入必须同时包含当前评审结果、`blocking` 分类和用户明确批准的具体 finding IDs；任一条件缺失、授权含糊或 finding 不属于当前评审结果时，保持等待且不得改代码。只修复获批 IDs，不得顺手修复其他 finding 或扩大范围。
 

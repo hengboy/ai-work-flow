@@ -52,7 +52,7 @@ node agent-build/install.mjs --platform claude,opencode
 ${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/environments/default.json
 ```
 
-非默认环境使用同目录下的 `<name>.json`，由 `.environment` 标记选择；环境配置按角色、平台和字段覆盖默认值，未提供字段继续继承。OpenCode 的 `options` 例外：一旦覆盖就整体替换。默认环境必须保留全部受管理角色及三平台完整配置，非默认环境可以只记录差异。升级期间旧默认环境完全缺失 Bug Fixer 时，`validate` 和 `generate` 只在内存中使用该角色的默认配置且不改写环境文件，下一次完整安装会持久化补齐；已有但残缺的 Bug Fixer 配置仍会失败。修改环境文件后，通过 `$generate-ai-work-flow-agents` 校验并重新生成，或直接依次运行 `validate` 和 `generate`；新会话才会读取更新后的 agents。环境切换应使用 `env use <name>`，不要手工改写 `.environment`。
+非默认环境使用同目录下的 `<name>.json`，由 `.environment` 标记选择；环境配置按角色、平台和字段覆盖默认值，未提供字段继续继承。OpenCode 的 `options` 例外：一旦覆盖就整体替换。默认环境必须保留全部受管理角色及三平台完整配置，非默认环境可以只记录差异。完整安装会补齐完全缺失的 Planning、Planning Writer、Task Planner 或 Bug Fixer；已有但残缺的角色配置仍会失败。旧默认环境完全缺失 Bug Fixer 时，`validate` 和 `generate` 还可只在内存中使用该角色的默认配置且不改写环境文件，下一次完整安装再持久化补齐。修改环境文件后，通过 `$generate-ai-work-flow-agents` 校验并重新生成，或直接依次运行 `validate` 和 `generate`；新会话才会读取更新后的 agents。环境切换应使用 `env use <name>`，不要手工改写 `.environment`。
 
 平台配置按角色组织，例如：
 
@@ -84,18 +84,19 @@ Codex 的 `reasoning` 使用非空字符串；Claude Code 的 `effort` 只接受
 
 ## 工作流
 
-项目包含两套执行协议：目录式 **Plan/Task** 由 Planning、Coding 和 Git Operator 按代理指令协调；canonical **Spec/Ticket** 由 `execution-cli.mjs` 持久化 Execution plan、Checkpoint 和执行状态。只有 Spec/Ticket 流程提供 canonical runtime 与跨会话 Checkpoint 恢复。
+项目包含两套独立协议：目录式 **Planning Spec/Plan/Task** 由 Planning、Coding 和 Git Operator 按代理指令协调；canonical **Spec/Ticket** 由 `execution-cli.mjs` 持久化 Execution plan、Checkpoint 和执行状态。前者位于 `.ai-work-flow/plans/`，没有 planning CLI 或 runtime；后者位于 `.scratch/`，只有它提供 canonical runtime 与跨会话 Checkpoint 恢复。两套 spec 格式和兼容边界互不转换。
 
 ### 使用流程
 
 ```text
-Planning 生成 plan.md -> 选择拆分或不拆分 -> 创建 planning commit -> 新会话由 Coding 实施 plan
+Planning 问询并确认 -> 写入/校验 spec.md -> 计算原始字节 SHA-256 -> 写入绑定的 plan.md -> 选择拆分或不拆分 -> 创建 planning commit -> 新会话由 Coding 实施
 ```
 
-1. 在 **Planning** 主代理中说明目标。Planning 逐项确认关键决策，并将完整计划写入 `.ai-work-flow/plans/<plan-id>/plan.md`。
-2. 选择是否拆分任务。不拆分时仅保留 `plan.md`，后续按单任务模式实施；拆分时生成同目录下的 `tasks/NN-short-name.md`，后续按依赖前沿实施。
-3. 确认计划和任务结构后，由 Planning 委派 Git Operator 创建只包含规划工件的本地 planning commit。Planning 到此结束，不实施代码。
-4. 打开新会话并使用默认的 **Coding** 主代理，明确要求实施计划，例如：`实施 .ai-work-flow/plans/<plan-id>/plan.md`。Coding 会验证 planning commit 和计划结构，再进入对应的单任务或拆分实施流程。
+1. 在 **Planning** 主代理中说明目标。Planning 逐项确认关键决策并复述共享理解；用户明确批准后，Planning Writer 才完整写入 `.ai-work-flow/plans/<plan-id>/spec.md`。已有且需求未变化的 spec 会先校验、总结并再次确认，不会静默重写。
+2. spec 写后必须满足固定章节、`status: approved` 和 `Open Questions: N/A`，并只描述需求与验收边界。File Explorer 对保存后的原始完整字节计算 SHA-256；随后 Planning Writer 写入 `plan.md`，通过 `source_spec` 和 `source_spec_digest` 绑定该规格。任一写入、校验或摘要失败都会短路后续阶段。
+3. plan 校验成功后明确选择“拆分”或“不拆分”。拆分时先确认完整任务草案的颗粒度，再按当前 plan 原始完整字节摘要全量替换 `tasks/NN-short-name.md`；不拆分时需明确确认删除全部旧 tasks。计划一旦重写，旧 tasks 立即不可执行。
+4. 确认最终工件后，由 Planning 委派 Git Operator 创建只包含当前目录 spec、plan 和完整 tasks 集合或 tasks 删除的本地 planning commit。Planning 到此结束，不实施代码。
+5. 打开新会话并使用默认的 **Coding** 主代理，明确要求实施 `.ai-work-flow/plans/<plan-id>/plan.md`。Coding 会复核 spec/plan 原始字节摘要绑定、planning commit 和任务模式，再进入单任务或拆分实施流程。
 
 ### 手工 Git worktree 参考
 
@@ -193,13 +194,16 @@ Coding 将任务路由给 File Explorer、Researcher、Document Maintainer、Pla
 
 ### Planning 产物
 
-Planning 通过问询确认目标和关键决策，将完整计划写入：
+Planning 通过问询确认目标和关键决策，写入配对工件：
 
 ```text
+.ai-work-flow/plans/<plan-id>/spec.md
 .ai-work-flow/plans/<plan-id>/plan.md
 ```
 
-确认计划后可继续拆分为 `tasks/NN-short-name.md`。没有 `tasks/` 是单任务模式；存在且全部合法的任务文件是拆分模式；空的或含无效任务文件的 `tasks/` 会阻塞实施。Planning 只生成计划，不实施代码。
+`spec.md` 是唯一需求事实来源，固定为 `approved`；`plan.md` 固定为 `ready-for-implementation`，并绑定 spec 原始完整字节的 SHA-256。确认计划后可继续拆分为 `tasks/NN-short-name.md`，每个 task 绑定当前 plan 原始完整字节摘要。没有 `tasks/` 是单任务模式；存在且全部合法的任务文件是拆分模式；空目录、摘要失效或部分替换都会阻塞实施。Planning 只生成规划工件，不实施代码。
+
+这是 breaking change。旧 `.ai-work-flow/plans/<plan-id>.md` 平铺计划和缺少有效 `spec.md` 的 plan-only 目录不会迁移、兼容或反向生成规格，Coding 必须拒绝消费；历史文件可保留，但不能进入正常实施。
 
 ### 普通实施
 
@@ -251,11 +255,11 @@ Checkpoint 只接受当前格式；旧字段、旧绝对路径或未知格式不
 | 角色 | 职责边界 |
 | --- | --- |
 | Coding | 路由、等待受委派结果并汇总 |
-| Planning | 问询并生成完整计划，不实施代码 |
+| Planning | 问询、确认并按 spec-first 状态机生成规格与计划，不实施代码 |
 | File Explorer | 全库枚举、搜索和代码地图 |
 | Researcher | 只读取外部官方来源，并写入 `.ai-work-flow/research/<topic>.md` |
 | Document Maintainer | 只维护 README、docs 等普通文档 |
-| Planning Writer | 只写目录式完整实施计划 |
+| Planning Writer | 单次完整写入一个目录式 spec 或 plan |
 | Task Planner | 将已确认计划拆分为可跟踪任务 |
 | Full Stack Coder | 实现源码、测试、必要配置和修复 |
 | Bug Fixer | 受限修复可复现 bug 或获批 blocking finding；Codex `gpt-5.6-luna`/`max`，OpenCode `baibai/gpt-5.6-luna`/`max`，Claude `sonnet`/`high` |
@@ -283,7 +287,7 @@ Checkpoint 只接受当前格式；旧字段、旧绝对路径或未知格式不
 | `instruction-only` | 只能依赖 agent 指令遵守，平台没有等价强制能力 |
 | `unsupported` | 当前平台 adapter 无法表达或证明该约束 |
 
-关键差异：Codex 只对允许读取/写入的文件系统模式提供部分沙箱强制；Claude Code 的文件系统边界是 `instruction-only`；OpenCode 能强制文件系统和是否允许委派，但通常不能限制具体委派目标。三平台的 shell、Git、`write_scope` 和委派目标多为 `instruction-only`，network/browser 约束均为 `unsupported`。因此这些角色边界不能视为统一安全沙箱，运行高风险任务前应检查 `env status` 的 capability 警告。
+关键差异：Codex 只对允许读取/写入的文件系统模式提供部分沙箱强制；Claude Code 的文件系统边界是 `instruction-only`；OpenCode 能强制文件系统、是否允许委派，以及 Planning Writer、Task Planner、Researcher 的生成路径类别，但不能按一次委派动态限制 Writer 只能写 spec 或 plan，也通常不能限制具体委派目标。阶段顺序、单目标写入和用户确认仍是 `instruction-only`。三平台的 shell、Git 和委派目标多为 `instruction-only`，network/browser 约束均为 `unsupported`。因此这些角色边界不能视为统一安全沙箱，运行高风险任务前应检查 `env status` 的 capability 警告。
 
 ## 安全与一致性
 

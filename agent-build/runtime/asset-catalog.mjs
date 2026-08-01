@@ -11,7 +11,7 @@ const POLICY_CAPABILITIES = {
   network: new Set(['none', 'official']),
   browser: new Set(['none']),
   git: new Set(['none', 'read', 'write']),
-  write_scope: new Set(['none', 'docs', 'plans', 'tasks', 'research', 'code', 'git']),
+  write_scope: new Set(['none', 'docs', 'planning-artifacts', 'tasks', 'research', 'code', 'git']),
   delegation: new Set(['none', 'allowed', 'review-only'])
 };
 const ROLE_KINDS = new Set(['primary', 'subagent', 'reviewer']);
@@ -27,6 +27,24 @@ const TOOL_REQUIREMENTS = {
   WebFetch: ['network', new Set(['official'])],
   Task: ['delegation', new Set(['allowed', 'review-only'])],
   Skill: null
+};
+const SPEC_FIRST_TEMPLATE_CONTRACTS = {
+  planning: [
+    'spec.md',
+    'source_spec_digest',
+    'SHA-256',
+    '拆分',
+    '不拆分'
+  ],
+  'planning-writer': [
+    'Spec Metadata',
+    'status: `approved`',
+    'Open Questions',
+    'source_spec_digest'
+  ],
+  'task-planner': ['source_plan_digest', '完整字节', '全量替换'],
+  coding: ['spec.md', 'source_spec_digest', '旧平铺计划'],
+  'git-operator': ['spec.md', 'source_spec_digest']
 };
 
 function unique(values) {
@@ -192,7 +210,12 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
     if (!expectedBodies.includes(name)) errors.push(`Template has no catalog role: ${name}.`);
   }
   for (const name of expectedBodies.filter((body) => bodyNames.includes(body))) {
-    if (!readFileSync(resolve(templatesRoot, name), 'utf8').trim()) errors.push(`Template is empty: ${name}.`);
+    const body = readFileSync(resolve(templatesRoot, name), 'utf8');
+    if (!body.trim()) errors.push(`Template is empty: ${name}.`);
+    const roleId = name.slice(0, -3);
+    for (const marker of SPEC_FIRST_TEMPLATE_CONTRACTS[roleId] ?? []) {
+      if (!body.includes(marker)) errors.push(`Template ${name} is missing spec-first contract marker: ${marker}.`);
+    }
   }
   if (errors.length) fail(`Agent asset catalog is invalid:\n${errors.join('\n')}`);
   return { routing, sections };

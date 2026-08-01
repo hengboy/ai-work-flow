@@ -167,6 +167,14 @@ export function opencodePermission(role, policy) {
       '.ai-work-flow/plans/*/tasks/*/*': 'deny'
     };
   }
+  if (role.id === 'planning-writer') {
+    permission.edit = {
+      '*': 'deny',
+      '.ai-work-flow/plans/*/spec.md': 'allow',
+      '.ai-work-flow/plans/*/plan.md': 'allow',
+      '.ai-work-flow/plans/*/*/*': 'deny'
+    };
+  }
   if (policy.write_scope === 'research') {
     permission.edit = {
       '*': 'deny',
@@ -340,6 +348,9 @@ function capabilityLevel(platform, role, capability, requested) {
   if (capability === 'delegation_targets') {
     if (platform === 'opencode' && role.delegates.length === 0 && requested !== 'allowed' && !role.tools.includes('Task')) return 'enforced';
     return 'instruction-only';
+  }
+  if (capability === 'write_scope' && platform === 'opencode') {
+    return ['planning-writer', 'task-planner', 'researcher'].includes(role.id) ? 'enforced' : 'instruction-only';
   }
   if (capability === 'network' || capability === 'browser') return 'unsupported';
   if (platform === 'opencode' && capability === 'delegation') return 'enforced';

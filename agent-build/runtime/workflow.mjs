@@ -15,6 +15,7 @@ const SKILLS_ROOT = resolve(ROOT, 'skills');
 const PLATFORMS = new Set(['codex', 'claude', 'opencode']);
 const LEGACY_PRIMARY_AGENT_ID = 'orchestrator';
 const LEGACY_GIT_OPERATOR_AGENT_ID = 'git-committer';
+const INSTALL_MISSING_ROLE_DEFAULTS = ['planning', 'planning-writer', 'task-planner', 'bug-fixer'];
 const LEGACY_ROLE_RENAMES = new Map([
   [LEGACY_PRIMARY_AGENT_ID, 'coding'],
   [LEGACY_GIT_OPERATOR_AGENT_ID, 'git-operator']
@@ -238,17 +239,11 @@ function loadInstallConfig(assets, platforms) {
   let base = exists
     ? migration.configurations.get(paths.defaultEnvironment) ?? readJson(paths.defaultEnvironment)
     : structuredClone(assets.defaults);
-  if (exists && isPlainObject(base?.roles) && !Object.hasOwn(base.roles, 'planning')) {
-    base = structuredClone(base);
-    base.roles.planning = structuredClone(assets.defaults.roles.planning);
-  }
-  if (exists && isPlainObject(base?.roles) && !Object.hasOwn(base.roles, 'task-planner')) {
-    base = structuredClone(base);
-    base.roles['task-planner'] = structuredClone(assets.defaults.roles['task-planner']);
-  }
-  if (exists && isPlainObject(base?.roles) && !Object.hasOwn(base.roles, 'bug-fixer')) {
-    base = structuredClone(base);
-    base.roles['bug-fixer'] = structuredClone(assets.defaults.roles['bug-fixer']);
+  for (const roleId of INSTALL_MISSING_ROLE_DEFAULTS) {
+    if (exists && isPlainObject(base?.roles) && !Object.hasOwn(base.roles, roleId)) {
+      base = structuredClone(base);
+      base.roles[roleId] = structuredClone(assets.defaults.roles[roleId]);
+    }
   }
   const resolved = loadResolvedConfiguration({
     paths,

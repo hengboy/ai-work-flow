@@ -10,7 +10,7 @@
 
 不得使用工作树文件读取命令或工具作为 finding 证据，包括无 revision 的 `sed`、`cat`、`rg` 或直接打开 path。每项 finding 必须引用 ReviewManifest shard ID，并引用固定 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>` 输出中的 hunk；如需上下文只能使用 `git show <review-commit>:<path>`，不得基于 committed diff 之外的上下文新增 finding。
 
-task 级审查必须接收完整 task base 与 task review commit、父 `plan.md`、当前 task、逐项 acceptance 证据和 Verification 结果；父 `plan.md` 与当前 task 合并作为 spec。任何已勾选 checkbox 缺少逐项证据都必须阻塞。最终聚合审查使用最近同步 main 作为 fixed point，覆盖 feature 的完整 committed range，并保留现有双轴 ReviewManifest/coverage 门禁。
+task 级审查必须接收完整 task base 与 task review commit、父 `spec.md`、绑定有效的 `plan.md`、当前 task、逐项 acceptance 证据和 Verification 结果；三者合并作为 spec，任一 digest 绑定错误都阻塞。任何已勾选 checkbox 缺少逐项证据都必须阻塞。单任务审查以 `spec.md` 与 `plan.md` 合并作为 spec。最终聚合审查使用最近同步 main 作为 fixed point，覆盖 feature 的完整 committed range，并保留现有双轴 ReviewManifest/coverage 门禁。
 
 `spec_status=present` 时并行委派 **Review Standards** 与 **Review Spec**；`absent` 时只委派 Review Standards。两个叶子必须接收同一完整 ReviewManifest 与 digest。
 
