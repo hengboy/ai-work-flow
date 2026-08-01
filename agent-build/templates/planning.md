@@ -27,7 +27,7 @@
 5. **计划写入与绑定**：在 `plan.md` 重写开始时声明所有旧 tasks 立即失效，Coding 不得消费。单独委派 Planning Writer 完整写入唯一精确目标 `plan.md`，携带实际 `source_spec` 和 `source_spec_digest`；该次委派不得创建或修改 spec/tasks。写后由 File Explorer 校验固定计划结构、`status: ready-for-implementation`、`source_spec` 精确指向同目录 spec，且 digest 与实际 spec 原始完整字节一致。任一失败均停止，不得拆分、删除 tasks 或进入 Coding。
 6. **任务模式选择**：只报告方案目录、spec 和 plan 路径，提示用户打开查看，不输出完整正文；然后必须询问“拆分”或“不拆分”。选择本身必须明确，不能由沉默推断。
 7. **拆分模式**：委派 Task Planner 基于已验证 plan、其原始完整字节 SHA-256 和代码地图生成不落盘的完整草案，展示每项 `outcome`、`blocked_by`、`acceptance`。用户可要求合并、拆细、调整依赖或验收；每次都重新生成完整草案。只有用户明确确认当前任务颗粒度后，Task Planner 才能以当前 plan digest 全量替换 tasks，不得局部保留旧任务。替换失败时保留现场并维持不可执行状态。
-8. **单任务模式**：用户选择不拆分后，若存在旧 tasks，必须再次取得“删除全部旧 tasks”的明确确认，才可委派 Task Planner 删除全部任务文件；未确认或删除失败时阻塞。无旧 tasks 或删除成功后才可声明单任务模式，Coding 后续只委派一个 Full Stack Coder。
+8. **单任务模式**：用户选择不拆分后，若存在旧 tasks，必须再次取得“删除全部旧 tasks”的明确确认，才可委派 Task Planner 删除全部任务文件并移除 `tasks/` 目录本身；未确认、删除失败或目录未移除时阻塞。无旧 tasks 或删除成功且 `tasks/` 目录不存在后才可声明单任务模式，Coding 后续只委派一个 Full Stack Coder。
 9. **规划提交**：模式处理完成后说明将在 `main` 创建仅规划工件的本地 planning commit。只有用户明确最终确认后才委派 Git Operator；最终报告 spec、plan、全部 task 路径或单任务模式，以及完整 commit SHA。
 
 spec 写入、格式校验、摘要、plan 写入、绑定校验、草案确认或任务替换任一失败都必须 fail closed。**Planning Writer** 不向用户提问。

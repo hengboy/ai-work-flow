@@ -36,7 +36,7 @@
 
 新规划工件必须位于 `.ai-work-flow/plans/<plan-id>/`，并同时包含已批准的 `spec.md` 与 `ready-for-implementation` 的 `plan.md`。plan 必须通过 `source_spec` 和对 spec 原始完整字节计算的 SHA-256 小写摘要绑定规格；拆分任务必须通过当前 plan 原始完整字节摘要绑定计划。任一工件缺失、格式非法、路径或摘要不匹配时 fail closed，不得继续写后续工件、实施或提交。
 
-旧平铺计划、plan-only 目录和失效任务均不迁移、不兼容、不得反向生成规格。计划重写立即使旧 tasks 不可执行；只有用户确认后才能全量替换 tasks，或在不拆分模式下删除全部旧 tasks。平台只能对实际生成的路径权限标为 `enforced`，单目标阶段顺序等提示词约束必须保持 `instruction-only` 语义。
+旧平铺计划、plan-only 目录和失效任务均不迁移、不兼容、不得反向生成规格。计划重写立即使旧 tasks 不可执行；只有用户确认后才能全量替换 tasks，或在不拆分模式下删除全部旧 tasks 并确保 `tasks/` 目录本身不存在。平台只能对实际生成的路径权限标为 `enforced`，单目标阶段顺序等提示词约束必须保持 `instruction-only` 语义。
 
 <!-- ai-work-flow:section-end -->
 

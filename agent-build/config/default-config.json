@@ -94,7 +94,7 @@
     "planning-writer": {
       "codex": {
         "model": "gpt-5.6-terra",
-        "reasoning": "high"
+        "reasoning": "medium"
       },
       "claude": {
         "model": "opus",
@@ -102,7 +102,7 @@
       },
       "opencode": {
         "model": "baibai/gpt-5.6-terra",
-        "variant": "high",
+        "variant": "medium",
         "options": {}
       }
     },

@@ -24,7 +24,7 @@
 
 `.ai-work-flow/plans/<plan-id>.md` 旧平铺计划、缺少有效 spec 的 plan-only 目录、从旧 plan 反向生成的 spec、未知状态及任何降级格式一律拒绝；不迁移、不兼容、不得作为单任务输入。Planning 只生成新目录式 spec-first 工件。
 
-有效 spec/plan 目录的 `tasks/` 不存在表示单任务模式：只委派一个 **Full Stack Coder**，走共享的统一 feature worktree 生命周期。存在至少一个全部合法的 task 表示拆分模式；`tasks/` 存在但为空，或命名、必填字段、digest、依赖任一无效时必须阻塞，不得降级为单任务。每个 task 的 `source_plan_digest` 必须匹配当前 `plan.md` 原始完整字节的 SHA-256；不匹配表示任务已失效，禁止局部沿用或执行。`write_scope` 只需是非空的粗粒度路径或模块提示，不得因其没有枚举实施所需的全部文件而判定 task 无效。
+有效 spec/plan 目录的 `tasks/` 不存在（目录本身不存在）表示单任务模式：只委派一个 **Full Stack Coder**，走共享的统一 feature worktree 生命周期。存在至少一个全部合法的 task 表示拆分模式；`tasks/` 存在但为空，或命名、必填字段、digest、依赖任一无效时必须阻塞，不得降级为单任务。每个 task 的 `source_plan_digest` 必须匹配当前 `plan.md` 原始完整字节的 SHA-256；不匹配表示任务已失效，禁止局部沿用或执行。`write_scope` 只需是非空的粗粒度路径或模块提示，不得因其没有枚举实施所需的全部文件而判定 task 无效。
 
 拆分模式先验证连续编号、唯一 `task_id`、只向前的 `blocked_by`、无环、用于并发的 task 其声明 `write_scope` 互斥，以及完整 checklist/Verification。每个 task 的 `Acceptance Criteria` 必须非空，且至少一个复选框，条目只能是 `- [ ]` 或 `- [x]`/`- [X]`。按 `blocked_by` 计算 frontier，再按 task 编号、声明 scope 和平台并发容量并发实施；所有 Git 操作始终串行。**Git Operator** 从同一 frontier 开始时相同的 feature HEAD 创建每个 task worktree/branch。
 

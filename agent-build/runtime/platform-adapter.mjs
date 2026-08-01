@@ -350,7 +350,7 @@ function capabilityLevel(platform, role, capability, requested) {
     return 'instruction-only';
   }
   if (capability === 'write_scope' && platform === 'opencode') {
-    return ['planning-writer', 'task-planner', 'researcher'].includes(role.id) ? 'enforced' : 'instruction-only';
+    return role.id === 'researcher' ? 'enforced' : 'instruction-only';
   }
   if (capability === 'network' || capability === 'browser') return 'unsupported';
   if (platform === 'opencode' && capability === 'delegation') return 'enforced';

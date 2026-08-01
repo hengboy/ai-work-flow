@@ -1220,10 +1220,20 @@ test('planning is an opt-in primary that delegates discovery and plan writing', 
     opencode: { model: 'baibai/gpt-5.6-sol', variant: 'high', options: {} }
   });
   assert.deepEqual(defaults.roles['planning-writer'], {
-    codex: { model: 'gpt-5.6-terra', reasoning: 'high' },
+    codex: { model: 'gpt-5.6-terra', reasoning: 'medium' },
     claude: { model: 'opus', effort: 'high' },
-    opencode: { model: 'baibai/gpt-5.6-terra', variant: 'high', options: {} }
+    opencode: { model: 'baibai/gpt-5.6-terra', variant: 'medium', options: {} }
   });
+
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  const generatedCodex = parseToml(readFileSync(agentPath(paths, 'codex', 'planning-writer', 'toml'), 'utf8'));
+  const generatedClaude = parseFrontmatter(readFileSync(agentPath(paths, 'claude', 'planning-writer', 'md'), 'utf8'));
+  const generatedOpenCode = parseFrontmatter(readFileSync(agentPath(paths, 'opencode', 'planning-writer', 'md'), 'utf8'));
+  assert.equal(generatedCodex.model_reasoning_effort, 'medium');
+  assert.equal(generatedClaude.effort, 'high');
+  assert.equal(generatedOpenCode.variant, 'medium');
 });
 
 test('spec-first planning binds the plan to raw saved bytes and short-circuits failures', () => {
@@ -1347,7 +1357,8 @@ test('task planning delegation and generated permissions stay narrowly scoped', 
     '.ai-work-flow/plans/*/tasks/*/*': 'deny'
   });
   assert.equal(openCode.permission.task, 'deny');
-  assert.equal(capabilityMatrix('opencode', taskPlanner, policies[taskPlanner.policy]).write_scope, 'enforced');
+  assert.equal(openCode.permission.bash, 'allow');
+  assert.equal(capabilityMatrix('opencode', taskPlanner, policies[taskPlanner.policy]).write_scope, 'instruction-only');
 });
 
 test('planning prompt converges one decision at a time and writes the complete fixed plan template', () => {
@@ -1407,11 +1418,12 @@ test('planning confirms plan splitting and commits only final planning artifacts
   const planning = readFileSync(resolve(templatesDir, 'planning.md'), 'utf8');
   const planningWriter = readFileSync(resolve(templatesDir, 'planning-writer.md'), 'utf8');
   const taskPlanner = readFileSync(resolve(templatesDir, 'task-planner.md'), 'utf8');
+  const gitOperator = readFileSync(resolve(templatesDir, 'git-operator.md'), 'utf8');
 
   assert.match(planning, /\.ai-work-flow\/plans\/<plan-id>\/spec\.md/);
   assert.match(planning, /source_spec_digest/);
   assert.match(planning, /只报告方案目录、spec 和 plan 路径.*提示用户打开.*不输出完整正文.*“拆分”或“不拆分”/s);
-  assert.match(planning, /不拆分.*“删除全部旧 tasks”的明确确认.*一个 Full Stack Coder/s);
+  assert.match(planning, /不拆分.*“删除全部旧 tasks”的明确确认.*删除全部任务文件并移除 `tasks\/` 目录本身.*`tasks\/` 目录不存在.*一个 Full Stack Coder/s);
   assert.match(planning, /outcome.*blocked_by.*acceptance/s);
   assert.match(planning, /合并、拆细、调整依赖或验收/);
   assert.match(planning, /不落盘的完整草案/);
@@ -1430,6 +1442,8 @@ test('planning confirms plan splitting and commits only final planning artifacts
   assert.match(taskPlanner, /草案阶段.*不得创建、修改或删除任何 task 文件/s);
   assert.match(taskPlanner, /写入阶段.*完整任务草案.*用户已明确确认.*颗粒度/s);
   assert.match(taskPlanner, /校验每项 `source_plan_digest`.*待写内容与已确认草案完全一致/s);
+  assert.match(taskPlanner, /删除阶段.*删除目标 `tasks\/` 下全部 task 文件并移除 `tasks\/` 目录本身.*目录仍存在.*阻塞/s);
+  assert.match(gitOperator, /不拆分模式.*旧 tasks 删除.*提交前验证 `tasks\/` 目录本身不存在.*即使目录为空也阻塞/s);
   assert.match(taskPlanner, /默认采用较粗颗粒度并优先减少 task 数量/);
 });
 
@@ -1487,7 +1501,7 @@ test('coding executes single or split plans through validated task frontiers', (
   const assertions = [
     /File Explorer.*spec\.md.*plan\.md.*Git 跟踪.*planning commit.*主工作树干净/s,
     /\$project-code-navigation/,
-    /`tasks\/` 不存在.*单任务.*一个 \*\*Full Stack Coder\*\*/s,
+    /`tasks\/` 不存在.*目录本身不存在.*单任务.*一个 \*\*Full Stack Coder\*\*/s,
     /`tasks\/` 存在但.*无效.*阻塞/s,
     /`blocked_by`.*frontier.*编号.*平台并发容量/s,
     /所有 Git 操作.*串行/,
@@ -1594,10 +1608,11 @@ test('all platforms generate a non-writing planning coordinator without changing
 
   const planningWriter = catalog.roles.find((role) => role.id === 'planning-writer');
   assert.equal(capabilityMatrix('claude', planningWriter, policies[planningWriter.policy]).write_scope, 'instruction-only');
-  assert.equal(capabilityMatrix('opencode', planningWriter, policies[planningWriter.policy]).write_scope, 'enforced');
+  assert.equal(capabilityMatrix('opencode', planningWriter, policies[planningWriter.policy]).write_scope, 'instruction-only');
   const claudePlanningWriter = parseFrontmatter(readFileSync(agentPath(paths, 'claude', 'planning-writer', 'md'), 'utf8'));
   const openCodePlanningWriter = parseFrontmatter(readFileSync(agentPath(paths, 'opencode', 'planning-writer', 'md'), 'utf8'));
   assert.equal(Object.hasOwn(claudePlanningWriter, 'hooks'), false);
+  assert.equal(openCodePlanningWriter.permission.bash, 'allow');
   assert.deepEqual(openCodePlanningWriter.permission.edit, {
     '*': 'deny',
     '.ai-work-flow/plans/*/spec.md': 'allow',
