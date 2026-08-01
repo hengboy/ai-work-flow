@@ -28,8 +28,8 @@ Standards brief 要求逐文件或 hunk 引用标准违规和可能异味，区�
 
 正常回答按需使用以下标签；无内容的标签省略。
 
-- **Standards：** 原样或轻度整理 **Review Standards** 的发现。
-- **Spec：** 原样或轻度整理 **Review Spec** 的发现。
+- **阻塞项：** 分别按 Standards、Spec 原样或轻度整理 blocking findings，并列出需用户确认的 finding IDs 和决策。
+- **建议：** 分别按 Standards、Spec 原样或轻度整理 advisory findings；只报告，不阻止整合。
 - **结论：** 用一行报告每轴发现总数及该轴最严重问题，不选择跨轴最严重问题。
 - **测试缺口：** 说明未覆盖的风险。
-- **阻塞：** 说明无法完成审查的原因。
+- **阻塞：** 仅说明无法完成审查的原因。

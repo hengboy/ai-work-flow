@@ -235,7 +235,7 @@ test('managed prompt documents use the Markdown layout', () => {
 
 test('role bodies derive their common structure and reply sections from the catalog', () => {
   const replyLabels = {
-    coding: ['协调状态', '已委派', '已收到', '结论', '阻塞'],
+    coding: ['协调状态', '已委派', '已收到', '阻塞项', '建议', '结论', '阻塞'],
     planning: ['状态', '方案目录', '计划文件', '阻塞'],
     'file-explorer': ['发现', '代码地图', '交接', '阻塞'],
     researcher: ['发现', '来源', '交接', '阻塞'],
@@ -245,7 +245,7 @@ test('role bodies derive their common structure and reply sections from the cata
     'full-stack-coder': ['完成', '变更', '验证', '阻塞'],
     'bug-fixer': ['完成', '变更', '验证', '阻塞'],
     'git-operator': ['提交结果'],
-    'code-reviewer': ['Standards', 'Spec', '结论', '测试缺口', '阻塞'],
+    'code-reviewer': ['阻塞项', '建议', '结论', '测试缺口', '阻塞'],
     'review-standards': ['结论', '发现', '测试缺口', '阻塞'],
     'review-spec': ['结论', '发现', '测试缺口', '阻塞']
   };
@@ -410,6 +410,45 @@ test('generated implementation and review roles preserve their scoped contracts'
     const reviewer = generatedBody(paths, platform, 'code-reviewer', extension);
     for (const assertion of implementationAssertions) assert.match(coding, assertion, `${platform}/coding`);
     for (const assertion of reviewAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
+  }
+});
+
+test('completed review findings keep blocking items and advice in separate user-facing sections', () => {
+  const reviewerSource = readFileSync(resolve(templatesDir, 'code-reviewer.md'), 'utf8');
+  const codingSource = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
+  const compiled = loadAgentAssets().compiledBodies;
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+
+  for (const source of [reviewerSource, codingSource]) {
+    assert.match(source, /\*\*阻塞项：\*\*/);
+    assert.match(source, /\*\*建议：\*\*/);
+    assert.match(source, /Standards、Spec/);
+  }
+  assert.match(reviewerSource, /阻塞项.*finding IDs 和决策/s);
+  assert.match(reviewerSource, /建议.*只报告，不阻止整合/s);
+  assert.doesNotMatch(reviewerSource, /^- \*\*(?:Standards|Spec)：\*\*/m);
+  assert.match(codingSource, /blocking findings 和 advisory findings.*分别放入独立/s);
+  assert.match(codingSource, /`\*\*阻塞：\*\*` 仅用于审查或流程无法完成的原因/);
+  assert.match(routing, /已完成审查的 findings 必须分成独立的 `\*\*阻塞项：\*\*` 与 `\*\*建议：\*\*` 区块/);
+  assert.match(routing, /每个区块内分别保留 Standards、Spec 的来源顺序，不得跨轴合并或重排/);
+
+  for (const role of ['code-reviewer', 'coding']) {
+    const prompt = compiled.get(role);
+    assert.match(prompt, /\*\*阻塞项：\*\*/);
+    assert.match(prompt, /\*\*建议：\*\*/);
+    assert.match(prompt, /`\*\*阻塞：\*\*` 仅用于审查或流程无法完成的原因/);
+  }
+
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    for (const role of ['code-reviewer', 'coding']) {
+      const generated = generatedBody(paths, platform, role, extension);
+      assert.match(generated, /\*\*阻塞项：\*\*/, `${platform}/${role}`);
+      assert.match(generated, /\*\*建议：\*\*/, `${platform}/${role}`);
+      assert.match(generated, /`\*\*阻塞：\*\*` 仅用于审查或流程无法完成的原因/, `${platform}/${role}`);
+    }
   }
 });
 

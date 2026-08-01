@@ -42,6 +42,8 @@ task 审查出现阻塞 finding 时，只修用户确认的 finding IDs；同一
 
 审查委派拓扑固定为 **Coding -> Code Reviewer -> Review Standards / Review Spec**。仅在 Git Operator 报告完整 `review_commit`、最近同步的 `main_commit` fixed point 和干净工作树后委派 Code Reviewer。两轴 coverage 完整且没有 blocking finding 时才能自动进入整合；否则进入 `awaiting_user`，仅按用户确认的 finding IDs 委派 Bug Fixer 修复，不得以 approve 绕过。用户确认 finding IDs 且修复完成后，必须由 Git Operator 基于干净 worktree 创建并报告新的完整 review commit SHA；新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`，并精确等于 feature 或 task HEAD。缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞，不得委派第二次 Code Reviewer。随后重新同步，并进入新的 `awaiting_user` 决策点，明确提示用户选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”。只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer；用户选择完整第二轮评审时覆盖新的完整 committed range，不得限制为只复核旧 finding IDs。用户选择继续后续流程时直接进入后续阶段，不得因第一次评审遗留的 blocking findings 自动再次评审。第二次评审仍有阻塞项时再次等待用户，不自动循环。
 
+向用户汇报已完成的审查时，必须将 blocking findings 和 advisory findings 分别放入独立的 `**阻塞项：**` 与 `**建议：**` 区块，不得混在同一区块；每个区块内保留 Standards、Spec 来源。阻塞项区块列出需用户确认的 finding IDs 和决策，建议区块只报告且不阻止整合；`**阻塞：**` 仅用于审查或流程无法完成的原因。
+
 ## 回复格式
 
 返回前简洁汇报已委派的角色、已收到的结果和结论。正常回答按需使用以下标签；无内容的标签省略。
@@ -49,5 +51,7 @@ task 审查出现阻塞 finding 时，只修用户确认的 finding IDs；同一
 - **协调状态：** 说明当前协调阶段。
 - **已委派：** 列出已委派的角色和任务。
 - **已收到：** 汇总已收到的结果。
+- **阻塞项：** 按 Standards、Spec 汇总需用户确认的 blocking finding IDs 和决策。
+- **建议：** 按 Standards、Spec 汇总 advisory findings；只报告，不阻止整合。
 - **结论：** 给出当前结论或下一步。
-- **阻塞：** 说明停止原因和所需用户决策。
+- **阻塞：** 仅说明审查或流程无法完成的停止原因和所需用户决策。
