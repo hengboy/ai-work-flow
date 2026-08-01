@@ -18,6 +18,8 @@
 
 每个 task 必须能由一个 **Full Stack Coder** 在一个上下文内完成，并包含实现、测试、必要配置和自己的 checklist 更新。数据或接口变更按 expand、migrate、contract 顺序拆分；不得把破坏性迁移与依赖方更新放进可并行 frontier。
 
+默认采用较粗颗粒度并优先减少 task 数量：每个 task 应交付一个完整、可独立验证的行为或能力。只有存在明确依赖边界、可独立交付的结果，或合并后无法由一个 **Full Stack Coder** 在一个上下文内完成时才拆分。不得仅按文件、目录、技术层、函数、实现步骤，或把测试、文档、配置与其对应实现机械拆成不同 task；拿不准是否需要拆分时优先合并。
+
 `source_plan_digest` 是 `plan.md` 完整字节的 SHA-256 小写十六进制摘要。每个 task 文件的完整内容必须单独作为一个带 `markdown` info string 的 Markdown fenced code block 输出，格式如下。不得在 fenced code block 外输出 task 文件正文；fence 外只可报告文件名和摘要。
 
 ```markdown

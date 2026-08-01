@@ -1364,6 +1364,7 @@ test('planning confirms plan splitting and commits only final planning artifacts
   assert.match(taskPlanner, /草案阶段.*不得创建、修改或删除任何 task 文件/s);
   assert.match(taskPlanner, /写入阶段.*完整任务草案.*用户已明确确认.*颗粒度/s);
   assert.match(taskPlanner, /校验待写内容与已确认草案完全一致/s);
+  assert.match(planning, /Task Planner.*默认采用较粗颗粒度、优先减少任务数量/s);
 });
 
 test('task planner emits a deterministic dependency-safe task artifact contract', () => {
@@ -1382,6 +1383,10 @@ test('task planner emits a deterministic dependency-safe task artifact contract'
   assert.match(body, /`blocked_by`.*较早.*task ID.*`none`.*不得成环/s);
   assert.match(body, /同一 frontier.*`write_scope`.*互斥/s);
   assert.match(body, /一个 \*\*Full Stack Coder\*\*.*一个上下文/s);
+  assert.match(body, /默认采用较粗颗粒度.*优先减少 task 数量/s);
+  assert.match(body, /完整、可独立验证的行为或能力/);
+  assert.match(body, /不得仅按文件、目录、技术层、函数、实现步骤.*测试、文档、配置.*机械拆成不同 task/s);
+  assert.match(body, /拿不准是否需要拆分时优先合并/);
   assert.match(body, /expand.*migrate.*contract/s);
   assert.match(body, /source_plan: `\.\.\/plan\.md`/);
   assert.match(body, /`source_plan_digest`.*完整字节.*SHA-256/s);
