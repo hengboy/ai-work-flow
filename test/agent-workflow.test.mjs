@@ -1381,7 +1381,10 @@ test('task planner emits a deterministic dependency-safe task artifact contract'
   assert.match(body, /唯一且连续/);
   assert.match(body, /`task_id`.*唯一/);
   assert.match(body, /`blocked_by`.*较早.*task ID.*`none`.*不得成环/s);
-  assert.match(body, /同一 frontier.*`write_scope`.*互斥/s);
+  assert.match(body, /`write_scope`.*粗粒度.*非穷举提示.*不是.*写入授权边界/s);
+  assert.match(body, /计划并发执行.*`write_scope`.*互斥/s);
+  assert.match(body, /未列出的文件.*不构成计划或 task 变更.*不得据此修订/s);
+  assert.match(body, /依赖变更.*lockfile.*`Cargo\.lock`/s);
   assert.match(body, /一个 \*\*Full Stack Coder\*\*.*一个上下文/s);
   assert.match(body, /默认采用较粗颗粒度.*优先减少 task 数量/s);
   assert.match(body, /完整、可独立验证的行为或能力/);
@@ -1399,7 +1402,7 @@ test('task planner emits a deterministic dependency-safe task artifact contract'
 
 test('task planner wraps each complete task artifact in a markdown fenced code block', () => {
   const source = readFileSync(resolve(templatesDir, 'task-planner.md'), 'utf8');
-  const completeTaskFence = /```markdown\n# NN - <Task title>\n\n- task_id:[\s\S]*- order:[\s\S]*- blocked_by: `<task IDs or none>`\n- source_plan: `\.\.\/plan\.md`[\s\S]*- source_plan_digest:[\s\S]*- write_scope: `<exclusive paths or modules>`\n\n## Outcome[\s\S]*## Implementation Checklist\n\n- \[ \] 实施项[\s\S]*## Acceptance Criteria\n\n- \[ \][\s\S]*## Verification Steps\n\n- \[ \][\s\S]*## Out of Scope[\s\S]*```/;
+  const completeTaskFence = /```markdown\n# NN - <Task title>\n\n- task_id:[\s\S]*- order:[\s\S]*- blocked_by: `<task IDs or none>`\n- source_plan: `\.\.\/plan\.md`[\s\S]*- source_plan_digest:[\s\S]*- write_scope: `<expected primary paths or modules; non-exhaustive>`\n\n## Outcome[\s\S]*## Implementation Checklist\n\n- \[ \] 实施项[\s\S]*## Acceptance Criteria\n\n- \[ \][\s\S]*## Verification Steps\n\n- \[ \][\s\S]*## Out of Scope[\s\S]*```/;
   assert.match(source, completeTaskFence);
   assert.match(source, /不得在 fenced code block 外输出 task 文件正文/);
 
@@ -1423,7 +1426,8 @@ test('coding executes single or split plans through validated task frontiers', (
     /`blocked_by`.*frontier.*编号.*平台并发容量/s,
     /所有 Git 操作.*串行/,
     /同一 frontier.*相同的 feature HEAD/s,
-    /`write_scope`.*导航索引.*自己的 task/s,
+    /`write_scope`.*非穷举.*不是写入授权边界/s,
+    /遗漏文件.*继续实施.*不得建议、请求或执行计划修订/s,
     /逐项证据.*checklist/s,
     /代码、测试、必要配置和 task checkbox.*同一 review commit/s,
     /task base.*task review.*父 `plan\.md`.*task.*spec/s,
@@ -1446,7 +1450,9 @@ test('implementation roles preserve planning and task commit boundaries', () => 
   const reviewer = readFileSync(resolve(templatesDir, 'code-reviewer.md'), 'utf8');
   const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
 
-  assert.match(coder, /task 模式.*`write_scope`.*自己的 task checkbox/s);
+  assert.match(coder, /task 模式.*`write_scope`.*不是穷举清单或写入授权边界.*自己的 task checkbox/s);
+  assert.match(coder, /依赖变更.*lockfile.*`Cargo\.lock`/s);
+  assert.match(coder, /未列入 `write_scope`.*直接实施.*不得据此建议、请求或执行计划修订/s);
   assert.match(coder, /不得.*其他 task/s);
   assert.match(coder, /逐项.*acceptance.*证据/s);
 

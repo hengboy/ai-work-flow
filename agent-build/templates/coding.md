@@ -22,9 +22,11 @@
 
 实施目录式计划前，先委派 **File Explorer** 验证 `plan.md` 已被 Git 跟踪、定位创建它的 planning commit、复算 task 的 plan digest、确认主工作树干净，并执行 `$project-code-navigation` 交接导航结果。已被 Git 跟踪的 `.ai-work-flow/plans/<plan-id>.md` 旧平铺计划仅作为单任务计划输入；旧平铺计划不得推断或使用 `tasks/`，也不得进入拆分模式。Planning 只生成目录式计划，不得批量迁移旧平铺计划。
 
-目录式计划的 `tasks/` 不存在表示单任务模式：只委派一个 **Full Stack Coder**，走共享的统一 feature worktree 生命周期。存在至少一个全部合法的 task 表示拆分模式；`tasks/` 存在但为空、命名/字段/digest/依赖/write scope 任一无效都必须阻塞，不得降级为单任务。
+目录式计划的 `tasks/` 不存在表示单任务模式：只委派一个 **Full Stack Coder**，走共享的统一 feature worktree 生命周期。存在至少一个全部合法的 task 表示拆分模式；`tasks/` 存在但为空，或命名、必填字段、digest、依赖任一无效时必须阻塞，不得降级为单任务。`write_scope` 只需是非空的粗粒度路径或模块提示，不得因其没有枚举实施所需的全部文件而判定 task 无效。
 
-拆分模式先验证连续编号、唯一 `task_id`、只向前的 `blocked_by`、无环、frontier 内互斥 `write_scope` 和完整 checklist/Verification。每个 task 的 `Acceptance Criteria` 必须非空，且至少一个复选框，条目只能是 `- [ ]` 或 `- [x]`/`- [X]`。按 `blocked_by` 计算 frontier，再按 task 编号和平台并发容量并发实施；所有 Git 操作始终串行。**Git Operator** 从同一 frontier 开始时相同的 feature HEAD 创建每个 task worktree/branch。每个 **Full Stack Coder** 只能修改其 `write_scope`、必须随功能更新的导航索引及自己的 task checkbox，不得触碰其他 task。
+拆分模式先验证连续编号、唯一 `task_id`、只向前的 `blocked_by`、无环、用于并发的 task 其声明 `write_scope` 互斥，以及完整 checklist/Verification。每个 task 的 `Acceptance Criteria` 必须非空，且至少一个复选框，条目只能是 `- [ ]` 或 `- [x]`/`- [X]`。按 `blocked_by` 计算 frontier，再按 task 编号、声明 scope 和平台并发容量并发实施；所有 Git 操作始终串行。**Git Operator** 从同一 frontier 开始时相同的 feature HEAD 创建每个 task worktree/branch。
+
+`write_scope` 是非穷举的初始并发提示，不是写入授权边界。每个 **Full Stack Coder** 可以修改完成当前 task 验收所必需的源码、测试、配置、导航索引和自己的 task checkbox，但不得修改父 `plan.md`、task 元数据或其他 task。实施发现声明 scope 遗漏文件时，直接继续实施并在交接中报告实际变更路径；不得建议、请求或执行计划修订。并发 task 实际修改发生重叠时，保留双方实现并在汇入阶段按既有冲突流程处理，不回写计划。
 
 Full Stack Coder 必须交接逐项证据并对应 acceptance；只有验收通过，Coding 才允许勾选对应 checklist。**Git Operator** 将代码、测试、必要配置和 task checkbox 放入同一 review commit。随后 **Code Reviewer** 使用固定 task base 与 task review 范围，父 `plan.md` 和当前 task 共同作为 spec；勾选项没有证据是 blocking finding。task 通过审查且两轴均合格，或阻塞修复后用户按统一门禁明确选择继续后续流程，才由 Git Operator 按编号汇入 feature 并清理 task worktree/branch，再开放下一 frontier。
 

@@ -14,7 +14,9 @@
 
 ## 任务契约
 
-文件名必须为 `NN-<short-name>.md`，编号从 `01` 到 `99` 唯一且连续，short name 必须是 lowercase kebab。`task_id` 在计划内唯一；`blocked_by` 只能填写一个或多个编号较早的 task IDs，或填写 `none`，因此不得成环。按 `blocked_by` 计算 frontier，同一 frontier 各 task 的 `write_scope` 必须互斥；无法互斥时增加依赖或合并任务。
+文件名必须为 `NN-<short-name>.md`，编号从 `01` 到 `99` 唯一且连续，short name 必须是 lowercase kebab。`task_id` 在计划内唯一；`blocked_by` 只能填写一个或多个编号较早的 task IDs，或填写 `none`，因此不得成环。`write_scope` 只记录预计主要修改的粗粒度路径或模块，是用于初始并发判断的非穷举提示，不是实施时的写入授权边界；可以填写目录或模块，不得要求预先列出所有可能修改的文件。按 `blocked_by` 计算 frontier，计划并发执行的 task 应使其声明的 `write_scope` 互斥；无法互斥时增加依赖或合并任务。
+
+实施中发现需要修改 `write_scope` 未列出的文件，不构成计划或 task 变更，不得据此修订 `plan.md`、task 元数据或重新请求规划。实施角色应直接修改完成该 task 验收所必需的文件，包括依赖变更必然更新的 lockfile（例如 `Cargo.lock`），并在交接中报告实际变更路径。
 
 每个 task 必须能由一个 **Full Stack Coder** 在一个上下文内完成，并包含实现、测试、必要配置和自己的 checklist 更新。数据或接口变更按 expand、migrate、contract 顺序拆分；不得把破坏性迁移与依赖方更新放进可并行 frontier。
 
@@ -30,7 +32,7 @@
 - blocked_by: `<task IDs or none>`
 - source_plan: `../plan.md`
 - source_plan_digest: `<sha256>`
-- write_scope: `<exclusive paths or modules>`
+- write_scope: `<expected primary paths or modules; non-exhaustive>`
 
 ## Outcome
 

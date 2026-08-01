@@ -178,8 +178,8 @@ main worktree [main]
 该图表达提交基线和汇入方向，不规定物理目录嵌套。feature worktree 与 task worktree 都是同一仓库的隔离工作树，具体 task worktree 路径由 Coding 和 Git Operator 分配并验证。
 
 1. **Feature 层**：一次计划实施只有一个 feature branch/worktree，负责聚合所有 Task、解决汇入冲突、执行最终验证和聚合评审。
-2. **Frontier 层**：依赖已满足的 Task 构成当前 frontier。只有 `write_scope` 互斥的 Task 才能并发实施；同一 frontier 的 task branch 均从开始时相同的 feature HEAD 创建。
-3. **Task 层**：每个 Task 使用独立 task branch/worktree，只能修改自己的 `write_scope`、必要的导航索引和自己的 checklist。实现提交和双轴评审都固定在该 Task 的 base 与 review commit 之间。
+2. **Frontier 层**：依赖已满足的 Task 构成当前 frontier。`write_scope` 是预计主要修改范围，只用于判断初始并发，不是穷举清单或写入授权边界；声明 scope 互斥的 Task 可以并发实施，同一 frontier 的 task branch 均从开始时相同的 feature HEAD 创建。
+3. **Task 层**：每个 Task 使用独立 task branch/worktree，可以修改完成自身验收所必需的源码、测试、配置、导航索引和自己的 checklist。实施发现 `write_scope` 遗漏文件时直接记录实际变更，不修改已批准的 plan 或 task 元数据；实现提交和双轴评审都固定在该 Task 的 base 与 review commit 之间。
 4. **汇入层**：Task 通过评审后，由 Git Operator 按编号串行汇入 feature branch，再清理对应 task worktree/branch。当前 frontier 全部汇入后，才从新的 feature HEAD 开放下一 frontier。
 5. **最终整合层**：全部 Task 汇入后，feature branch 同步最新 `main` 并接受一次聚合评审；门禁通过后才在主工作树执行 `git merge --ff-only`。
 
