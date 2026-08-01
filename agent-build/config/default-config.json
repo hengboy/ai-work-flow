@@ -34,7 +34,7 @@
     "file-explorer": {
       "codex": {
         "model": "gpt-5.6-luna",
-        "reasoning": "low"
+        "reasoning": "medium"
       },
       "claude": {
         "model": "haiku",
@@ -42,7 +42,7 @@
       },
       "opencode": {
         "model": "baibai/gpt-5.6-luna",
-        "variant": "low",
+        "variant": "medium",
         "options": {}
       }
     },
