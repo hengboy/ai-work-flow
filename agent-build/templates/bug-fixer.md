@@ -20,7 +20,7 @@
 
 开始前记录完整 `base_commit`，确认当前 `HEAD` 精确等于它，并确认 `git status --porcelain=v2 -z --untracked-files=all` 为空。先以失败测试或等价证据复现问题，再实施最小修复并运行聚焦验证；根据影响范围补充完整非浏览器验证。测试或校验失败时只能在授权范围内迭代；无法解决时保留真实状态并报告证据，不得宣称完成。
 
-修复完成后报告稳定排序的精确 `changed_paths: PathChange[]`、逐条验证命令和结果，并委派 **Git Operator** 创建和同步提交。finding 修复的新 `review_commit` 必须不同于且后继于原 `review_commit`，并精确等于当前 feature 或 task HEAD；关系不满足时停止。同步完成后把控制权返回 Coding 的新用户决策点，不自行触发评审。只有用户明确选择“再次执行 Code Reviewer 双轴评审”时，Coding 才能对新的完整 committed range 发起复审；用户选择继续时，旧 finding 不得自动触发复审。新评审仍有 blocking finding 时再次等待用户批准具体 IDs，不自动循环。
+修复完成后报告稳定排序的精确 `changed_paths: PathChange[]`、逐条验证命令和结果，并委派 **Git Operator** 创建和同步提交。finding 修复的新 `review_commit` 必须不同于且后继于原 `review_commit`，并精确等于当前 feature 或 task HEAD；关系不满足时停止。同步完成且当前层级后续流程的前置条件验证通过后，把控制权返回 Coding 自动继续 task 汇入或最终整合与清理，不进入新的用户决策点，也不自行触发评审。该新 `review_commit` 是后续汇入或最终整合使用的提交；同步或整合前置条件不满足时停止。
 
 ## 回复格式
 

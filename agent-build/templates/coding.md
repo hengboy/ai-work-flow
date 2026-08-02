@@ -30,11 +30,11 @@
 
 `write_scope` 是非穷举的初始并发提示，不是写入授权边界。每个 **Full Stack Coder** 可以修改完成当前 task 验收所必需的源码、测试、配置、导航索引和自己的 task checkbox，但不得修改父 `plan.md`、task 元数据或其他 task。实施发现声明 scope 遗漏文件时，直接继续实施并在交接中报告实际变更路径；不得建议、请求或执行计划修订。并发 task 实际修改发生重叠时，保留双方实现并在汇入阶段按既有冲突流程处理，不回写计划。
 
-Full Stack Coder 必须交接逐项证据并对应 acceptance；只有验收通过，Coding 才允许勾选对应 checklist。**Git Operator** 将代码、测试、必要配置和 task checkbox 放入同一 review commit。随后 **Code Reviewer** 使用固定 task base 与 task review 范围，并把父 `spec.md`、`plan.md` 和当前 task 与逐项 acceptance evidence、Verification 结果组成完整 `spec context/bundle`；其中 plan 的 source binding 和 digest 必须有效。单任务 bundle 则由 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md` 组成。任一必需输入缺失或 source binding、digest、revision 不一致时阻塞，不得降级为单文件审查；勾选项没有证据也是 blocking finding。task 通过审查且两轴均合格，或阻塞修复后用户按统一门禁明确选择继续后续流程，才由 Git Operator 按编号汇入 feature 并清理 task worktree/branch，再开放下一 frontier。
+Full Stack Coder 必须交接逐项证据并对应 acceptance；只有验收通过，Coding 才允许勾选对应 checklist。**Git Operator** 将代码、测试、必要配置和 task checkbox 放入同一 review commit。随后 **Code Reviewer** 使用固定 task base 与 task review 范围，并把父 `spec.md`、`plan.md` 和当前 task 与逐项 acceptance evidence、Verification 结果组成完整 `spec context/bundle`；其中 plan 的 source binding 和 digest 必须有效。单任务 bundle 则由 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md` 组成。任一必需输入缺失或 source binding、digest、revision 不一致时阻塞，不得降级为单文件审查；勾选项没有证据也是 blocking finding。task 通过审查且两轴均合格，或首次完整双轴审查的阻塞项经用户确认具体 finding IDs、修复完成并由 Git Operator 创建、验证和同步合格的新后继 review commit 后，直接由 Git Operator 按编号汇入 feature 并清理 task worktree/branch，再开放下一 frontier，不再等待用户统一门禁确认。
 
-task 审查出现阻塞 finding 时，只修用户确认的 finding IDs；同一批已启动 task 可以结束，但不得启动新的依赖 task。修复完成后的复审选择遵循下述统一门禁。汇入发生冲突时停止其他写入，只委派一个 **Full Stack Coder** 在 feature worktree 解决冲突，完整验证并对冲突结果重新评审，禁止整体 ours/theirs 或丢弃任一侧有效行为。
+task 首次完整双轴审查出现阻塞 finding 时，只修用户确认的 finding IDs；同一批已启动 task 可以结束，但不得启动新的依赖 task。获批修复完成且新后继 review commit 的关系、HEAD 和同步检查全部通过后自动继续 task 汇入，不再次委派 Code Reviewer。汇入发生冲突时停止其他写入，只委派一个 **Full Stack Coder** 在 feature worktree 解决冲突，完整验证并对冲突结果重新评审，禁止整体 ours/theirs 或丢弃任一侧有效行为。
 
-全部 task 汇入后，Git Operator 最终同步 `main`，对 feature 完整 committed range 执行聚合的完整双轴审查。只有 `main` 自 fixed point 未前进且满足以下任一评审条件，才可在主工作树 `--ff-only` 整合并清理：coverage 完整且无阻塞 finding；或阻塞修复后用户按统一门禁明确选择继续后续流程。否则重新同步并按统一门禁处理评审选择。
+全部 task 汇入后，Git Operator 最终同步 `main`，对 feature 完整 committed range 执行聚合的完整双轴审查。只有 `main` 自 fixed point 未前进且满足以下任一条件，才可在主工作树 `--ff-only` 整合并清理：coverage 完整且无阻塞 finding；或首次完整双轴审查的阻塞项经用户确认具体 finding IDs、修复完成并由 Git Operator 创建、验证和同步合格的新后继 review commit。后一种情况直接进入最终整合与清理，不再等待用户统一门禁确认，也不再次委派 Code Reviewer；提交关系、同步或整合前置条件不满足时仍然阻塞。
 
 ## 方案与审查门禁
 
@@ -44,7 +44,7 @@ task 审查出现阻塞 finding 时，只修用户确认的 finding IDs；同一
 
 实施开始后不得直接修改已批准的 spec、plan 或 tasks，也不得委派 **Planning Writer**。需求变化时必须停止当前实施并将用户返回 Planning；Planning 按 spec-first 顺序重新确认并生成 spec/plan/tasks，创建新的 planning commit 后才能重新开始实施。
 
-审查委派拓扑固定为 **Coding -> Code Reviewer -> Review Standards / Review Spec**。仅在 Git Operator 报告完整 `review_commit`、最近同步的 `main_commit` fixed point 和干净工作树后委派 Code Reviewer。两轴 coverage 完整且没有 blocking finding 时才能自动进入整合；否则进入 `awaiting_user`，仅按用户确认的 finding IDs 委派 Bug Fixer 修复，不得以 approve 绕过。用户确认 finding IDs 且修复完成后，必须由 Git Operator 基于干净 worktree 创建并报告新的完整 review commit SHA；新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`，并精确等于 feature 或 task HEAD。缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞，不得委派第二次 Code Reviewer。随后重新同步，并进入新的 `awaiting_user` 决策点，明确提示用户选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”。只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer；用户选择完整第二轮评审时覆盖新的完整 committed range，不得限制为只复核旧 finding IDs。用户选择继续后续流程时直接进入后续阶段，不得因第一次评审遗留的 blocking findings 自动再次评审。第二次评审仍有阻塞项时再次等待用户，不自动循环。
+审查委派拓扑固定为 **Coding -> Code Reviewer -> Review Standards / Review Spec**。仅在 Git Operator 报告完整 `review_commit`、最近同步的 `main_commit` fixed point 和干净工作树后委派首次 Code Reviewer。两轴 coverage 完整且没有 blocking finding 时才能自动进入整合；否则进入 `awaiting_user`，仅按用户确认的 finding IDs 委派 Bug Fixer 修复，不得以 approve 绕过。用户确认 finding IDs 且修复完成后，必须由 Git Operator 基于干净 worktree 创建并报告新的完整 review commit SHA；新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`，并精确等于 feature 或 task HEAD。缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞。随后必须同步并验证当前层级的汇入或整合前置条件；全部通过后不再进入 `awaiting_user`，也不再次委派 Code Reviewer，而是自动继续：task 级按编号汇入 feature、清理并开放下一 frontier，单任务或最终聚合级进入最终整合与清理。该新 `review_commit` 是后续汇入或最终整合使用的提交；提交关系、同步或整合前置条件失败时 fail closed。自动继续后若整合时 `main` 已前进，仍须返回 `resync_required`、重新同步并重新评审最终提交；冲突解决后的重新评审规则也不受此路径影响。
 
 向用户汇报已完成的审查时，必须将 blocking findings 和 advisory findings 分别放入独立的 `**阻塞项：**` 与 `**建议：**` 区块，不得混在同一区块；每个区块内保留 Standards、Spec 来源。阻塞项区块列出需用户确认的 finding IDs 和决策，建议区块只报告且不阻止整合；`**阻塞：**` 仅用于审查或流程无法完成的原因。
 

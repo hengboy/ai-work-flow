@@ -1032,8 +1032,9 @@ test('bug fixer is a narrowly governed coding subagent on every platform', () =>
   assert.match(body, /不得执行 Git mutation/);
   assert.match(body, /必须委派 \*\*File Explorer\*\*/);
   assert.match(body, /委派 \*\*Git Operator\*\*/);
-  assert.match(body, /新的完整 committed range/);
-  assert.match(body, /旧 finding 不得自动触发复审/);
+  assert.match(body, /新 `review_commit` 是后续汇入或最终整合使用的提交/);
+  assert.match(body, /返回 Coding 自动继续 task 汇入或最终整合与清理/);
+  assert.match(body, /不进入新的用户决策点，也不自行触发评审/);
 
   const paths = environment();
   const result = install(paths);
@@ -1545,14 +1546,19 @@ test('coding executes single or split plans through validated task frontiers', (
     /勾选.*没有证据.*阻塞/s,
     /通过审查.*按编号.*汇入 feature/s,
     /用户确认的 finding IDs/,
-    /阻塞修复后用户按统一门禁明确选择继续后续流程.*汇入 feature/s,
+    /阻塞项经用户确认具体 finding IDs.*新后继 review commit.*直接由 Git Operator 按编号汇入 feature/s,
+    /不再等待用户统一门禁确认/,
     /同一批.*结束.*不得启动新的依赖 task/s,
+    /新后继 review commit.*自动继续 task 汇入.*不再次委派 Code Reviewer/s,
     /冲突.*一个 \*\*Full Stack Coder\*\*.*feature worktree.*验证.*评审/s,
     /最终.*同步.*main.*聚合.*双轴审查/s,
-    /main.*未前进.*任一评审条件.*阻塞修复后用户按统一门禁明确选择继续后续流程/s,
+    /main.*未前进.*阻塞项经用户确认具体 finding IDs.*新后继 review commit/s,
+    /直接进入最终整合与清理.*不再等待用户统一门禁确认.*不再次委派 Code Reviewer/s,
     /main.*未前进.*--ff-only/s
   ];
   for (const assertion of assertions) assert.match(coding, assertion);
+  assert.doesNotMatch(coding, /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/);
+  assert.doesNotMatch(coding, /只有用户明确选择再次评审/);
 });
 
 test('implementation roles preserve planning and task commit boundaries', () => {
@@ -1673,6 +1679,7 @@ test('OpenCode derives its default agent from the role catalog', () => {
 test('structured dual-axis review controls the final integration gate', () => {
   const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
   const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
+  const fixer = readFileSync(resolve(templatesDir, 'bug-fixer.md'), 'utf8');
   const operator = readFileSync(resolve(templatesDir, 'git-operator.md'), 'utf8');
   const paths = environment();
   const result = install(paths);
@@ -1684,41 +1691,59 @@ test('structured dual-axis review controls the final integration gate', () => {
     /绝不审查未提交内容/,
     /blocking_findings/,
     /用户只能用确认的 finding IDs 选择修复/,
-    /修复完成后必须再次同步并进入新的 `awaiting_user` 决策点/,
-    /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/,
-    /只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer/,
-    /选择继续后续流程时直接进入后续阶段，不得因第一次评审遗留的 blocking findings 自动再次评审/,
+    /任一阻塞 finding 进入 `awaiting_user`/,
+    /用户确认 finding IDs 且修复完成后.*然后再次同步/s,
+    /全部通过后不再进入 `awaiting_user`.*不再次委派 Code Reviewer/s,
+    /task 级按编号汇入 feature、清理并开放下一 frontier/,
+    /单任务或最终聚合级进入最终整合与清理/,
     /基于修复后的干净 worktree 创建新的本地 review commit/,
     /新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`/,
     /新的 `review_commit` 必须精确等于 feature 或 task HEAD/,
-    /缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞/,
-    /第二次完整双轴评审覆盖新的 committed range，不得限制为只复核旧 finding IDs/,
+    /新 `review_commit` 是该后续流程使用的提交/,
+    /提交关系、同步或后续整合前置条件任一失败都必须阻塞/,
+    /允许整合的 review commit.*首次双轴审查无阻塞的提交.*finding 修复后继提交/s,
+    /后续整合时 `main` 已前进.*`resync_required`.*重新同步并重新评审最终提交/s,
+    /同步冲突仍进入既有冲突解决及重新评审流程/,
     /`git merge --ff-only <review_commit>`/,
   ];
 
   for (const content of [routing]) {
     for (const assertion of assertions) assert.match(content, assertion);
   }
-  assert.doesNotMatch(routing, /修复完成后必须再次同步并自动最终复审一次/);
+  const removedBranchPatterns = [
+    /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/,
+    /只有用户明确选择再次评审/,
+    /第二次 Code Reviewer/,
+    /第二次完整双轴评审/,
+    /用户复审决策点/,
+  ];
+  for (const pattern of removedBranchPatterns) assert.doesNotMatch(routing, pattern);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generated = generatedBody(paths, platform, 'coding', extension);
     assert.match(generated, /仅按用户确认的 finding IDs 委派 Bug Fixer 修复/, platform);
-    assert.match(generated, /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/, platform);
-    assert.match(generated, /只有用户明确选择再次评审才能委派同一实施流程中的第二次 Code Reviewer/, platform);
-    assert.match(generated, /不得因第一次评审遗留的 blocking findings 自动再次评审/, platform);
+    assert.match(generated, /全部通过后不再进入 `awaiting_user`.*不再次委派 Code Reviewer/s, platform);
+    assert.match(generated, /task 级按编号汇入 feature、清理并开放下一 frontier/, platform);
+    assert.match(generated, /单任务或最终聚合级进入最终整合与清理/, platform);
     assert.match(generated, /新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`/, platform);
     assert.match(generated, /缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞/, platform);
-    assert.match(generated, /不得限制为只复核旧 finding IDs/, platform);
-    assert.doesNotMatch(generated, /修复后重新同步并自动最终复审一次/, platform);
+    assert.match(generated, /该新 `review_commit` 是后续汇入或最终整合使用的提交/, platform);
+    assert.match(generated, /整合时 `main` 已前进.*`resync_required`.*重新同步并重新评审最终提交/s, platform);
+    for (const pattern of removedBranchPatterns) assert.doesNotMatch(generated, pattern, platform);
   }
   assert.match(coding, /仅按用户确认的 finding IDs 委派 Bug Fixer 修复/);
-  assert.match(coding, /选择“再次执行 Code Reviewer 双轴评审”或“继续执行后续流程”/);
   assert.match(coding, /新的 `review_commit` 必须不同于且后继于首次被拒的 `review_commit`/);
   assert.match(coding, /缺少新的完整 SHA、复用旧 SHA、不是旧 SHA 的后继或不等于当前 HEAD 时均阻塞/);
-  assert.match(coding, /不得限制为只复核旧 finding IDs/);
+  assert.match(coding, /该新 `review_commit` 是后续汇入或最终整合使用的提交/);
+  assert.match(coding, /task 级按编号汇入 feature、清理并开放下一 frontier/);
+  assert.match(coding, /单任务或最终聚合级进入最终整合与清理/);
+  assert.match(fixer, /返回 Coding 自动继续 task 汇入或最终整合与清理/);
+  assert.match(fixer, /不进入新的用户决策点/);
   assert.match(operator, /修复后的干净 feature 或 task worktree 创建新的本地 review commit/);
-  assert.match(operator, /不得把旧 SHA 交给第二次 Code Reviewer/);
-  assert.doesNotMatch(coding, /修复后重新同步并自动最终复审一次/);
+  assert.match(operator, /该新 review commit 是后续 task 汇入或最终整合使用的提交/);
+  assert.match(operator, /直接执行当前层级后续流程，不再次送交 Code Reviewer/);
+  for (const content of [coding, fixer, operator]) {
+    for (const pattern of removedBranchPatterns) assert.doesNotMatch(content, pattern);
+  }
   assert.doesNotMatch(coding, /ReviewManifest|git diff --no-ext-diff/);
 });
 
