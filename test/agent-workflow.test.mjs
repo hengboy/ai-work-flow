@@ -1808,20 +1808,48 @@ test('dual-axis review binds standards and complete spec context bundles without
     /\.ai-work-flow\/plans\/<plan-id>\/spec\.md \+ plan\.md/,
     /spec\.md \+ plan\.md \+ 当前 task \+ acceptance evidence \+ Verification 结果/,
     /canonical `\.scratch\/<featureSlug>\/spec\.md \+ 对应 Ticket\/issues \+ runtime 执行事实`/,
-    /source binding、digest、revision 不一致时.*阻塞|source binding、digest、revision 不一致时也阻塞/s,
     /不得退化为只审 `spec\.md`、只审 `plan\.md` 或只审当前 task/,
     /不得静默忽略 Ticket\/issues.*runtime 执行事实/s
+  ];
+  const manifestAssertions = [
+    /ReviewManifest.*机器.*校验/s,
+    /不包含或绑定 Ticket\/issues.*runtime facts/s,
+    /不扩展 ReviewManifest|不是 ReviewManifest 的机器绑定内容|不属于 ReviewManifest 的机器.*范围|不属于 ReviewManifest 的机器绑定范围/s,
+    /不得声称.*ReviewManifest digest.*机器绑定/s
+  ];
+  const instructionOnlyAssertions = [
+    /instruction-only/,
+    /source binding、digest、revision/
+  ];
+  const sameBundleAssertions = [
+    /同一委派中.*相同.*bundle/s
+  ];
+  const runtimeFactAssertions = [
+    /canonical runtime 当前可获得且可验证/s,
+    /Completion Result 的 `checks` 未由 Checkpoint 持久化/,
+    /恢复后.*completion.*`checks`.*fail closed/s
   ];
 
   for (const source of [routing, bodies['code-reviewer'], bodies['review-spec']]) {
     for (const assertion of bundleAssertions) assert.match(source, assertion);
+    for (const assertion of manifestAssertions) assert.match(source, assertion);
+    for (const assertion of instructionOnlyAssertions) assert.match(source, assertion);
+  }
+  for (const source of [routing, bodies['code-reviewer']]) {
+    for (const assertion of sameBundleAssertions) assert.match(source, assertion);
   }
   for (const source of [routing, bodies['code-reviewer'], bodies['review-standards'], skill]) {
     assert.match(source, /`Standards`、`CONTEXT\.md`|`CONTEXT\.md`.*Standards/);
     assert.match(source, /`spec\.md`.*不.*Standards.*标准来源|不得把 `spec\.md` 当作 Standards 来源/);
   }
-  assert.match(skill, /execution plan、Ticket completion\/checks 与当前 Checkpoint 执行事实/);
-  assert.match(routing, /两个叶子仍接收同一冻结 ReviewManifest 与 digest/);
+  for (const assertion of runtimeFactAssertions) {
+    assert.match(skill, assertion);
+    assert.match(bodies['code-reviewer'], assertion);
+    assert.match(bodies['review-spec'], assertion);
+  }
+  assert.match(routing, /两个叶子仍接收同一机器冻结的 ReviewManifest 与 digest/);
+  assert.match(bodies['code-reviewer'], /两个叶子必须接收同一机器冻结的 ReviewManifest 与 digest/);
+  assert.match(bodies['code-reviewer'], /同一委派中把相同的额外 spec context\/bundle 传给两个叶子/);
   assert.match(routing, /保持 coverage、finding 与审批门禁/);
 
   const paths = environment();
@@ -1832,10 +1860,17 @@ test('dual-axis review binds standards and complete spec context bundles without
     const standards = generatedBody(paths, platform, 'review-standards', extension);
     const spec = generatedBody(paths, platform, 'review-spec', extension);
     for (const assertion of bundleAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
+    for (const assertion of manifestAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
+    for (const assertion of instructionOnlyAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
+    for (const assertion of sameBundleAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
     assert.match(standards, /`spec\.md` 不得作为 Standards 轴的标准来源/, `${platform}/review-standards`);
     assert.match(spec, /完整 `spec context\/bundle`/, `${platform}/review-spec`);
-    assert.match(spec, /source binding、digest、revision/, `${platform}/review-spec`);
-    assert.match(reviewer, /两个叶子必须接收同一完整 ReviewManifest 与 digest/, `${platform}/code-reviewer`);
+    for (const assertion of manifestAssertions) assert.match(spec, assertion, `${platform}/review-spec`);
+    for (const assertion of instructionOnlyAssertions) assert.match(spec, assertion, `${platform}/review-spec`);
+    for (const assertion of runtimeFactAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
+    for (const assertion of runtimeFactAssertions) assert.match(spec, assertion, `${platform}/review-spec`);
+    assert.match(reviewer, /两个叶子必须接收同一机器冻结的 ReviewManifest 与 digest/, `${platform}/code-reviewer`);
+    assert.match(reviewer, /同一委派中把相同的额外 spec context\/bundle 传给两个叶子/, `${platform}/code-reviewer`);
   }
 });
 

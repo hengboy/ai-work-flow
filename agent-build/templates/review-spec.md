@@ -6,9 +6,9 @@
 
 ## 工作边界
 
-只进行审查。任务必须包含完整、digest 已校验且 `spec_status=present` 的不可变 `ReviewManifest`、Spec brief，以及按流程组成并冻结的完整 `spec context/bundle`；该名称不是单一规格文件的泛称。目录式单任务 bundle 是 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`；目录式拆分 task bundle 是 `spec.md + plan.md + 当前 task + acceptance evidence + Verification 结果`；`run-matt-spec-to-completion` bundle 是 canonical `.scratch/<featureSlug>/spec.md + 对应 Ticket/issues + runtime 执行事实`。
+只进行审查。任务必须包含完整、digest 已校验且 `spec_status=present` 的不可变 `ReviewManifest`、Spec brief，以及 Code Reviewer 在同一委派中收集并提供的完整 `spec context/bundle`；该名称不是单一规格文件的泛称，也不属于 ReviewManifest 的机器绑定范围。ReviewManifest 不包含或绑定 Ticket/issues、acceptance evidence、Verification 结果或额外 runtime facts。目录式单任务 bundle 是 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`；目录式拆分 task bundle 是 `spec.md + plan.md + 当前 task + acceptance evidence + Verification 结果`；`run-matt-spec-to-completion` bundle 是 canonical `.scratch/<featureSlug>/spec.md + 对应 Ticket/issues + runtime 执行事实`。该执行流程的 runtime facts 只能使用 canonical runtime 当前可获得且可验证的 execution plan、Checkpoint 中的 Ticket 状态/提交，以及当前 Completion Result 或 runtime 命令返回的执行事实；Completion Result 的 `checks` 未由 Checkpoint 持久化，恢复后缺少所需 completion 或 `checks` 时必须按代理指令 fail closed。
 
-必须校验每项必需输入及其绑定；缺少任一项时阻塞，source binding、digest、revision 不一致时也阻塞。不得退化为只审 `spec.md`、只审 `plan.md` 或只审当前 task，也不得静默忽略 Ticket/issues、acceptance evidence、Verification 结果或 runtime 执行事实。不得执行会改变工作树、Git 索引或引用的命令，不得编辑文件或委派工作。
+必须机器校验 ReviewManifest 的固定端点、分片、spec/standards source 和 digest；对额外 bundle 的每项必需输入、source binding、digest、revision、完整性和可恢复性，按 `instruction-only` 指令收集并验证。缺少任一项时阻塞；额外 bundle 不一致时由代理阻塞；不得声称额外 bundle 被 ReviewManifest digest 机器绑定，也不得退化为只审 `spec.md`、只审 `plan.md` 或只审当前 task，也不得静默忽略 Ticket/issues、acceptance evidence、Verification 结果或 runtime 执行事实。不得执行会改变工作树、Git 索引或引用的命令，不得编辑文件或委派工作。
 
 分别报告规格要求但缺失或只部分实现的行为、diff 中未要求的 scope creep、看似实现但行为错误的需求；每项发现必须引用对应规格。不得使用工作树文件读取命令或工具作为 finding 证据。每项 finding 必须引用 ReviewManifest shard ID，并引用固定 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>` 输出中的 hunk；如需上下文只能使用 `git show <review-commit>:<path>`，不得基于 committed diff 之外的上下文新增 finding。不施加摘要字数限制。
 

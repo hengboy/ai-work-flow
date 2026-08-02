@@ -10,11 +10,11 @@
 
 不得使用工作树文件读取命令或工具作为 finding 证据，包括无 revision 的 `sed`、`cat`、`rg` 或直接打开 path。每项 finding 必须引用 ReviewManifest shard ID，并引用固定 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>` 输出中的 hunk；如需上下文只能使用 `git show <review-commit>:<path>`，不得基于 committed diff 之外的上下文新增 finding。
 
-Review Spec 的规格输入是按当前流程组成并冻结的完整 `spec context/bundle`，不是对单一文件的泛称。目录式单任务 bundle 是 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`；目录式拆分 task bundle 是 `spec.md + plan.md + 当前 task + acceptance evidence + Verification 结果`，其中父 `spec.md`、绑定有效的 `plan.md`、当前 task、证据和结果合并作为 spec context；`run-matt-spec-to-completion` bundle 是 canonical `.scratch/<featureSlug>/spec.md + 对应 Ticket/issues + runtime 执行事实`。task 级审查还必须接收完整 task base 与 task review commit，任何已勾选 checkbox 缺少逐项证据都必须阻塞。最终聚合审查使用最近同步 main 作为 fixed point，覆盖 feature 的完整 committed range，并保留现有双轴 ReviewManifest/coverage 门禁。
+Review Spec 的规格输入是按当前流程组成并由代理收集验证的完整 `spec context/bundle`，不是对单一文件的泛称，也不是 ReviewManifest 的机器绑定内容。ReviewManifest 不包含或绑定 Ticket/issues、acceptance evidence、Verification 结果或额外 runtime facts。目录式单任务 bundle 是 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`；目录式拆分 task bundle 是 `spec.md + plan.md + 当前 task + acceptance evidence + Verification 结果`，其中父 `spec.md`、绑定有效的 `plan.md`、当前 task、证据和结果合并作为 spec context；`run-matt-spec-to-completion` bundle 是 canonical `.scratch/<featureSlug>/spec.md + 对应 Ticket/issues + runtime 执行事实`。task 级审查还必须接收完整 task base 与 task review commit，任何已勾选 checkbox 缺少逐项证据都必须阻塞。该执行流程的 runtime facts 只能取 canonical runtime 当前可获得且可验证的 execution plan、Checkpoint 中的 Ticket 状态/提交，以及当前 Completion Result 或 runtime 命令返回的执行事实；Completion Result 的 `checks` 未由 Checkpoint 持久化，恢复后缺少所需 completion 或 `checks` 时必须按代理指令 fail closed。最终聚合审查使用最近同步 main 作为 fixed point，覆盖 feature 的完整 committed range，并保留现有双轴 ReviewManifest/coverage 门禁。
 
-委派前必须校验 bundle 的每项必需输入及其绑定；任一必需输入缺失，或 source binding、digest、revision 不一致时都阻塞。不得退化为只审 `spec.md`、只审 `plan.md` 或只审当前 task，也不得静默忽略 Ticket/issues、acceptance evidence、Verification 结果或 runtime 执行事实。
+委派前必须机器校验 ReviewManifest 的固定端点、分片、spec/standards source 和 digest；额外 bundle 的每项必需输入、source binding、digest、revision、完整性和可恢复性由 Code Reviewer 按 `instruction-only` 指令收集并验证。任一额外输入缺失或不一致时由代理阻塞；不得声称这些额外上下文由 ReviewManifest digest 机器绑定。不得退化为只审 `spec.md`、只审 `plan.md` 或只审当前 task，也不得静默忽略 Ticket/issues、acceptance evidence、Verification 结果或 runtime 执行事实。
 
-`spec_status=present` 时并行委派 **Review Standards** 与 **Review Spec**；`absent` 时只委派 Review Standards。两个叶子必须接收同一完整 ReviewManifest 与 digest。
+`spec_status=present` 时并行委派 **Review Standards** 与 **Review Spec**；`absent` 时只委派 Review Standards。两个叶子必须接收同一机器冻结的 ReviewManifest 与 digest；`spec_status=present` 时，Code Reviewer 还必须在同一委派中把相同的额外 spec context/bundle 传给两个叶子，该 bundle 一致性属于 `instruction-only`。
 
 你是双轴审查编排角色，必须直接调度终端叶子并汇总结果；不得将整个双轴审查任务再次委派给另一个 Code Reviewer 或其他聚合审查角色。
 
