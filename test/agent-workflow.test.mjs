@@ -1795,6 +1795,50 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
   }
 });
 
+test('dual-axis review binds standards and complete spec context bundles without fallback', () => {
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
+  const skill = readFileSync(resolve(root, 'skills', executionSkill, 'SKILL.md'), 'utf8');
+  const bodies = Object.fromEntries(['coding', 'code-reviewer', 'review-standards', 'review-spec'].map((role) => [
+    role,
+    readFileSync(resolve(templatesDir, `${role}.md`), 'utf8')
+  ]));
+  const compiled = loadAgentAssets().compiledBodies;
+  const bundleAssertions = [
+    /完整 `spec context\/bundle`/,
+    /\.ai-work-flow\/plans\/<plan-id>\/spec\.md \+ plan\.md/,
+    /spec\.md \+ plan\.md \+ 当前 task \+ acceptance evidence \+ Verification 结果/,
+    /canonical `\.scratch\/<featureSlug>\/spec\.md \+ 对应 Ticket\/issues \+ runtime 执行事实`/,
+    /source binding、digest、revision 不一致时.*阻塞|source binding、digest、revision 不一致时也阻塞/s,
+    /不得退化为只审 `spec\.md`、只审 `plan\.md` 或只审当前 task/,
+    /不得静默忽略 Ticket\/issues.*runtime 执行事实/s
+  ];
+
+  for (const source of [routing, bodies['code-reviewer'], bodies['review-spec']]) {
+    for (const assertion of bundleAssertions) assert.match(source, assertion);
+  }
+  for (const source of [routing, bodies['code-reviewer'], bodies['review-standards'], skill]) {
+    assert.match(source, /`Standards`、`CONTEXT\.md`|`CONTEXT\.md`.*Standards/);
+    assert.match(source, /`spec\.md`.*不.*Standards.*标准来源|不得把 `spec\.md` 当作 Standards 来源/);
+  }
+  assert.match(skill, /execution plan、Ticket completion\/checks 与当前 Checkpoint 执行事实/);
+  assert.match(routing, /两个叶子仍接收同一冻结 ReviewManifest 与 digest/);
+  assert.match(routing, /保持 coverage、finding 与审批门禁/);
+
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const reviewer = generatedBody(paths, platform, 'code-reviewer', extension);
+    const standards = generatedBody(paths, platform, 'review-standards', extension);
+    const spec = generatedBody(paths, platform, 'review-spec', extension);
+    for (const assertion of bundleAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
+    assert.match(standards, /`spec\.md` 不得作为 Standards 轴的标准来源/, `${platform}/review-standards`);
+    assert.match(spec, /完整 `spec context\/bundle`/, `${platform}/review-spec`);
+    assert.match(spec, /source binding、digest、revision/, `${platform}/review-spec`);
+    assert.match(reviewer, /两个叶子必须接收同一完整 ReviewManifest 与 digest/, `${platform}/code-reviewer`);
+  }
+});
+
 test('routing is the sole source for retry and stop-lock governance', () => {
   const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
   const source = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');

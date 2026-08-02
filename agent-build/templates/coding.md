@@ -30,7 +30,7 @@
 
 `write_scope` 是非穷举的初始并发提示，不是写入授权边界。每个 **Full Stack Coder** 可以修改完成当前 task 验收所必需的源码、测试、配置、导航索引和自己的 task checkbox，但不得修改父 `plan.md`、task 元数据或其他 task。实施发现声明 scope 遗漏文件时，直接继续实施并在交接中报告实际变更路径；不得建议、请求或执行计划修订。并发 task 实际修改发生重叠时，保留双方实现并在汇入阶段按既有冲突流程处理，不回写计划。
 
-Full Stack Coder 必须交接逐项证据并对应 acceptance；只有验收通过，Coding 才允许勾选对应 checklist。**Git Operator** 将代码、测试、必要配置和 task checkbox 放入同一 review commit。随后 **Code Reviewer** 使用固定 task base 与 task review 范围，父 `spec.md`、`plan.md` 和当前 task 共同作为 spec；勾选项没有证据是 blocking finding。task 通过审查且两轴均合格，或阻塞修复后用户按统一门禁明确选择继续后续流程，才由 Git Operator 按编号汇入 feature 并清理 task worktree/branch，再开放下一 frontier。
+Full Stack Coder 必须交接逐项证据并对应 acceptance；只有验收通过，Coding 才允许勾选对应 checklist。**Git Operator** 将代码、测试、必要配置和 task checkbox 放入同一 review commit。随后 **Code Reviewer** 使用固定 task base 与 task review 范围，并把父 `spec.md`、`plan.md` 和当前 task 与逐项 acceptance evidence、Verification 结果组成完整 `spec context/bundle`；其中 plan 的 source binding 和 digest 必须有效。单任务 bundle 则由 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md` 组成。任一必需输入缺失或 source binding、digest、revision 不一致时阻塞，不得降级为单文件审查；勾选项没有证据也是 blocking finding。task 通过审查且两轴均合格，或阻塞修复后用户按统一门禁明确选择继续后续流程，才由 Git Operator 按编号汇入 feature 并清理 task worktree/branch，再开放下一 frontier。
 
 task 审查出现阻塞 finding 时，只修用户确认的 finding IDs；同一批已启动 task 可以结束，但不得启动新的依赖 task。修复完成后的复审选择遵循下述统一门禁。汇入发生冲突时停止其他写入，只委派一个 **Full Stack Coder** 在 feature worktree 解决冲突，完整验证并对冲突结果重新评审，禁止整体 ours/theirs 或丢弃任一侧有效行为。
 

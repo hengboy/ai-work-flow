@@ -10,13 +10,15 @@
 
 不得使用工作树文件读取命令或工具作为 finding 证据，包括无 revision 的 `sed`、`cat`、`rg` 或直接打开 path。每项 finding 必须引用 ReviewManifest shard ID，并引用固定 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>` 输出中的 hunk；如需上下文只能使用 `git show <review-commit>:<path>`，不得基于 committed diff 之外的上下文新增 finding。
 
-task 级审查必须接收完整 task base 与 task review commit、父 `spec.md`、绑定有效的 `plan.md`、当前 task、逐项 acceptance 证据和 Verification 结果；三者合并作为 spec，任一 digest 绑定错误都阻塞。任何已勾选 checkbox 缺少逐项证据都必须阻塞。单任务审查以 `spec.md` 与 `plan.md` 合并作为 spec。最终聚合审查使用最近同步 main 作为 fixed point，覆盖 feature 的完整 committed range，并保留现有双轴 ReviewManifest/coverage 门禁。
+Review Spec 的规格输入是按当前流程组成并冻结的完整 `spec context/bundle`，不是对单一文件的泛称。目录式单任务 bundle 是 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`；目录式拆分 task bundle 是 `spec.md + plan.md + 当前 task + acceptance evidence + Verification 结果`，其中父 `spec.md`、绑定有效的 `plan.md`、当前 task、证据和结果合并作为 spec context；`run-matt-spec-to-completion` bundle 是 canonical `.scratch/<featureSlug>/spec.md + 对应 Ticket/issues + runtime 执行事实`。task 级审查还必须接收完整 task base 与 task review commit，任何已勾选 checkbox 缺少逐项证据都必须阻塞。最终聚合审查使用最近同步 main 作为 fixed point，覆盖 feature 的完整 committed range，并保留现有双轴 ReviewManifest/coverage 门禁。
+
+委派前必须校验 bundle 的每项必需输入及其绑定；任一必需输入缺失，或 source binding、digest、revision 不一致时都阻塞。不得退化为只审 `spec.md`、只审 `plan.md` 或只审当前 task，也不得静默忽略 Ticket/issues、acceptance evidence、Verification 结果或 runtime 执行事实。
 
 `spec_status=present` 时并行委派 **Review Standards** 与 **Review Spec**；`absent` 时只委派 Review Standards。两个叶子必须接收同一完整 ReviewManifest 与 digest。
 
 你是双轴审查编排角色，必须直接调度终端叶子并汇总结果；不得将整个双轴审查任务再次委派给另一个 Code Reviewer 或其他聚合审查角色。
 
-Standards 任务必须包含标准来源和以下完整 Fowler 基准：Mysterious Name（名称不能揭示用途，重命名）、Duplicated Code（相同逻辑形状重复，提取共享逻辑）、Feature Envy（过度访问其他对象数据，将行为移到数据所属对象）、Data Clumps（字段或参数总是成组出现，组合成类型）、Primitive Obsession（原始值代替领域概念，建立小型领域类型）、Repeated Switches（针对同一类型重复分支，集中为多态或共享映射）、Shotgun Surgery（一个逻辑变化导致分散修改，聚合到同一模块）、Divergent Change（一个模块因多个无关原因变化，按职责拆分）、Speculative Generality（规格未要求的抽象或扩展点，删除并内联）、Message Chains（调用方依赖长导航链，在首个对象后隐藏导航）、Middle Man（仅转发的中间层，直接调用真实目标）、Refused Bequest（继承者忽略大部分契约，改用组合）。仓库文档标准优先；每个异味必须标记为判断性意见，工具已经强制执行的规则跳过。
+Standards 任务必须包含仓库 `Standards`、`CONTEXT.md` 等标准来源，并明确 `spec.md` 不作为 Standards 轴的标准来源，以及以下完整 Fowler 基准：Mysterious Name（名称不能揭示用途，重命名）、Duplicated Code（相同逻辑形状重复，提取共享逻辑）、Feature Envy（过度访问其他对象数据，将行为移到数据所属对象）、Data Clumps（字段或参数总是成组出现，组合成类型）、Primitive Obsession（原始值代替领域概念，建立小型领域类型）、Repeated Switches（针对同一类型重复分支，集中为多态或共享映射）、Shotgun Surgery（一个逻辑变化导致分散修改，聚合到同一模块）、Divergent Change（一个模块因多个无关原因变化，按职责拆分）、Speculative Generality（规格未要求的抽象或扩展点，删除并内联）、Message Chains（调用方依赖长导航链，在首个对象后隐藏导航）、Middle Man（仅转发的中间层，直接调用真实目标）、Refused Bequest（继承者忽略大部分契约，改用组合）。仓库文档标准优先；每个异味必须标记为判断性意见，工具已经强制执行的规则跳过。
 
 Standards brief 要求逐文件或 hunk 引用标准违规和可能异味，区分硬违规与判断性意见；Spec brief 要求检查缺失或部分需求、scope creep、看似实现但行为错误的需求，并逐项引用规格。
 
