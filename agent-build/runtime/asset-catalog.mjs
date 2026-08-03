@@ -125,14 +125,15 @@ function validateControls(controlDocument, roles, policyDocument, errors) {
   }
   const referenced = new Set();
   for (const role of roles) {
-    if (!unique(role.controls ?? [])) errors.push(`Role ${role.id} has duplicate controls.`);
-    for (const id of role.controls ?? []) {
+    const roleControls = Array.isArray(role.controls) ? role.controls : [];
+    if (!unique(roleControls)) errors.push(`Role ${role.id} has duplicate controls.`);
+    for (const id of roleControls) {
       if (typeof id !== 'string' || !Object.hasOwn(controls, id)) errors.push(`Role ${role.id} references an unknown control: ${id}.`);
       else referenced.add(id);
     }
     const policy = policyDocument?.policies?.[role.policy];
     if (!policy) continue;
-    for (const id of role.controls ?? []) {
+    for (const id of roleControls) {
       const requirements = controls[id]?.policy_requirements;
       if (!isPlainObject(requirements)) continue;
       for (const [capability, allowed] of Object.entries(requirements)) {

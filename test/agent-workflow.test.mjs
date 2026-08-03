@@ -1102,7 +1102,7 @@ test('bug fixer is a narrowly governed coding subagent on every platform', () =>
   });
   assert.match(body, /bug 必须有复现方式、预期和实际行为/);
   assert.match(body, /当前审查结果、blocking 分类和获批 IDs/);
-  assert.match(compiled, /Bug Fixer 只修复可复现 bug 或获批 blocking finding IDs/);
+  assert.match(compiled, /Bug Fixer 只修复获批 blocking finding IDs/);
   assert.match(body, /未知路径委派 File Explorer/);
   assert.match(body, /Git Operator 执行/);
   assert.match(body, /普通目录式 finding 修复.*不执行第二次评审/s);
@@ -2776,6 +2776,7 @@ test('control catalog validation fails closed on malformed interfaces and relati
     ['invalid value', 'controls.json', (document) => { document.controls['coding-orchestration-only'].policy_requirements.git = ['invalid']; }, /has invalid policy value: invalid/],
     ['duplicate allowed value', 'controls.json', (document) => { document.controls['no-git-mutation'].policy_requirements.git = ['read', 'read']; }, /must be a non-empty array without duplicates/],
     ['duplicate role reference', 'roles.json', (document) => { document.roles[0].controls.push(document.roles[0].controls[0]); }, /Role coding has duplicate controls/],
+    ['non-array role controls', 'roles.json', (document) => { document.roles[0].controls = { invalid: true }; }, /Role coding\.controls must be a non-empty array/],
     ['unknown role reference', 'roles.json', (document) => { document.roles[0].controls[0] = 'missing-control'; }, /references an unknown control: missing-control/],
     ['unreferenced control', 'roles.json', (document) => {
       const role = document.roles.find((candidate) => candidate.id === 'bug-fixer');
