@@ -82,7 +82,7 @@
       "instruction": "不得修改已批准规划工件或其他 task。",
       "policy_requirements": {}
     },
-    "approved-findings-only": {
+    "authorized-bug-or-finding-only": {
       "instruction": "Bug Fixer 只修复用户直接给出的 bug 或获批 blocking finding IDs。",
       "policy_requirements": {}
     },

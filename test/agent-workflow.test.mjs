@@ -1091,6 +1091,8 @@ test('bug fixer is a narrowly governed coding subagent on every platform', () =>
   assert.equal(catalog.roles.length, 13);
   assert.equal(role.kind, 'subagent');
   assert.equal(role.policy, 'write-code');
+  assert.ok(role.controls.includes('authorized-bug-or-finding-only'));
+  assert.ok(!role.controls.includes('approved-findings-only'));
   assert.deepEqual(role.delegates, ['file-explorer', 'git-operator', 'researcher', 'document-maintainer']);
   assert.deepEqual(role.tools, ['Read', 'Edit', 'Write', 'Bash', 'Task']);
   assert.ok(coding.delegates.includes('bug-fixer'));
@@ -2783,9 +2785,9 @@ test('control catalog validation fails closed on malformed interfaces and relati
     ['unknown role reference', 'roles.json', (document) => { document.roles[0].controls[0] = 'missing-control'; }, /references an unknown control: missing-control/],
     ['unreferenced control', 'roles.json', (document) => {
       const role = document.roles.find((candidate) => candidate.id === 'bug-fixer');
-      role.controls = role.controls.filter((id) => id !== 'approved-findings-only');
-    }, /Control is not referenced: approved-findings-only/],
-    ['policy conflict', 'controls.json', (document) => { document.controls['approved-findings-only'].policy_requirements.write_scope = ['docs']; }, /policy does not satisfy control approved-findings-only/]
+      role.controls = role.controls.filter((id) => id !== 'authorized-bug-or-finding-only');
+    }, /Control is not referenced: authorized-bug-or-finding-only/],
+    ['policy conflict', 'controls.json', (document) => { document.controls['authorized-bug-or-finding-only'].policy_requirements.write_scope = ['docs']; }, /policy does not satisfy control authorized-bug-or-finding-only/]
   ];
 
   for (const [name, file, mutate, expected] of cases) {

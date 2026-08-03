@@ -105,7 +105,7 @@
       "description": "负责修复可复现 bug 和用户明确批准的阻塞 finding。",
       "kind": "subagent",
       "policy": "write-code",
-      "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "approved-findings-only", "no-git-mutation"],
+      "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "authorized-bug-or-finding-only", "no-git-mutation"],
       "delegates": ["file-explorer", "git-operator", "researcher", "document-maintainer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Task"],
       "routing_sections": ["browser-governance", "retry-governance", "handoff-governance", "change-handoff-governance"]
