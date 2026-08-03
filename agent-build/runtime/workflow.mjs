@@ -126,7 +126,7 @@ function addWriteStep(plan, path, contents) {
 
 function addSourceTree(plan, source, destination, excludedNames = new Set()) {
   for (const entry of readdirSync(source, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
-    if (excludedNames.has(entry.name)) continue;
+    if (entry.isDirectory() && excludedNames.has(entry.name)) continue;
     const sourcePath = resolve(source, entry.name);
     const destinationPath = resolve(destination, entry.name);
     if (entry.isDirectory()) addSourceTree(plan, sourcePath, destinationPath, excludedNames);

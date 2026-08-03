@@ -12,6 +12,7 @@ import { MARKER_END, MARKER_START, updateManagedMarker } from '../agent-build/ru
 import { loadAgentAssets } from '../agent-build/runtime/asset-catalog.mjs';
 import { capabilityEvidence, capabilityMatrix, controlMatrix, evaluateOpenCodePermission } from '../agent-build/runtime/platform-adapter.mjs';
 import { applyTransaction, recoverTransaction } from '../agent-build/runtime/transaction.mjs';
+import { createRuntimeProvenance } from '../execution-runtime/lib/runtime-provenance.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const installer = resolve(root, 'agent-build/install.mjs');
@@ -635,6 +636,34 @@ test('runtime provenance installs atomically, detects drift and unknown legacy i
   const repeated = run(paths, 'generate');
   assert.equal(repeated.status, 0, repeated.stderr);
   assert.deepEqual(snapshotTree(resolve(paths.config, 'ai-work-flow')), before);
+});
+
+test('runtime installation preserves a managed file named node_modules', () => {
+  const sourceRoot = mkdtempSync(resolve(tmpdir(), 'agent-workflow-runtime-source-'));
+  cpSync(resolve(root, 'agent-build'), resolve(sourceRoot, 'agent-build'), { recursive: true });
+  cpSync(resolve(root, 'execution-runtime'), resolve(sourceRoot, 'execution-runtime'), { recursive: true });
+  cpSync(resolve(root, 'skills'), resolve(sourceRoot, 'skills'), { recursive: true });
+  symlinkSync(resolve(root, 'node_modules'), resolve(sourceRoot, 'node_modules'), 'dir');
+
+  const sourceRuntime = resolve(sourceRoot, 'execution-runtime');
+  writeFileSync(resolve(sourceRuntime, 'node_modules'), 'managed runtime entry\n');
+  writeFileSync(resolve(sourceRuntime, 'runtime-provenance.json'), `${JSON.stringify(createRuntimeProvenance(sourceRuntime), null, 2)}\n`);
+
+  const paths = environment();
+  const result = spawnSync(process.execPath, [resolve(sourceRoot, 'agent-build/install.mjs')], {
+    cwd: sourceRoot,
+    encoding: 'utf8',
+    env: env(paths)
+  });
+  assert.equal(result.status, 0, result.stderr);
+
+  const installedRuntime = resolve(paths.config, 'ai-work-flow/execution-runtime');
+  assert.equal(readFileSync(resolve(installedRuntime, 'node_modules'), 'utf8'), 'managed runtime entry\n');
+  const runtimeCheck = spawnSync(process.execPath, [resolve(installedRuntime, 'review-manifest-cli.mjs'), '--help'], {
+    encoding: 'utf8',
+    env: env(paths)
+  });
+  assert.equal(runtimeCheck.status, 0, runtimeCheck.stderr);
 });
 
 test('generated roles preserve the one-envelope prepare verify handoff and semantic retry gates on all platforms', () => {
