@@ -1465,6 +1465,7 @@ test('planning prompt converges one decision at a time while planning writer own
   const body = readFileSync(resolve(templatesDir, 'planning.md'), 'utf8');
   const prompt = loadAgentAssets().compiledBodies.get('planning');
   const writer = readFileSync(resolve(templatesDir, 'planning-writer.md'), 'utf8');
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
 
   assert.doesNotMatch(body, /```markdown/);
   assert.match(body, /完整固定模板只由 Planning Writer 拥有/);
@@ -1475,9 +1476,15 @@ test('planning prompt converges one decision at a time while planning writer own
   assert.match(body, /同名冲突、共享理解、任务模式、颗粒度和删除确认沿用序号/);
   assert.match(body, /推荐答案、理由与主要取舍/);
   assert.match(body, /目标、成功标准、受众、范围、约束、现状、接口、数据流、失败处理、测试、兼容、迁移和发布策略/);
+  assert.match(body, /沿每个会影响结果的设计分支持续追问.*依赖顺序逐一解决/s);
+  assert.match(body, /含糊、矛盾、把决定推回给 Planning.*继续追问/s);
+  assert.match(body, /事实已查清.*关键决策及其依赖已解决.*可验证场景.*范围外边界.*未决问题为零/s);
+  assert.match(body, /门禁通过前.*不得委派 Planning Writer、Task Planner 或 Git Operator/s);
+  assert.match(body, /新信息或需求变化.*重新打开问询门禁/s);
   assert.match(body, /用户明确批准共享理解/);
   assert.match(body, /未选择不覆盖/);
   assert.match(body, /只报告目录、spec\/plan 路径.*不输出完整正文/s);
+  assert.match(routing, /持续问询.*共享理解门禁.*Planning Writer、Task Planner 或 Git Operator/s);
   assert.match(prompt, /收到编码或实施请求时引导用户.*Coding/s);
   assert.match(prompt, /Coding/);
   assert.doesNotMatch(prompt, /https?:\/\/|github\.com/i);

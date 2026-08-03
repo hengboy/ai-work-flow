@@ -89,10 +89,10 @@ Codex 的 `reasoning` 使用非空字符串；Claude Code 的 `effort` 只接受
 ### 使用流程
 
 ```text
-Planning 问询并确认 -> 写入/校验 spec.md -> 计算原始字节 SHA-256 -> 写入绑定的 plan.md -> 选择拆分或不拆分 -> 创建 planning commit -> 新会话由 Coding 实施
+Planning 持续问询并通过共享理解门禁 -> 写入/校验 spec.md -> 计算原始字节 SHA-256 -> 写入绑定的 plan.md -> 选择拆分或不拆分 -> 创建 planning commit -> 新会话由 Coding 实施
 ```
 
-1. 在 **Planning** 主代理中说明目标。Planning 逐项确认关键决策并复述共享理解；用户明确批准后，Planning Writer 才完整写入 `.ai-work-flow/plans/<plan-id>/spec.md`。已有且需求未变化的 spec 会先校验、总结并再次确认，不会静默重写。
+1. 在 **Planning** 主代理中说明目标。Planning 先让 File Explorer 查明仓库事实，再一次只问一个决定，沿影响结果的设计分支持续追问并按依赖顺序解决。只有关键分支、验收场景、范围边界、假设和未决问题全部收敛，且用户明确批准复述的共享理解后，Planning Writer 才完整写入 `.ai-work-flow/plans/<plan-id>/spec.md`。门禁通过前不会生成后续规划工件；新信息或需求变化会重新打开问询。已有且需求未变化的 spec 会先校验、总结并再次确认，不会静默重写。
 2. spec 写后必须满足固定章节、`status: approved` 和 `Open Questions: N/A`，并只描述需求与验收边界。File Explorer 对保存后的原始完整字节计算 SHA-256；随后 Planning Writer 写入 `plan.md`，通过 `source_spec` 和 `source_spec_digest` 绑定该规格。任一写入、校验或摘要失败都会短路后续阶段。
 3. plan 校验成功后明确选择“拆分”或“不拆分”。拆分时先确认完整任务草案的颗粒度，再按当前 plan 原始完整字节摘要全量替换 `tasks/NN-short-name.md`；不拆分时需明确确认删除全部旧 tasks。计划一旦重写，旧 tasks 立即不可执行。
 4. 确认最终工件后，由 Planning 委派 Git Operator 创建只包含当前目录 spec、plan 和完整 tasks 集合或 tasks 删除的本地 planning commit。Planning 到此结束，不实施代码。
