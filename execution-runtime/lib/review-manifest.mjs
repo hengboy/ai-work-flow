@@ -42,7 +42,10 @@ function assertDirectoryBundle(bundle, manifest) {
   if (!bundle || bundle.type !== "directory" || !["single", "task", "aggregate"].includes(bundle.mode) || !Array.isArray(bundle.sources)) {
     throw new Error("ReviewManifest has invalid directory bundle");
   }
-  const expectedRoles = bundle.mode === "task" ? ["spec", "plan", "task"] : ["spec", "plan"];
+  if (manifest.spec_status === "absent" && bundle.mode !== "single") {
+    throw new Error("ReviewManifest absent directory bundle must use single mode");
+  }
+  const expectedRoles = manifest.spec_status === "absent" ? [] : bundle.mode === "task" ? ["spec", "plan", "task"] : ["spec", "plan"];
   const roles = bundle.sources.map((source) => source?.role);
   if (!sameJson(roles, expectedRoles) || bundle.sources.some((source) => (
     typeof source.path !== "string" || !source.path || source.revision !== manifest.review_commit || !DIGEST_PATTERN.test(source.digest)
@@ -50,7 +53,8 @@ function assertDirectoryBundle(bundle, manifest) {
     throw new Error("ReviewManifest directory bundle sources are not fixed to the review commit");
   }
   const paths = bundle.sources.map((source) => source.path);
-  if (new Set(paths).size !== paths.length || !sameJson(bundle.sources[0], manifest.spec_source)) {
+  const expectedSpecSource = bundle.sources[0] ?? null;
+  if (new Set(paths).size !== paths.length || !sameJson(expectedSpecSource, manifest.spec_source ?? null)) {
     throw new Error("ReviewManifest directory bundle source binding is invalid");
   }
   if (!DIGEST_PATTERN.test(bundle.acceptance_evidence_digest) || !DIGEST_PATTERN.test(bundle.verification_digest) || bundle.bundle_digest !== reviewBundleDigest(bundle)) {

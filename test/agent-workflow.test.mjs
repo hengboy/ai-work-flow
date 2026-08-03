@@ -1828,7 +1828,9 @@ test('dual-axis review binds standards and complete directory spec bundles witho
   ];
   const sharedManifestAssertions = [
     /ReviewManifest 机器冻结端点、commit list、真实 PathChange、review checks、diff、spec\/standards source、稳定 shards 和 digest/,
-    /机器绑定 spec\/plan\/可选 task.*acceptance evidence\/Verification digest/s,
+    /机器绑定 acceptance evidence\/Verification digest/,
+    /`spec_status=present` 时同时绑定 spec\/plan\/可选 task/,
+    /`mode=single, spec_status=absent` 时 bundle 的 sources 必须为空且输入不得提供 spec\/plan\/task 路径/,
     /不得退化为 instruction-only/
   ];
   for (const assertion of sharedBundleAssertions) assert.match(routing, assertion);

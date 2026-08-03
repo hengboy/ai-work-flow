@@ -123,9 +123,18 @@ async function assertReviewContext(cwd, fixedPoint, reviewCommit) {
 }
 
 async function directorySources(cwd, reviewCommit, input) {
+  if (!["single", "task", "aggregate"].includes(input.mode)) throw new Error("Directory review mode must be single, task, or aggregate");
+  const specStatus = input.spec_status ?? "present";
+  if (!["present", "absent"].includes(specStatus)) throw new Error("Directory review spec_status must be present or absent");
+  if (specStatus === "absent") {
+    if (input.mode !== "single") throw new Error("Directory review absent spec_status requires single mode");
+    if (input.spec_path !== undefined || input.plan_path !== undefined || input.task_path !== undefined) {
+      throw new Error("Directory review absent spec_status must not include spec_path, plan_path, or task_path");
+    }
+    return { specStatus, sources: [] };
+  }
   const specPath = assertRelativePath(input.spec_path, "spec_path");
   const planPath = assertRelativePath(input.plan_path, "plan_path");
-  if (!["single", "task", "aggregate"].includes(input.mode)) throw new Error("Directory review mode must be single, task, or aggregate");
   if ((input.mode === "task") !== Boolean(input.task_path)) throw new Error("Directory review task_path must match task mode");
   const sourceInputs = [{ role: "spec", path: specPath }, { role: "plan", path: planPath }];
   if (input.task_path) sourceInputs.push({ role: "task", path: assertRelativePath(input.task_path, "task_path") });
@@ -150,7 +159,7 @@ async function directorySources(cwd, reviewCommit, input) {
       throw new Error("Directory review task source_plan binding does not match the committed plan");
     }
   }
-  return sources;
+  return { specStatus, sources };
 }
 
 async function standardsSource(cwd, reviewCommit, input) {
@@ -176,7 +185,7 @@ function buildDirectoryBundle(input, sources) {
 async function buildDirectoryReviewFacts(cwd, input) {
   assertFacts(input);
   await assertReviewContext(cwd, input.fixed_point, input.review_commit);
-  const sources = await directorySources(cwd, input.review_commit, input);
+  const { specStatus, sources } = await directorySources(cwd, input.review_commit, input);
   const standards_source = await standardsSource(cwd, input.review_commit, input);
   const changed_paths = await committedPathChanges(cwd, input.fixed_point, input.review_commit);
   if (changed_paths.length === 0) throw new Error("Directory review range must contain changed paths");
@@ -190,8 +199,8 @@ async function buildDirectoryReviewFacts(cwd, input) {
     changed_paths,
     checks: [...input.checks, `git diff --check ${input.fixed_point}...${input.review_commit}`],
     diff_command,
-    spec_status: "present",
-    spec_source: sources[0],
+    spec_status: specStatus,
+    spec_source: sources[0] ?? null,
     standards_source,
     directory_bundle,
     shards: changed_paths.map((change, index) => ({

@@ -28,7 +28,14 @@ function assertVerifyInput(input) {
 try {
   const { command, repository, help } = parseArgs(process.argv.slice(2));
   if (help) {
-    process.stdout.write("Usage: review-manifest-cli.mjs <prepare|verify> --repository <review-worktree>\n");
+    process.stdout.write([
+      "Usage: review-manifest-cli.mjs <prepare|verify> --repository <review-worktree>",
+      "stdin: fixed_point, review_commit, mode, checks, acceptance_evidence, verification",
+      "present bundle: spec_status=present (or omitted), spec_path, plan_path, and task_path only for mode=task",
+      "absent bundle: mode=single, spec_status=absent, with no spec_path, plan_path, or task_path",
+      "verify also requires manifest",
+      "",
+    ].join("\n"));
     process.exit(0);
   }
   const input = await stdinJson();

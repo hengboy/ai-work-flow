@@ -18,7 +18,7 @@ async function git(cwd, ...args) {
   return (await run("git", args, { cwd, encoding: "utf8" })).stdout.trim();
 }
 
-async function fixture({ validPlan = true, copy = false, objectFormat, mode = "single" } = {}) {
+async function fixture({ validPlan = true, copy = false, objectFormat, mode = "single", specStatus = "present" } = {}) {
   const root = await mkdtemp(join(tmpdir(), "directory-review-manifest-"));
   const initArgs = ["init", "-b", "main"];
   if (objectFormat) initArgs.push(`--object-format=${objectFormat}`);
@@ -42,9 +42,11 @@ async function fixture({ validPlan = true, copy = false, objectFormat, mode = "s
   ].join("\n");
   const planDigest = createHash("sha256").update(plan).digest("hex");
   await writeFile(join(root, "CONTEXT.md"), "# Standards\n");
-  await writeFile(join(root, specPath), spec);
-  await writeFile(join(root, planPath), plan);
-  if (mode === "task") {
+  if (specStatus === "present") {
+    await writeFile(join(root, specPath), spec);
+    await writeFile(join(root, planPath), plan);
+  }
+  if (specStatus === "present" && mode === "task") {
     await mkdir(join(root, ".ai-work-flow", "plans", "example", "tasks"), { recursive: true });
     await writeFile(join(root, taskPath), [
       "# 01 - Review",
@@ -74,9 +76,8 @@ async function fixture({ validPlan = true, copy = false, objectFormat, mode = "s
       fixed_point: fixedPoint,
       review_commit: reviewCommit,
       mode,
-      spec_path: specPath,
-      plan_path: planPath,
-      ...(mode === "task" ? { task_path: taskPath } : {}),
+      ...(specStatus === "absent" ? { spec_status: "absent" } : { spec_path: specPath, plan_path: planPath }),
+      ...(specStatus === "present" && mode === "task" ? { task_path: taskPath } : {}),
       checks: ["node --test"],
       acceptance_evidence: [{ criterion: "rename", evidence: "new-name.txt exists" }],
       verification: [{ command: "node --test", result: "passed" }],
@@ -108,6 +109,67 @@ test("prepares and verifies a single spec bundle from committed Git facts", asyn
   });
   assert.deepEqual(verified, manifest);
   assert.equal(Object.isFrozen(verified), true);
+});
+
+test("prepares and verifies a single absent bundle without fabricated spec or plan sources", async () => {
+  const { root, input } = await fixture({ specStatus: "absent" });
+  const manifest = await prepareDirectoryReviewManifest(root, input);
+
+  assert.equal(manifest.spec_status, "absent");
+  assert.equal(manifest.spec_source, null);
+  assert.deepEqual(manifest.directory_bundle, {
+    type: "directory",
+    mode: "single",
+    sources: [],
+    acceptance_evidence_digest: manifest.directory_bundle.acceptance_evidence_digest,
+    verification_digest: manifest.directory_bundle.verification_digest,
+    bundle_digest: manifest.directory_bundle.bundle_digest,
+  });
+  assert.equal(manifest.directory_bundle.bundle_digest, reviewBundleDigest(manifest.directory_bundle));
+  await verifyDirectoryReviewManifest(root, manifest, input);
+
+  const prepared = spawnSync(process.execPath, [cli, "prepare", "--repository", root], {
+    input: JSON.stringify(input), encoding: "utf8",
+  });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  assert.deepEqual(JSON.parse(prepared.stdout), manifest);
+});
+
+test("rejects absent and present bundle shape mismatches", async () => {
+  const absent = await fixture({ specStatus: "absent" });
+  const present = await fixture();
+  const cases = [
+    [absent.root, { ...absent.input, spec_path: ".ai-work-flow/plans/example/spec.md" }, /must not include spec_path/],
+    [absent.root, { ...absent.input, plan_path: ".ai-work-flow/plans/example/plan.md" }, /must not include spec_path/],
+    [absent.root, { ...absent.input, mode: "aggregate" }, /requires single mode/],
+    [absent.root, { ...absent.input, mode: "task" }, /requires single mode/],
+    [present.root, { ...present.input, spec_status: "present", spec_path: undefined }, /spec_path/],
+    [present.root, { ...present.input, spec_status: "present", plan_path: undefined }, /plan_path/],
+  ];
+
+  for (const [root, input, pattern] of cases) {
+    await assert.rejects(prepareDirectoryReviewManifest(root, input), pattern);
+  }
+});
+
+test("fails closed when an absent bundle gains rehashed sources or a stale manifest digest", async () => {
+  const { root, input } = await fixture({ specStatus: "absent" });
+  const manifest = await prepareDirectoryReviewManifest(root, input);
+  const withSource = structuredClone(manifest);
+  withSource.directory_bundle.sources = [{
+    role: "spec",
+    path: "fabricated-spec.md",
+    revision: input.review_commit,
+    digest: "0".repeat(64),
+  }];
+  withSource.directory_bundle.bundle_digest = reviewBundleDigest(withSource.directory_bundle);
+
+  assert.throws(() => createReviewManifest(withSource), /sources are not fixed|source binding/);
+  assert.throws(() => assertReviewManifest({ ...manifest, manifest_digest: "0".repeat(64) }), /digest/);
+  await assert.rejects(
+    verifyDirectoryReviewManifest(root, manifest, { ...input, verification: [{ command: "npm test", result: "changed" }] }),
+    /bundle facts/,
+  );
 });
 
 test("prepares and verifies a task spec bundle with committed plan path, revision, and digest binding", async () => {
