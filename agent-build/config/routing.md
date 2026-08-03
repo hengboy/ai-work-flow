@@ -57,7 +57,7 @@ spec 只保留确认后的 what、边界与验收共享认知。plan 不重复 s
 
 用户明确批准当前阶段后，Coding 自动完成该阶段内全部确定性步骤：发现、委派、等待、验证、受控本地提交、同步、评审、整合和清理。不得询问“是否继续”“是否提交”或“是否评审”，也不得重复请求已经授予的提交授权。
 
-普通目录式流程为 **Git Operator prepare -> Full Stack Coder -> Git Operator commit/sync/prepare ReviewManifest -> Coding 验证交接 -> Code Reviewer verify -> Review Standards + Review Spec -> Git Operator integrate/cleanup**。单任务用 feature worktree；拆分按依赖 frontier，scope 互斥可并行非 Git 工作，Git 串行。`write_scope` 不是授权；实现限验收所需源码、测试、配置、索引、lockfile 和当前 checkbox，不回写已批准元数据。Git Operator 仅在 commit/sync 成功后用全局运行时 prepare，不得 verify 或执行审查；Coding 验证后才委派 Code Reviewer。
+普通目录式流程为 **Git Operator prepare -> Full Stack Coder -> Git Operator commit/sync/prepare+verify -> Coding 验证原样交接 -> Code Reviewer independent verify -> Review Standards + Review Spec -> Git Operator integrate/cleanup**。单任务用 feature worktree；拆分按依赖 frontier，scope 互斥可并行非 Git 工作，Git 串行。`write_scope` 不是授权；实现限验收所需源码、测试、配置、索引、lockfile 和当前 checkbox，不回写已批准元数据。Git Operator 仅在 commit/sync 成功后用安装运行时 prepare+verify，不执行审查；Coding 验证后才委派 Code Reviewer。
 
 所有文件检索、未知路径定位和代码导航索引读取必须交由 File Explorer 执行；其他角色只消费其精确交接。Full Stack Coder 在新增、移动、重命名、拆分、合并、删除文件或改变入口、路由、API、主职责时随实现维护 `.ai-work-flow/index/`。Coding 只委派执行具体 skill 的可执行角色，不把 skill 当作未指定所有者的工作。
 
@@ -105,9 +105,11 @@ git log <fixed-point>..<review-commit> --oneline
 
 两个端点必须可解析，fixed point 是 review commit 的祖先，diff 非空，审查 worktree 的 `HEAD` 等于 review commit 且工作树干净。输入 range、commit list 或 changed paths 与 ReviewManifest 不一致时阻塞。禁止用无参数 `git diff`、`git diff --cached` 或工作树文件读取命令取证。每项 finding 引用 ReviewManifest shard ID 和 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>` hunk；上下文只使用 `git show <review-commit>:<path>`，不得从 committed diff 外新增 finding。
 
-ReviewManifest 机器冻结端点、commit list、真实 PathChange、review checks、diff、spec/standards source、稳定 shards 和 digest。prepare envelope 含 `review_manifest`、完整 `verify_input`、`manifest_digest`、`bundle_digest`；普通目录式 manifest 机器绑定 acceptance evidence/Verification digest，`spec_status=present` 时同时绑定 spec/plan/可选 task 的 review commit revision/path 与原始字节 digest，`spec_status=absent` 时输入不得提供 mode/spec/plan/task 路径且生成的 single bundle sources 必须为空。Git Operator 在 commit/sync 成功后运行 `execution-runtime/review-manifest-cli.mjs prepare` 并原样交付 envelope；Coding 验证交接后原样转交，Code Reviewer 将同一 envelope 传给 verify。禁止推导、删除、重建输入；endpoint、source、digest、revision、shard 或完整性失败均 fail closed。目录式 present 单任务 bundle 为 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`；拆分 task 加当前 task、acceptance evidence 与 Verification 结果；聚合审查绑定 spec+plan 与聚合 evidence/Verification。不得退化为 instruction-only、单文件审查或静默遗漏上下文。
+ReviewManifest 机器冻结端点、commit list、真实 PathChange、review checks、diff、spec/standards source、稳定 shards 和 digest。envelope 绑定 manifest、原始 verify input、两种 digest、runtime provenance、prepare verification，严验 known fields/type/mode/shard/command/bundle。manifest 机器绑定 acceptance evidence/Verification digest；`spec_status=present` 时同时绑定 spec/plan/可选 task；`spec_status=absent` 时输入不得提供 mode/spec/plan/task 路径且生成的 single bundle sources 必须为空。Git Operator 以同一安装 CLI prepare 后立即用原始 stdout verify，再逐字节交 Coding 原样转交；Code Reviewer 独立 verify Git facts。全程禁摘要、删改/重建 envelope、切换仓库 CLI。目录式 present 单任务 bundle 为 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`；拆分 task 加当前 task、acceptance evidence 与 Verification 结果；聚合绑定 spec+plan。不得退化为 instruction-only、单文件审查或静默遗漏上下文。
 
-Standards 轴使用冻结 revision 的仓库 Standards、`CONTEXT.md` 等来源，`spec.md` 不是 Standards 来源；仓库规则优先于 Fowler 异味基准，工具已强制规则跳过，异味仅作判断性意见。Spec 轴检查缺失/部分需求、scope creep 和行为错误。叶子 `details.review_result` 保留 `{verdict, blocking_findings, advisory_findings, manifest_digest, coverage}`；finding 具有稳定 ID、摘要与证据。缺失、重复、越界 shard 或 digest 不一致时阻塞。
+runtime provenance 绑定 source identity/revision 与摘要，禁绝对路径。安装同事务写 provenance/runtime/agents。CLI fail closed；旧/缺失/篡改/协议/来源漂移须 install/generate，禁 fallback/静默兼容/自动修复；重复生成幂等。
+
+Standards 轴使用冻结 revision 的仓库 Standards、`CONTEXT.md` 等来源，`spec.md` 不是 Standards 来源；仓库规则优先，跳过工具规则。Spec 轴查缺失/部分需求、scope creep、行为错误。叶子保留 `{verdict, blocking_findings, advisory_findings, manifest_digest, coverage}`；finding 有稳定 ID 和证据。shard/digest 不完整即阻塞。
 
 <!-- ai-work-flow:section-end -->
 
@@ -115,10 +117,10 @@ Standards 轴使用冻结 revision 的仓库 Standards、`CONTEXT.md` 等来源�
 
 ## 审查编排与门禁
 
-审查拓扑固定为 **Git Operator prepare ReviewManifest -> Coding 验证交接 -> Code Reviewer verify -> Review Standards / Review Spec**。Code Reviewer 只根据不可变 ReviewManifest 调度；`spec_status=present` 时并行调用两叶子，`absent` 时只调用 Standards。两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest/digest、原始 verify input及相同 spec bundle。保留 Standards、Spec 原顺序，不跨轴合并或重排。
+审查拓扑固定为 **Git Operator prepare+verify -> Coding 验证并原样转交 -> Code Reviewer 独立 verify -> Review Standards / Review Spec**。Code Reviewer 调度前逐项核对用户需求/批准标准与 `acceptance_evidence`、`verification`；“CLI 能运行”等无关证据返回单数 `blocking_reason`，不伪造 finding。通过后只根据不可变 ReviewManifest 调度；present 并行两叶子，absent 只 Standards。两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest/digest、原始 verify input及相同 spec bundle。保留 Standards、Spec 原顺序，不跨轴合并或重排。
 
 coverage 完整且无 blocking finding 时自动整合；advisory findings 只报告。blocking finding 进入 `awaiting_user`，用户必须确认具体 finding IDs，不能 approve 绕过。普通目录式流程的获批修复验证并形成合格后继 review commit 后，自动同步并继续：task 汇入、清理和下一 frontier，或单任务/聚合最终整合与清理；不执行第二次评审，也不进入新的用户决策点。冲突解决或 `resync_required` 后仍重新评审最终提交。
 
-叶子仅在 manifest、digest、SHA、shards 和来源均不变，且只需澄清输入或选择已授权方式时，可由 Code Reviewer 裁决后在新会话重试一次；仍阻塞即报告用户。
+结构、协议、provenance、来源、digest、revision、shard、bundle、语义失败不重试；仅治理列出的瞬时错误在停止旧会话后重试。叶子仅在 manifest、digest、SHA、shards 和来源均不变且只需澄清时，由 Code Reviewer 在新会话重试一次；仍阻塞即报告用户。
 
 <!-- ai-work-flow:section-end -->

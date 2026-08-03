@@ -11,14 +11,20 @@ const execFileAsync = promisify(execFile);
 const SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const STANDARDS_PATH = "CONTEXT.md";
-const PREPARE_ENVELOPE_VERSION = 1;
+const PREPARE_ENVELOPE_VERSION = 2;
 const PREPARE_ENVELOPE_TYPE = "directory-review-prepare";
 const REVIEW_INPUT_FIELDS = [
   "fixed_point", "review_commit", "spec_status", "mode", "spec_path", "plan_path", "task_path",
   "standards_paths", "checks", "acceptance_evidence", "verification",
 ];
 const PREPARE_ENVELOPE_FIELDS = [
-  "version", "type", "review_manifest", "verify_input", "manifest_digest", "bundle_digest",
+  "version", "type", "review_manifest", "verify_input", "manifest_digest", "bundle_digest", "runtime_provenance", "prepare_verification",
+];
+const RUNTIME_PROVENANCE_FIELDS = [
+  "protocol_version", "source_identity", "source_revision", "installed_revision", "provenance_digest",
+];
+const PREPARE_VERIFICATION_FIELDS = [
+  "version", "verify_input_digest", "manifest_digest", "bundle_digest", "runtime_provenance_digest",
 ];
 
 function canonicalize(value) {
@@ -113,6 +119,23 @@ function assertKnownFields(value, allowed, label) {
   if (unknown.length > 0) throw new Error(`${label} contains unsupported fields: ${unknown.join(", ")}`);
 }
 
+function assertExactFields(value, fields, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  assertKnownFields(value, fields, label);
+  const missing = fields.filter((field) => !Object.hasOwn(value, field));
+  if (missing.length > 0) throw new Error(`${label} is missing fields: ${missing.join(", ")}`);
+}
+
+function assertRuntimeProvenanceEvidence(evidence) {
+  assertExactFields(evidence, RUNTIME_PROVENANCE_FIELDS, "Directory review runtime provenance");
+  if (evidence.protocol_version !== 1 || evidence.source_identity !== "ai-work-flow/execution-runtime" ||
+    !DIGEST_PATTERN.test(evidence.source_revision) || evidence.installed_revision !== evidence.source_revision ||
+    !DIGEST_PATTERN.test(evidence.provenance_digest)) {
+    throw new Error("Directory review runtime provenance is invalid or drifted");
+  }
+  return structuredClone(evidence);
+}
+
 function directorySpecStatus(input) {
   const status = input.spec_status ?? "present";
   if (!["present", "absent"].includes(status)) throw new Error("Directory review spec_status must be present or absent");
@@ -137,7 +160,11 @@ function assertFacts(input) {
   if (!Array.isArray(input.checks) || input.checks.length === 0 || input.checks.some((check) => !isNonEmptyString(check))) {
     throw new Error("Directory review checks must contain non-empty strings");
   }
-  return directorySpecStatus(input);
+  const specStatus = directorySpecStatus(input);
+  if (specStatus === "present" && !["single", "task", "aggregate"].includes(input.mode)) {
+    throw new Error("Directory review mode must be single, task, or aggregate");
+  }
+  return specStatus;
 }
 
 async function assertReviewContext(cwd, fixedPoint, reviewCommit) {
@@ -238,14 +265,16 @@ export async function prepareDirectoryReviewManifest(cwd, input) {
   return createReviewManifest(await buildDirectoryReviewFacts(cwd, input));
 }
 
-export function createDirectoryReviewPrepareEnvelope(manifest, input) {
+export function createDirectoryReviewPrepareEnvelope(manifest, input, runtimeProvenance, prepareVerified = false) {
   const reviewManifest = assertReviewManifest(manifest);
   const verifyInput = structuredClone(input);
+  const provenance = assertRuntimeProvenanceEvidence(runtimeProvenance);
   assertFacts(verifyInput);
   if (verifyInput.fixed_point !== reviewManifest.fixed_point || verifyInput.review_commit !== reviewManifest.review_commit) {
     throw new Error("ReviewManifest prepare envelope endpoints must match verify_input");
   }
   if (!reviewManifest.directory_bundle) throw new Error("ReviewManifest prepare envelope requires a directory bundle");
+  if (!prepareVerified) throw new Error("ReviewManifest prepare envelope requires immediate prepare verification");
   return assertDirectoryReviewPrepareEnvelope({
     version: PREPARE_ENVELOPE_VERSION,
     type: PREPARE_ENVELOPE_TYPE,
@@ -253,6 +282,14 @@ export function createDirectoryReviewPrepareEnvelope(manifest, input) {
     verify_input: verifyInput,
     manifest_digest: reviewManifest.manifest_digest,
     bundle_digest: reviewManifest.directory_bundle.bundle_digest,
+    runtime_provenance: provenance,
+    prepare_verification: {
+      version: 1,
+      verify_input_digest: contentDigest(verifyInput),
+      manifest_digest: reviewManifest.manifest_digest,
+      bundle_digest: reviewManifest.directory_bundle.bundle_digest,
+      runtime_provenance_digest: provenance.provenance_digest,
+    },
   });
 }
 
@@ -260,13 +297,14 @@ export function assertDirectoryReviewPrepareEnvelope(envelope) {
   if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) {
     throw new Error("ReviewManifest verify requires a directory review prepare envelope");
   }
-  assertKnownFields(envelope, PREPARE_ENVELOPE_FIELDS, "Directory review prepare envelope");
+  assertExactFields(envelope, PREPARE_ENVELOPE_FIELDS, "Directory review prepare envelope");
   if (envelope.version !== PREPARE_ENVELOPE_VERSION || envelope.type !== PREPARE_ENVELOPE_TYPE) {
     throw new Error("Directory review prepare envelope has an unsupported format");
   }
   const reviewManifest = assertReviewManifest(envelope.review_manifest);
   if (!reviewManifest.directory_bundle) throw new Error("ReviewManifest prepare envelope requires a directory bundle");
   const verifyInput = structuredClone(envelope.verify_input);
+  const runtimeProvenance = assertRuntimeProvenanceEvidence(envelope.runtime_provenance);
   assertFacts(verifyInput);
   if (verifyInput.fixed_point !== reviewManifest.fixed_point || verifyInput.review_commit !== reviewManifest.review_commit) {
     throw new Error("ReviewManifest prepare envelope endpoints do not match verify_input");
@@ -285,22 +323,29 @@ export function assertDirectoryReviewPrepareEnvelope(envelope) {
     contentDigest(verifyInput.verification) !== reviewManifest.directory_bundle.verification_digest) {
     throw new Error("ReviewManifest prepare envelope bundle inputs do not match their digests");
   }
-  return {
-    version: envelope.version,
-    type: envelope.type,
-    review_manifest: reviewManifest,
-    verify_input: verifyInput,
-    manifest_digest: envelope.manifest_digest,
-    bundle_digest: envelope.bundle_digest,
-  };
+  assertExactFields(envelope.prepare_verification, PREPARE_VERIFICATION_FIELDS, "Directory review prepare verification");
+  if (envelope.prepare_verification.version !== 1 ||
+    envelope.prepare_verification.verify_input_digest !== contentDigest(verifyInput) ||
+    envelope.prepare_verification.manifest_digest !== envelope.manifest_digest ||
+    envelope.prepare_verification.bundle_digest !== envelope.bundle_digest ||
+    envelope.prepare_verification.runtime_provenance_digest !== runtimeProvenance.provenance_digest) {
+    throw new Error("Directory review prepare verification evidence is invalid");
+  }
+  return structuredClone(envelope);
 }
 
-export async function prepareDirectoryReviewEnvelope(cwd, input) {
-  return createDirectoryReviewPrepareEnvelope(await prepareDirectoryReviewManifest(cwd, input), input);
+export async function prepareDirectoryReviewEnvelope(cwd, input, runtimeProvenance) {
+  const manifest = await prepareDirectoryReviewManifest(cwd, input);
+  await verifyDirectoryReviewManifest(cwd, manifest, structuredClone(input));
+  return createDirectoryReviewPrepareEnvelope(manifest, input, runtimeProvenance, true);
 }
 
-export async function verifyDirectoryReviewEnvelope(cwd, envelope) {
+export async function verifyDirectoryReviewEnvelope(cwd, envelope, installedRuntimeProvenance = envelope?.runtime_provenance) {
   const prepared = assertDirectoryReviewPrepareEnvelope(envelope);
+  const installed = assertRuntimeProvenanceEvidence(installedRuntimeProvenance);
+  if (JSON.stringify(installed) !== JSON.stringify(prepared.runtime_provenance)) {
+    throw new Error("ReviewManifest prepare and verify runtime provenance do not match");
+  }
   return verifyDirectoryReviewManifest(cwd, prepared.review_manifest, prepared.verify_input);
 }
 

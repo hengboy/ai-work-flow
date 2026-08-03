@@ -452,7 +452,7 @@ test('generated implementation and review roles preserve their scoped contracts'
   assert.equal(result.status, 0, result.stderr);
 
   const implementationAssertions = [
-    /Git Operator prepare -> Full Stack Coder -> Git Operator commit\/sync\/prepare ReviewManifest -> Coding 验证交接 -> Code Reviewer verify -> Review Standards \+ Review Spec/,
+    /Git Operator prepare -> Full Stack Coder -> Git Operator commit\/sync\/prepare\+verify -> Coding 验证原样交接 -> Code Reviewer independent verify -> Review Standards \+ Review Spec/,
     /不需要首次暂存前再次授权/,
     /base_commit/
   ];
@@ -464,7 +464,7 @@ test('generated implementation and review roles preserve their scoped contracts'
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const coding = generatedBody(paths, platform, 'coding', extension);
     const reviewer = generatedBody(paths, platform, 'code-reviewer', extension);
-    assert.match(coding, /spec_status=absent[\s\S]*不含 mode[\s\S]*spec\/plan\/task 路径/, `${platform}/coding`);
+    assert.match(coding, /absent 不含这些路径/, `${platform}/coding`);
     for (const assertion of implementationAssertions) assert.match(coding, assertion, `${platform}/coding`);
     for (const assertion of reviewAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
   }
@@ -591,6 +591,65 @@ test('generation refreshes the shared review runtime with generated agents', () 
   const generation = run(paths, 'generate');
   assert.equal(generation.status, 0, generation.stderr);
   assert.equal(readFileSync(installedCli, 'utf8'), readFileSync(sourceCli, 'utf8'));
+});
+
+test('runtime provenance installs atomically, detects drift and unknown legacy installs, and regenerates idempotently', () => {
+  const paths = environment();
+  const first = install(paths);
+  assert.equal(first.status, 0, first.stderr);
+  const runtimeRoot = resolve(paths.config, 'ai-work-flow/execution-runtime');
+  const provenancePath = resolve(runtimeRoot, 'runtime-provenance.json');
+  const sourceProvenance = readFileSync(resolve(root, 'execution-runtime/runtime-provenance.json'), 'utf8');
+  assert.equal(readFileSync(provenancePath, 'utf8'), sourceProvenance);
+
+  const installedCli = resolve(runtimeRoot, 'review-manifest-cli.mjs');
+  const runtimeFile = resolve(runtimeRoot, 'lib/git.mjs');
+  writeFileSync(runtimeFile, `${readFileSync(runtimeFile, 'utf8')}\n// drift\n`);
+  const drifted = spawnSync(process.execPath, [installedCli, 'prepare', '--repository', paths.project], {
+    input: '{}', encoding: 'utf8', env: env(paths)
+  });
+  assert.equal(drifted.status, 1);
+  assert.match(drifted.stderr, /runtime files.*installed provenance/i);
+  assert.match(drifted.stderr, /agent-build\/install\.mjs generate/);
+
+  const repaired = run(paths, 'generate');
+  assert.equal(repaired.status, 0, repaired.stderr);
+  assert.equal(readFileSync(provenancePath, 'utf8'), sourceProvenance);
+
+  rmSync(provenancePath);
+  const legacy = spawnSync(process.execPath, [installedCli, 'prepare', '--repository', paths.project], {
+    input: '{}', encoding: 'utf8', env: env(paths)
+  });
+  assert.equal(legacy.status, 1);
+  assert.match(legacy.stderr, /provenance is missing or unreadable/i);
+  assert.equal(run(paths, 'generate').status, 0);
+
+  const before = snapshotTree(resolve(paths.config, 'ai-work-flow'));
+  const repeated = run(paths, 'generate');
+  assert.equal(repeated.status, 0, repeated.stderr);
+  assert.deepEqual(snapshotTree(resolve(paths.config, 'ai-work-flow')), before);
+});
+
+test('generated roles preserve the one-envelope prepare verify handoff and semantic retry gates on all platforms', () => {
+  const paths = environment();
+  const result = install(paths);
+  assert.equal(result.status, 0, result.stderr);
+  const explorer = loadAgentAssets().compiledBodies.get('file-explorer');
+  assert.match(explorer, /不得 prepare、verify、构造、修改或转交 ReviewManifest envelope/);
+
+  for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
+    const operator = generatedBody(paths, platform, 'git-operator', extension);
+    const coding = generatedBody(paths, platform, 'coding', extension);
+    const reviewer = generatedBody(paths, platform, 'code-reviewer', extension);
+    assert.match(operator, /保存 stdout.*verify --repository <review-worktree>/s, platform);
+    assert.match(operator, /禁摘要\/删改\/重建\/fallback/, platform);
+    assert.match(coding, /唯一机器 envelope.*runtime_provenance.*prepare_verification/s, platform);
+    assert.match(coding, /只核对交接完整自洽.*原样交 Code Reviewer/s, platform);
+    assert.match(reviewer, /逐项对应用户需求\/批准标准.*acceptance_evidence.*verification/s, platform);
+    assert.match(reviewer, /“CLI 能运行”等无关证据.*blocking_reason/s, platform);
+    assert.match(reviewer, /结构\/协议\/provenance.*语义失败不重试/s, platform);
+    assert.match(reviewer, /瞬时错误.*停止旧会话后重试/s, platform);
+  }
 });
 
 test('init creates the default environment without creating a legacy config', () => {
@@ -956,6 +1015,7 @@ test('a failed install plan leaves planning migration, runtime, assets, and agen
   assert.equal(readFileSync(runtime, 'utf8'), 'preserved runtime\n');
   assert.equal(readFileSync(installedRoles, 'utf8'), 'preserved assets\n');
   assert.equal(readFileSync(claudeMarker, 'utf8'), invalidMarker);
+  assert.ok(!existsSync(resolve(paths.config, 'ai-work-flow/execution-runtime/runtime-provenance.json')));
   assert.ok(!existsSync(agentPath(paths, 'codex', 'planning', 'toml')));
   assert.ok(!existsSync(agentPath(paths, 'codex', 'task-planner', 'toml')));
 });
@@ -1749,19 +1809,19 @@ test('structured dual-axis review controls the final integration gate', () => {
   for (const content of [coding, fixer, operator]) {
     for (const pattern of removedBranchPatterns) assert.doesNotMatch(content, pattern);
   }
-  assert.match(coding, /Git Operator.*review-manifest-cli\.mjs prepare/s);
-  assert.match(coding, /Coding 验证其 `review_manifest`、`manifest_digest`、`bundle_digest`/);
-  assert.match(coding, /prepare stdout 是当前格式 envelope.*`verify_input`/s);
-  assert.match(coding, /同一 envelope 原样交给 Code Reviewer.*不得推导、删除或重建输入/s);
+  assert.match(coding, /Git Operator.*安装 runtime prepare 后立即 verify/s);
+  assert.match(coding, /Coding 只核对交接完整自洽.*再原样交 Code Reviewer/s);
+  assert.match(coding, /唯一机器 envelope.*原始 `verify_input`/s);
+  assert.match(coding, /Coding 只核对交接完整自洽.*再原样交 Code Reviewer.*不补齐、推导/s);
   assert.match(coding, /不委派 File Explorer prepare/);
   assert.match(coding, /checks: \["<check>"\].*acceptance_evidence.*criterion.*evidence.*verification.*command.*result/s);
   assert.match(compiled.get('git-operator'), /review_manifest.*verify_input.*manifest_digest.*bundle_digest/s);
-  assert.match(compiled.get('git-operator'), /stdout envelope.*原样交付/s);
+  assert.match(compiled.get('git-operator'), /保存 stdout.*verify --repository <review-worktree>/s);
   assert.match(compiled.get('git-operator'), /review-manifest-cli\.mjs.*prepare --repository <review-worktree>/s);
   assert.match(compiled.get('git-operator'), /null、空值或缺失 checks 均阻塞/);
-  assert.match(compiled.get('git-operator'), /不得执行 `review-manifest-cli\.mjs verify`/);
-  assert.match(compiled.get('coding'), /spec_status=absent[\s\S]*不含 mode[\s\S]*spec\/plan\/task 路径/);
-  assert.doesNotMatch(compiled.get('file-explorer'), /ReviewManifest|review-manifest-cli|review_manifest|manifest_digest|bundle_digest/);
+  assert.match(compiled.get('git-operator'), /拥有 prepare 及紧随的同 CLI verify/);
+  assert.match(compiled.get('coding'), /absent 不含这些路径/);
+  assert.match(compiled.get('file-explorer'), /不得 prepare、verify、构造、修改或转交 ReviewManifest envelope/);
   assert.doesNotMatch(compiled.get('file-explorer'), /null、空字符串、空对象或缺失 checks/);
 });
 
@@ -1802,7 +1862,7 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
   assert.match(compiledBodies.get('code-reviewer'), /只根据不可变 ReviewManifest 调度/);
   assert.match(compiledBodies.get('code-reviewer'), /新会话重试一次/);
   assert.match(compiledBodies.get('code-reviewer'), /manifest、digest、SHA、shards 和来源均不变/);
-  assert.match(bodies['code-reviewer'], /prepare envelope.*原样.*stdin.*review-manifest-cli\.mjs verify/s);
+  assert.match(bodies['code-reviewer'], /prepare envelope 原样传.*review-manifest-cli\.mjs verify/s);
   assert.match(compiledBodies.get('code-reviewer'), /仍阻塞即报告用户/);
   assert.doesNotMatch(bodies['code-reviewer'], /git rev-parse/);
   assert.doesNotMatch(bodies['code-reviewer'], /\$code-review|已安装时|未安装时|Matt/);
@@ -1842,7 +1902,7 @@ test('dual-axis review binds standards and complete directory spec bundles witho
   ]));
   const compiled = loadAgentAssets().compiledBodies;
   const sharedBundleAssertions = [
-    /spec context\/bundle|prepare envelope/s,
+    /spec context\/bundle|envelope 绑定/s,
     /\.ai-work-flow\/plans\/<plan-id>\/spec\.md \+ plan\.md/,
     /拆分 task 加当前 task、acceptance evidence 与 Verification 结果/,
     /不得退化为 instruction-only、单文件审查或静默遗漏上下文/

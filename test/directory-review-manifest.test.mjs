@@ -10,9 +10,11 @@ import test from "node:test";
 
 import { assertDirectoryReviewPrepareEnvelope, prepareDirectoryReviewEnvelope, prepareDirectoryReviewManifest, verifyDirectoryReviewEnvelope, verifyDirectoryReviewManifest } from "../execution-runtime/lib/directory-review-manifest.mjs";
 import { assertReviewManifest, createReviewManifest, createReviewShardAssignments, reviewBundleDigest, reviewManifestDigest } from "../execution-runtime/lib/review-manifest.mjs";
+import { loadAndAssertRuntimeProvenance } from "../execution-runtime/lib/runtime-provenance.mjs";
 
 const run = promisify(execFile);
 const cli = resolve(import.meta.dirname, "..", "execution-runtime", "review-manifest-cli.mjs");
+const runtimeEvidence = loadAndAssertRuntimeProvenance(resolve(import.meta.dirname, "..", "execution-runtime")).evidence;
 
 async function git(cwd, ...args) {
   return (await run("git", args, { cwd, encoding: "utf8" })).stdout.trim();
@@ -245,17 +247,89 @@ test("prepares and verifies an explicit absent spec bundle without planning path
 
 test("builds a structured prepare envelope without changing the manifest digest algorithm", async () => {
   const { root, input } = await fixture();
-  const envelope = await prepareDirectoryReviewEnvelope(root, input);
+  const envelope = await prepareDirectoryReviewEnvelope(root, input, runtimeEvidence);
 
   assert.deepEqual(envelope.verify_input, input);
   assert.equal(envelope.review_manifest.manifest_digest, envelope.manifest_digest);
   assert.equal(envelope.review_manifest.directory_bundle.bundle_digest, envelope.bundle_digest);
   assert.doesNotThrow(() => assertDirectoryReviewPrepareEnvelope(envelope));
   assert.deepEqual(await verifyDirectoryReviewEnvelope(root, envelope), envelope.review_manifest);
+  assert.equal(envelope.version, 2);
+  assert.deepEqual(envelope.runtime_provenance, runtimeEvidence);
+  assert.equal(envelope.prepare_verification.manifest_digest, envelope.manifest_digest);
+  assert.equal(envelope.prepare_verification.bundle_digest, envelope.bundle_digest);
 
   const tampered = structuredClone(envelope);
   tampered.verify_input.checks = ["tampered check"];
   assert.throws(() => assertDirectoryReviewPrepareEnvelope(tampered), /prepare envelope/);
+});
+
+test("rejects summarized, unknown, missing, malformed shard, mode, digest, and provenance envelope data", async () => {
+  const { root, input } = await fixture();
+  const envelope = await prepareDirectoryReviewEnvelope(root, input, runtimeEvidence);
+  const cases = [];
+
+  const missing = structuredClone(envelope);
+  delete missing.verify_input;
+  cases.push([missing, /missing fields|acceptance_evidence/]);
+
+  const unknown = structuredClone(envelope);
+  unknown.summary = "not the original envelope";
+  cases.push([unknown, /unsupported fields/]);
+
+  const shard = structuredClone(envelope);
+  shard.review_manifest.shards[0] = shard.review_manifest.shards[0].id;
+  cases.push([shard, /shards/]);
+
+  const mode = structuredClone(envelope);
+  mode.verify_input.mode = "invalid";
+  cases.push([mode, /mode/]);
+
+  const digest = structuredClone(envelope);
+  digest.bundle_digest = "0".repeat(64);
+  cases.push([digest, /bundle digest/]);
+
+  const provenance = structuredClone(envelope);
+  provenance.runtime_provenance.source_revision = "0".repeat(64);
+  cases.push([provenance, /provenance/]);
+
+  const prepareEvidence = structuredClone(envelope);
+  prepareEvidence.prepare_verification.verify_input_digest = "0".repeat(64);
+  cases.push([prepareEvidence, /prepare verification/]);
+
+  for (const [candidate, pattern] of cases) {
+    assert.throws(() => assertDirectoryReviewPrepareEnvelope(candidate), pattern);
+    await assert.rejects(verifyDirectoryReviewEnvelope(root, candidate, runtimeEvidence), pattern);
+  }
+  assert.deepEqual(assertDirectoryReviewPrepareEnvelope(envelope), envelope);
+});
+
+test("rejects unknown nested manifest fields without changing legacy digest functions", async () => {
+  const { root, input } = await fixture();
+  const manifest = await prepareDirectoryReviewManifest(root, input);
+  const originalManifestDigest = reviewManifestDigest(manifest);
+  const originalBundleDigest = reviewBundleDigest(manifest.directory_bundle);
+  const nestedCases = [];
+
+  const commit = structuredClone(manifest);
+  commit.commit_list[0].extra = true;
+  commit.manifest_digest = reviewManifestDigest(commit);
+  nestedCases.push(commit);
+
+  const shard = structuredClone(manifest);
+  shard.shards[0].extra = true;
+  shard.manifest_digest = reviewManifestDigest(shard);
+  nestedCases.push(shard);
+
+  const source = structuredClone(manifest);
+  source.directory_bundle.sources[0].extra = true;
+  source.directory_bundle.bundle_digest = reviewBundleDigest(source.directory_bundle);
+  source.manifest_digest = reviewManifestDigest(source);
+  nestedCases.push(source);
+
+  for (const candidate of nestedCases) assert.throws(() => assertReviewManifest(candidate), /invalid|shards|sources/);
+  assert.equal(reviewManifestDigest(manifest), originalManifestDigest);
+  assert.equal(reviewBundleDigest(manifest.directory_bundle), originalBundleDigest);
 });
 
 test("detects a copy from an unchanged committed source", async () => {

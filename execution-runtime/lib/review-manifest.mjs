@@ -3,6 +3,10 @@ import { assertPathChange } from "./paths.mjs";
 
 const SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
+const BASE_MANIFEST_FIELDS = [
+  "version", "fixed_point", "review_commit", "commit_list", "changed_paths", "checks", "diff_command",
+  "spec_status", "spec_source", "standards_source", "shards", "manifest_digest",
+];
 
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -28,6 +32,10 @@ function sameJson(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function hasExactFields(value, fields) {
+  return value && typeof value === "object" && !Array.isArray(value) && sameJson(Object.keys(value).sort(), [...fields].sort());
+}
+
 export function reviewManifestDigest(manifest) {
   const { manifest_digest, ...unsigned } = manifest;
   return createHash("sha256").update(JSON.stringify(canonicalize(unsigned))).digest("hex");
@@ -39,7 +47,8 @@ export function reviewBundleDigest(bundle) {
 }
 
 function assertDirectoryBundle(bundle, manifest) {
-  if (!bundle || bundle.type !== "directory" || !["single", "task", "aggregate"].includes(bundle.mode) || !Array.isArray(bundle.sources)) {
+  if (!hasExactFields(bundle, ["type", "mode", "sources", "acceptance_evidence_digest", "verification_digest", "bundle_digest"]) ||
+    bundle.type !== "directory" || !["single", "task", "aggregate"].includes(bundle.mode) || !Array.isArray(bundle.sources)) {
     throw new Error("ReviewManifest has invalid directory bundle");
   }
   const absent = manifest.spec_status === "absent";
@@ -49,7 +58,7 @@ function assertDirectoryBundle(bundle, manifest) {
   const expectedRoles = absent ? [] : bundle.mode === "task" ? ["spec", "plan", "task"] : ["spec", "plan"];
   const roles = bundle.sources.map((source) => source?.role);
   if (!sameJson(roles, expectedRoles) || (!absent && bundle.sources.some((source) => (
-    !source || typeof source.path !== "string" || !source.path || source.revision !== manifest.review_commit || !DIGEST_PATTERN.test(source.digest)
+    !hasExactFields(source, ["role", "path", "revision", "digest"]) || typeof source.path !== "string" || !source.path || source.revision !== manifest.review_commit || !DIGEST_PATTERN.test(source.digest)
   )))) {
     throw new Error("ReviewManifest directory bundle sources are not fixed to the review commit");
   }
@@ -64,7 +73,8 @@ function assertDirectoryBundle(bundle, manifest) {
 }
 
 export function assertReviewManifest(manifest, context) {
-  if (!manifest || manifest.version !== 1 || !SHA_PATTERN.test(manifest.fixed_point) || !SHA_PATTERN.test(manifest.review_commit)) {
+  const manifestFields = manifest && Object.hasOwn(manifest, "directory_bundle") ? [...BASE_MANIFEST_FIELDS, "directory_bundle"] : BASE_MANIFEST_FIELDS;
+  if (!hasExactFields(manifest, manifestFields) || manifest.version !== 1 || !SHA_PATTERN.test(manifest.fixed_point) || !SHA_PATTERN.test(manifest.review_commit)) {
     throw new Error("ReviewManifest has invalid fixed review endpoints");
   }
   if (!Array.isArray(manifest.commit_list) || !Array.isArray(manifest.changed_paths) || !Array.isArray(manifest.checks) || !Array.isArray(manifest.diff_command) || !Array.isArray(manifest.standards_source) || !Array.isArray(manifest.shards)) {
@@ -78,11 +88,16 @@ export function assertReviewManifest(manifest, context) {
   } catch (error) {
     throw new Error(`ReviewManifest has invalid changed paths: ${error.message}`, { cause: error });
   }
-  if (manifest.commit_list.some((commit) => !commit || !SHA_PATTERN.test(commit.sha) || typeof commit.subject !== "string") ||
+  if (manifest.commit_list.some((commit) => !hasExactFields(commit, ["sha", "subject"]) || !SHA_PATTERN.test(commit.sha) || typeof commit.subject !== "string") ||
     manifest.checks.some((check) => typeof check !== "string" || !check.trim()) ||
     manifest.diff_command.some((argument) => typeof argument !== "string" || !argument) ||
-    manifest.standards_source.length === 0 || manifest.standards_source.some((source) => !source || typeof source.path !== "string" || !source.path || typeof source.revision !== "string" || !SHA_PATTERN.test(source.revision) || source.revision !== manifest.review_commit) ||
-    (manifest.spec_source && (typeof manifest.spec_source.path !== "string" || !manifest.spec_source.path || typeof manifest.spec_source.revision !== "string" || !SHA_PATTERN.test(manifest.spec_source.revision) || ("digest" in manifest.spec_source && !DIGEST_PATTERN.test(manifest.spec_source.digest))))) {
+    manifest.standards_source.length === 0 || manifest.standards_source.some((source) => !hasExactFields(source, ["path", "revision"]) || typeof source.path !== "string" || !source.path || typeof source.revision !== "string" || !SHA_PATTERN.test(source.revision) || source.revision !== manifest.review_commit) ||
+    (manifest.spec_source && (
+      (!hasExactFields(manifest.spec_source, ["path", "revision"]) && !hasExactFields(manifest.spec_source, ["role", "path", "revision", "digest"])) ||
+      ("role" in manifest.spec_source && manifest.spec_source.role !== "spec") || typeof manifest.spec_source.path !== "string" || !manifest.spec_source.path ||
+      typeof manifest.spec_source.revision !== "string" || !SHA_PATTERN.test(manifest.spec_source.revision) ||
+      ("digest" in manifest.spec_source && !DIGEST_PATTERN.test(manifest.spec_source.digest))
+    ))) {
     throw new Error("ReviewManifest has invalid structured content");
   }
   if (manifest.directory_bundle) assertDirectoryBundle(manifest.directory_bundle, manifest);
@@ -90,11 +105,15 @@ export function assertReviewManifest(manifest, context) {
     throw new Error("ReviewManifest must use the fixed review diff command");
   }
   const changedPaths = manifest.changed_paths.map((change) => change.path);
+  for (const change of manifest.changed_paths) {
+    const fields = change.record_type === "2" ? ["record_type", "index_status", "worktree_status", "path", "source_path"] : ["record_type", "index_status", "worktree_status", "path"];
+    if (!hasExactFields(change, fields)) throw new Error("ReviewManifest changed paths contain unsupported or missing fields");
+  }
   if (new Set(changedPaths).size !== changedPaths.length) throw new Error("ReviewManifest changed paths must be unique");
   const ids = new Set();
   const shardPaths = [];
   for (const shard of manifest.shards) {
-    if (!shard || typeof shard.id !== "string" || !shard.id || ids.has(shard.id) || !Array.isArray(shard.paths) || shard.paths.length === 0 || !Array.isArray(shard.diff_command) || shard.paths.some((path) => typeof path !== "string" || !path) || shard.diff_command.some((argument) => typeof argument !== "string" || !argument)) {
+    if (!hasExactFields(shard, ["id", "paths", "diff_command"]) || typeof shard.id !== "string" || !shard.id || ids.has(shard.id) || !Array.isArray(shard.paths) || shard.paths.length === 0 || !Array.isArray(shard.diff_command) || shard.paths.some((path) => typeof path !== "string" || !path) || shard.diff_command.some((argument) => typeof argument !== "string" || !argument)) {
       throw new Error("ReviewManifest shards must have unique IDs, paths, and commands");
     }
     if (!sameJson(shard.diff_command, [...fixedDiffCommand(manifest.fixed_point, manifest.review_commit), "--", ...shard.paths])) {

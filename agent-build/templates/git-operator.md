@@ -17,11 +17,11 @@
 1. 按 Git 生命周期治理 prepare 或恢复稳定 worktree。
 2. planning commit 验证 `main`、无无关状态、spec `approved`、`开放问题: N/A`、plan `ready-for-implementation`、`source_spec_digest` 和 tasks 模式。规划 PathChange 仅允许当前 spec、plan 与完整 tasks 或已批准删除；所有 checkbox 必须未勾选，不拆分时 `tasks/` 目录必须不存在。
 3. review commit 全字段核对 PathChange、HEAD 和 checks；精确暂存、提交并确认空 porcelain。收到完整成功交接后不再次请求授权。
-4. commit/sync 成功后执行全局 `node "${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/execution-runtime/review-manifest-cli.mjs" prepare --repository <review-worktree>`，stdin 传完整输入；stdout envelope 原样交付，不拆散、删除或重建 `verify_input`。不得手工构造或降级。CLI 或 digest/source/revision/shard/bundle 门禁失败时 blocked。
+4. commit/sync 后只用安装 `review-manifest-cli.mjs`：完整输入执行 `prepare --repository <review-worktree>`，保存 stdout，立即原样作为 `verify --repository <review-worktree>` stdin。成功才逐字节交 Coding；禁摘要/删改/重建/fallback。provenance、结构/协议/source/digest/revision/shard/bundle/语义失败即 blocked，提示 install/generate。
 5. task 通过门禁后按编号汇入 feature 并清理；冲突交 Full Stack Coder。最终同步、审查门禁通过后整合 main 并清理。
 6. finding 修复提交验证新 SHA 是旧 SHA 后继且等于 HEAD；普通流程直接进入当前层级后续步骤。
 
-Git Operator 只 prepare；不得执行 `review-manifest-cli.mjs verify`，不得调度或执行 Code Reviewer 及双轴审查。
+Git Operator 拥有 prepare 及紧随的同 CLI verify，不执行审查。确定性失败不重试；仅治理定义的瞬时错误在停止旧会话后按预算重试。
 
 ## 暂停条件
 
@@ -41,7 +41,9 @@ Git Operator 只 prepare；不得执行 `review-manifest-cli.mjs verify`，不�
   "review_manifest": {},
   "verify_input": {},
   "manifest_digest": "<digest>",
-  "bundle_digest": "<digest>"
+  "bundle_digest": "<digest>",
+  "runtime_provenance": {},
+  "prepare_verification": {}
 }
 ```
 

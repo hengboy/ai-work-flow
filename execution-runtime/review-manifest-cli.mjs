@@ -2,6 +2,7 @@
 import process from "node:process";
 
 import { prepareDirectoryReviewEnvelope, verifyDirectoryReviewEnvelope } from "./lib/directory-review-manifest.mjs";
+import { loadAndAssertRuntimeProvenance } from "./lib/runtime-provenance.mjs";
 
 async function stdinJson() {
   let raw = "";
@@ -35,6 +36,7 @@ function assertPrepareInput(input) {
 
 try {
   const { command, repository, help } = parseArgs(process.argv.slice(2));
+  const { evidence: runtimeProvenance } = loadAndAssertRuntimeProvenance(import.meta.dirname);
   if (help) {
     process.stdout.write([
       "Usage: review-manifest-cli.mjs <prepare|verify> --repository <review-worktree>",
@@ -50,10 +52,13 @@ try {
   if (command === "verify") assertVerifyInput(input);
   else assertPrepareInput(input);
   const result = command === "prepare"
-    ? await prepareDirectoryReviewEnvelope(repository, input)
-    : await verifyDirectoryReviewEnvelope(repository, input);
+    ? await prepareDirectoryReviewEnvelope(repository, input, runtimeProvenance)
+    : await verifyDirectoryReviewEnvelope(repository, input, runtimeProvenance);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 } catch (error) {
-  process.stderr.write(`review-manifest: ${error.message}\n`);
+  const migration = /provenance|runtime files/i.test(error.message)
+    ? " Run `node agent-build/install.mjs generate` from the ai-work-flow source, or rerun `node agent-build/install.mjs`, before retrying."
+    : "";
+  process.stderr.write(`review-manifest: ${error.message}.${migration}\n`);
   process.exitCode = 1;
 }

@@ -87,7 +87,7 @@
       "policy_requirements": {}
     },
     "safe-local-git-only": {
-      "instruction": "禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑；ReviewManifest 只允许 prepare，不得 verify 或调度审查。",
+      "instruction": "禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑；ReviewManifest 仅可 prepare 后立即同 CLI verify，不调度审查。",
       "policy_requirements": {
         "git": ["write"],
         "write_scope": ["git"],
