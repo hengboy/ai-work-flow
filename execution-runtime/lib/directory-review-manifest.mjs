@@ -9,7 +9,17 @@ import { assertReviewManifest, createReviewManifest, reviewBundleDigest } from "
 
 const execFileAsync = promisify(execFile);
 const SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const STANDARDS_PATH = "CONTEXT.md";
+const PREPARE_ENVELOPE_VERSION = 1;
+const PREPARE_ENVELOPE_TYPE = "directory-review-prepare";
+const REVIEW_INPUT_FIELDS = [
+  "fixed_point", "review_commit", "spec_status", "mode", "spec_path", "plan_path", "task_path",
+  "standards_paths", "checks", "acceptance_evidence", "verification",
+];
+const PREPARE_ENVELOPE_FIELDS = [
+  "version", "type", "review_manifest", "verify_input", "manifest_digest", "bundle_digest",
+];
 
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -98,6 +108,11 @@ function hasExactStringFields(value, fields) {
     fields.every((field) => isNonEmptyString(value[field]));
 }
 
+function assertKnownFields(value, allowed, label) {
+  const unknown = Object.keys(value).filter((field) => !allowed.includes(field));
+  if (unknown.length > 0) throw new Error(`${label} contains unsupported fields: ${unknown.join(", ")}`);
+}
+
 function directorySpecStatus(input) {
   const status = input.spec_status ?? "present";
   if (!["present", "absent"].includes(status)) throw new Error("Directory review spec_status must be present or absent");
@@ -110,6 +125,7 @@ function directorySpecStatus(input) {
 
 function assertFacts(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Directory review input must be an object");
+  assertKnownFields(input, REVIEW_INPUT_FIELDS, "Directory review input");
   if (!Array.isArray(input.acceptance_evidence) || input.acceptance_evidence.length === 0 ||
     input.acceptance_evidence.some((entry) => !hasExactStringFields(entry, ["criterion", "evidence"]))) {
     throw new Error("Directory review acceptance_evidence must contain non-empty {criterion,evidence} objects");
@@ -215,6 +231,72 @@ async function buildDirectoryReviewFacts(cwd, input) {
 
 export async function prepareDirectoryReviewManifest(cwd, input) {
   return createReviewManifest(await buildDirectoryReviewFacts(cwd, input));
+}
+
+export function createDirectoryReviewPrepareEnvelope(manifest, input) {
+  const reviewManifest = assertReviewManifest(manifest);
+  const verifyInput = structuredClone(input);
+  assertFacts(verifyInput);
+  if (verifyInput.fixed_point !== reviewManifest.fixed_point || verifyInput.review_commit !== reviewManifest.review_commit) {
+    throw new Error("ReviewManifest prepare envelope endpoints must match verify_input");
+  }
+  if (!reviewManifest.directory_bundle) throw new Error("ReviewManifest prepare envelope requires a directory bundle");
+  return assertDirectoryReviewPrepareEnvelope({
+    version: PREPARE_ENVELOPE_VERSION,
+    type: PREPARE_ENVELOPE_TYPE,
+    review_manifest: reviewManifest,
+    verify_input: verifyInput,
+    manifest_digest: reviewManifest.manifest_digest,
+    bundle_digest: reviewManifest.directory_bundle.bundle_digest,
+  });
+}
+
+export function assertDirectoryReviewPrepareEnvelope(envelope) {
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) {
+    throw new Error("ReviewManifest verify requires a directory review prepare envelope");
+  }
+  assertKnownFields(envelope, PREPARE_ENVELOPE_FIELDS, "Directory review prepare envelope");
+  if (envelope.version !== PREPARE_ENVELOPE_VERSION || envelope.type !== PREPARE_ENVELOPE_TYPE) {
+    throw new Error("Directory review prepare envelope has an unsupported format");
+  }
+  const reviewManifest = assertReviewManifest(envelope.review_manifest);
+  if (!reviewManifest.directory_bundle) throw new Error("ReviewManifest prepare envelope requires a directory bundle");
+  const verifyInput = structuredClone(envelope.verify_input);
+  assertFacts(verifyInput);
+  if (verifyInput.fixed_point !== reviewManifest.fixed_point || verifyInput.review_commit !== reviewManifest.review_commit) {
+    throw new Error("ReviewManifest prepare envelope endpoints do not match verify_input");
+  }
+  if (!DIGEST_PATTERN.test(envelope.manifest_digest) || envelope.manifest_digest !== reviewManifest.manifest_digest) {
+    throw new Error("ReviewManifest prepare envelope manifest digest is invalid");
+  }
+  if (!DIGEST_PATTERN.test(envelope.bundle_digest) || envelope.bundle_digest !== reviewManifest.directory_bundle.bundle_digest) {
+    throw new Error("ReviewManifest prepare envelope bundle digest is invalid");
+  }
+  const expectedDiffCheck = `git diff --check ${reviewManifest.fixed_point}...${reviewManifest.review_commit}`;
+  if (JSON.stringify(reviewManifest.checks) !== JSON.stringify([...verifyInput.checks, expectedDiffCheck])) {
+    throw new Error("ReviewManifest prepare envelope checks do not match the review manifest");
+  }
+  if (contentDigest(verifyInput.acceptance_evidence) !== reviewManifest.directory_bundle.acceptance_evidence_digest ||
+    contentDigest(verifyInput.verification) !== reviewManifest.directory_bundle.verification_digest) {
+    throw new Error("ReviewManifest prepare envelope bundle inputs do not match their digests");
+  }
+  return {
+    version: envelope.version,
+    type: envelope.type,
+    review_manifest: reviewManifest,
+    verify_input: verifyInput,
+    manifest_digest: envelope.manifest_digest,
+    bundle_digest: envelope.bundle_digest,
+  };
+}
+
+export async function prepareDirectoryReviewEnvelope(cwd, input) {
+  return createDirectoryReviewPrepareEnvelope(await prepareDirectoryReviewManifest(cwd, input), input);
+}
+
+export async function verifyDirectoryReviewEnvelope(cwd, envelope) {
+  const prepared = assertDirectoryReviewPrepareEnvelope(envelope);
+  return verifyDirectoryReviewManifest(cwd, prepared.review_manifest, prepared.verify_input);
 }
 
 export async function verifyDirectoryReviewManifest(cwd, manifest, input) {

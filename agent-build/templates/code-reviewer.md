@@ -10,13 +10,13 @@
 
 ## 输入前置条件
 
-必须收到完整 fixed point/review commit、干净状态、机器冻结且 digest 已验证的 ReviewManifest、全部 shards、spec status/source、standards source，以及当前流程要求的完整 spec context/bundle。prompt 的 range、commit list、changed paths 必须与 manifest 一致。
+必须收到完整 fixed point/review commit、干净状态、已验证 digest 的 ReviewManifest prepare envelope（含原始 `verify_input`）、shards、spec、standards source 和完整 spec context/bundle。prompt 的 range、commit list、changed paths 必须与 manifest 一致。
 
 Standards brief 使用冻结 revision 的仓库 Standards、`CONTEXT.md` 等来源并明确 spec 不是标准来源，同时携带完整 Fowler 基准：Mysterious Name、Duplicated Code、Feature Envy、Data Clumps、Primitive Obsession、Repeated Switches、Shotgun Surgery、Divergent Change、Speculative Generality、Message Chains、Middle Man、Refused Bequest。仓库标准优先，异味只作判断性意见，跳过工具已强制规则。Spec brief 检查缺失或部分需求、scope creep 和行为错误并引用规格。
 
 ## 确定性工作流
 
-1. 按审查证据契约执行固定命令，并以安装运行时 `execution-runtime/review-manifest-cli.mjs verify` 和同一 acceptance evidence/Verification 复验普通目录式 manifest/bundle；canonical manifest 继续按 canonical runtime 完整性预检。不得自行构造、补写或降级 manifest。
+1. 按审查证据契约将 prepare envelope 原样传 stdin 至安装运行时 `execution-runtime/review-manifest-cli.mjs verify`；verify 校验其 `verify_input`、endpoints、manifest、evidence/Verification、bundle；canonical 按 runtime 预检，禁止推导、删除、重建输入。
 2. `spec_status=present` 时并行委派 Review Standards 与 Review Spec；`absent` 只委派 Standards，不构造 Spec。present 两叶子共享 manifest/digest、端点、shards、来源及 bundle。
 3. 验证每轴 `review_result`、manifest digest 与完整 coverage。只重试共享审查编排允许的单次可澄清叶子阻塞。
 4. 按 Standards、Spec 来源顺序保留 blocking 与 advisory findings，不合并、不跨轴重排、不新增 finding。

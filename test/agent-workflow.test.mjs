@@ -1784,9 +1784,12 @@ test('structured dual-axis review controls the final integration gate', () => {
   }
   assert.match(coding, /Git Operator.*review-manifest-cli\.mjs prepare/s);
   assert.match(coding, /Coding 验证其 `review_manifest`、`manifest_digest`、`bundle_digest`/);
+  assert.match(coding, /prepare stdout 是当前格式 envelope.*`verify_input`/s);
+  assert.match(coding, /同一 envelope 原样交给 Code Reviewer.*不得推导、删除或重建输入/s);
   assert.match(coding, /不委派 File Explorer prepare/);
   assert.match(coding, /checks: \["<check>"\].*acceptance_evidence.*criterion.*evidence.*verification.*command.*result/s);
-  assert.match(compiled.get('git-operator'), /review_manifest.*manifest_digest.*bundle_digest/s);
+  assert.match(compiled.get('git-operator'), /review_manifest.*verify_input.*manifest_digest.*bundle_digest/s);
+  assert.match(compiled.get('git-operator'), /stdout envelope.*原样交付/s);
   assert.match(compiled.get('git-operator'), /review-manifest-cli\.mjs.*prepare --repository <review-worktree>/s);
   assert.match(compiled.get('git-operator'), /null、空值或缺失 checks 均阻塞/);
   assert.match(compiled.get('git-operator'), /不得执行 `review-manifest-cli\.mjs verify`/);
@@ -1820,7 +1823,7 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
     assert.match(compiled, /上下文只使用 `git show <review-commit>:<path>`/);
     assert.match(compiled, /不得从 committed diff 外新增 finding/);
   }
-  assert.match(routing, /两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest\/digest/);
+  assert.match(routing, /两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest\/digest、原始 verify input/);
   assert.match(routing, /禁止用无参数 `git diff`、`git diff --cached` 或工作树文件读取命令取证/);
   assert.match(routing, /审查 worktree 的 `HEAD` 等于 review commit 且工作树干净/);
   assert.match(routing, /输入 range、commit list 或 changed paths 与 ReviewManifest 不一致时阻塞/);
@@ -1832,6 +1835,7 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
   assert.match(compiledBodies.get('code-reviewer'), /只根据不可变 ReviewManifest 调度/);
   assert.match(compiledBodies.get('code-reviewer'), /新会话重试一次/);
   assert.match(compiledBodies.get('code-reviewer'), /manifest、digest、SHA、shards 和来源均不变/);
+  assert.match(bodies['code-reviewer'], /prepare envelope.*原样.*stdin.*review-manifest-cli\.mjs verify/s);
   assert.match(compiledBodies.get('code-reviewer'), /仍阻塞即报告用户/);
   assert.doesNotMatch(bodies['code-reviewer'], /git rev-parse/);
   assert.doesNotMatch(bodies['code-reviewer'], /\$code-review|已安装时|未安装时|Matt/);
@@ -1872,7 +1876,7 @@ test('dual-axis review binds standards and complete spec context bundles without
   ]));
   const compiled = loadAgentAssets().compiledBodies;
   const sharedBundleAssertions = [
-    /spec context\/bundle|目录式 manifest/s,
+    /spec context\/bundle|prepare envelope/s,
     /\.ai-work-flow\/plans\/<plan-id>\/spec\.md \+ plan\.md/,
     /拆分 task 加当前 task、acceptance evidence 与 Verification 结果/,
     /canonical bundle 为 `\.scratch\/<featureSlug>\/spec\.md \+ 对应 Ticket\/issues \+ runtime 执行事实`/,
@@ -1891,7 +1895,7 @@ test('dual-axis review binds standards and complete spec context bundles without
   for (const assertion of sharedBundleAssertions) assert.match(routing, assertion);
   for (const assertion of sharedManifestAssertions) assert.match(routing, assertion);
   for (const assertion of recoveryAssertions) assert.match(routing, assertion);
-  assert.match(routing, /两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest\/digest，以及同一委派中的相同 spec bundle/);
+  assert.match(routing, /两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest\/digest、原始 verify input及相同 spec bundle/);
   assert.match(routing, /Standards 轴使用冻结 revision 的仓库 Standards、`CONTEXT\.md` 等来源，`spec\.md` 不是 Standards 来源/);
   assert.match(bodies['code-reviewer'], /完整 spec context\/bundle/);
   assert.match(bodies['code-reviewer'], /`absent` 只委派 Standards，不构造 Spec/);

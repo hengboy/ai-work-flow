@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
 
-import { prepareDirectoryReviewManifest, verifyDirectoryReviewManifest } from "./lib/directory-review-manifest.mjs";
+import { prepareDirectoryReviewEnvelope, verifyDirectoryReviewEnvelope } from "./lib/directory-review-manifest.mjs";
 
 async function stdinJson() {
   let raw = "";
@@ -19,8 +19,8 @@ function parseArgs(argv) {
 }
 
 function assertVerifyInput(input) {
-  if (!input || typeof input !== "object" || Array.isArray(input) || typeof input.fixed_point !== "string" || typeof input.review_commit !== "string") {
-    throw new Error("verify requires external fixed_point and review_commit inputs");
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("verify requires a directory review prepare envelope");
   }
 }
 
@@ -37,10 +37,10 @@ try {
   const input = await stdinJson();
   if (command === "verify") assertVerifyInput(input);
   else assertPrepareInput(input);
-  const manifest = command === "prepare"
-    ? await prepareDirectoryReviewManifest(repository, input)
-    : await verifyDirectoryReviewManifest(repository, input.manifest, input);
-  process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+  const result = command === "prepare"
+    ? await prepareDirectoryReviewEnvelope(repository, input)
+    : await verifyDirectoryReviewEnvelope(repository, input);
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 } catch (error) {
   process.stderr.write(`review-manifest: ${error.message}\n`);
   process.exitCode = 1;

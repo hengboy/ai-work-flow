@@ -207,7 +207,7 @@ Planning 通过问询确认目标和关键决策，写入配对工件：
 
 ### 普通实施
 
-确认方案后，流程按 **Git Operator prepare -> Full Stack Coder -> Git Operator commit/sync -> Coding 委派 File Explorer prepare ReviewManifest -> Code Reviewer -> Review Standards + Review Spec -> Git Operator integrate/cleanup** 执行。实现和评审在同一个隔离 worktree 中进行；实现完成并通过验证后创建仅本地 review commit，Code Reviewer 只审查已提交的固定范围。
+确认方案后，流程按 **Git Operator prepare -> Full Stack Coder -> Git Operator commit/sync/prepare ReviewManifest envelope -> Coding 验证并原样交接 -> Code Reviewer verify -> Review Standards + Review Spec -> Git Operator integrate/cleanup** 执行。实现和评审在同一个隔离 worktree 中进行；实现完成并通过验证后创建仅本地 review commit，Code Reviewer 只审查已提交的固定范围。
 
 拆分计划按 `blocked_by` 形成依赖前沿。每个 task 独立实现、提交和双轴评审，Git Operator 按编号顺序汇入 feature；全部 task 完成后进行一次聚合评审。评审覆盖完整、无阻塞 finding 且 `main` 未前进时自动使用 `git merge --ff-only` 整合；存在阻塞 finding 时进入下一段所述的用户决策门禁。
 

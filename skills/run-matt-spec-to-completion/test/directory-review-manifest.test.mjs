@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { prepareDirectoryReviewManifest, verifyDirectoryReviewManifest } from "../../../execution-runtime/lib/directory-review-manifest.mjs";
+import { assertDirectoryReviewPrepareEnvelope, prepareDirectoryReviewEnvelope, prepareDirectoryReviewManifest, verifyDirectoryReviewEnvelope, verifyDirectoryReviewManifest } from "../../../execution-runtime/lib/directory-review-manifest.mjs";
 import { assertReviewManifest, createReviewManifest, createReviewShardAssignments, reviewBundleDigest, reviewManifestDigest } from "../../../execution-runtime/lib/review-manifest.mjs";
 
 const run = promisify(execFile);
@@ -180,6 +180,21 @@ test("prepares and verifies an explicit absent spec bundle without planning path
   }
 });
 
+test("builds a structured prepare envelope without changing the manifest digest algorithm", async () => {
+  const { root, input } = await fixture();
+  const envelope = await prepareDirectoryReviewEnvelope(root, input);
+
+  assert.deepEqual(envelope.verify_input, input);
+  assert.equal(envelope.review_manifest.manifest_digest, envelope.manifest_digest);
+  assert.equal(envelope.review_manifest.directory_bundle.bundle_digest, envelope.bundle_digest);
+  assert.doesNotThrow(() => assertDirectoryReviewPrepareEnvelope(envelope));
+  assert.deepEqual(await verifyDirectoryReviewEnvelope(root, envelope), envelope.review_manifest);
+
+  const tampered = structuredClone(envelope);
+  tampered.verify_input.checks = ["tampered check"];
+  assert.throws(() => assertDirectoryReviewPrepareEnvelope(tampered), /prepare envelope/);
+});
+
 test("detects a copy from an unchanged committed source", async () => {
   const { root, input } = await fixture({ copy: true });
   const manifest = await prepareDirectoryReviewManifest(root, input);
@@ -327,24 +342,31 @@ test("exposes an executable prepare and verify CLI for ordinary Coding", async (
     input: JSON.stringify(input), encoding: "utf8",
   });
   assert.equal(prepared.status, 0, prepared.stderr);
-  const manifest = JSON.parse(prepared.stdout);
+  const envelope = JSON.parse(prepared.stdout);
+  assert.equal(envelope.type, "directory-review-prepare");
+  assert.deepEqual(envelope.verify_input, input);
+  assert.equal(envelope.review_manifest.manifest_digest, envelope.manifest_digest);
+  assert.equal(envelope.review_manifest.directory_bundle.bundle_digest, envelope.bundle_digest);
 
   const verified = spawnSync(process.execPath, [cli, "verify", "--repository", root], {
-    input: JSON.stringify({ ...input, manifest }), encoding: "utf8",
+    input: prepared.stdout, encoding: "utf8",
   });
   assert.equal(verified.status, 0, verified.stderr);
+  assert.deepEqual(JSON.parse(verified.stdout), envelope.review_manifest);
 
-  const missingEndpoints = spawnSync(process.execPath, [cli, "verify", "--repository", root], {
-    input: JSON.stringify({ manifest, mode: input.mode, spec_path: input.spec_path, plan_path: input.plan_path, checks: input.checks, acceptance_evidence: input.acceptance_evidence, verification: input.verification }), encoding: "utf8",
-  });
-  assert.notEqual(missingEndpoints.status, 0);
-  assert.match(missingEndpoints.stderr, /external fixed_point and review_commit/);
-
+  const tamperedVerifyInput = structuredClone(envelope);
+  tamperedVerifyInput.verify_input.acceptance_evidence[0].evidence = "changed";
   const rejected = spawnSync(process.execPath, [cli, "verify", "--repository", root], {
-    input: JSON.stringify({ ...input, manifest, acceptance_evidence: [{ criterion: "rename", evidence: "changed" }] }), encoding: "utf8",
+    input: JSON.stringify(tamperedVerifyInput), encoding: "utf8",
   });
   assert.notEqual(rejected.status, 0);
-  assert.match(rejected.stderr, /bundle facts/);
+  assert.match(rejected.stderr, /prepare envelope/);
+
+  const missingEnvelope = spawnSync(process.execPath, [cli, "verify", "--repository", root], {
+    input: JSON.stringify(envelope.review_manifest), encoding: "utf8",
+  });
+  assert.notEqual(missingEnvelope.status, 0);
+  assert.match(missingEnvelope.stderr, /prepare envelope/);
 });
 
 test("exposes an executable absent prepare and endpoint-bound verify CLI", async () => {
@@ -353,20 +375,22 @@ test("exposes an executable absent prepare and endpoint-bound verify CLI", async
     input: JSON.stringify(input), encoding: "utf8",
   });
   assert.equal(prepared.status, 0, prepared.stderr);
-  const manifest = JSON.parse(prepared.stdout);
-  assert.equal(manifest.spec_status, "absent");
-  assert.deepEqual(manifest.directory_bundle.sources, []);
+  const envelope = JSON.parse(prepared.stdout);
+  assert.equal(envelope.review_manifest.spec_status, "absent");
+  assert.deepEqual(envelope.review_manifest.directory_bundle.sources, []);
 
   const verified = spawnSync(process.execPath, [cli, "verify", "--repository", root], {
-    input: JSON.stringify({ manifest, ...input }), encoding: "utf8",
+    input: prepared.stdout, encoding: "utf8",
   });
   assert.equal(verified.status, 0, verified.stderr);
 
+  const driftedEnvelope = structuredClone(envelope);
+  driftedEnvelope.verify_input.fixed_point = input.review_commit;
   const driftedEndpoints = spawnSync(process.execPath, [cli, "verify", "--repository", root], {
-    input: JSON.stringify({ manifest, ...input, fixed_point: input.review_commit }), encoding: "utf8",
+    input: JSON.stringify(driftedEnvelope), encoding: "utf8",
   });
   assert.notEqual(driftedEndpoints.status, 0);
-  assert.match(driftedEndpoints.stderr, /externally supplied review endpoints/);
+  assert.match(driftedEndpoints.stderr, /prepare envelope endpoints/);
 
   const rejectedPaths = spawnSync(process.execPath, [cli, "prepare", "--repository", root], {
     input: JSON.stringify({ ...input, spec_path: "not-allowed.md" }), encoding: "utf8",

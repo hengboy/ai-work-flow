@@ -26,7 +26,7 @@
 | `ready_to_implement` | 普通任务授权、用户直接给出的 bug 授权，或有效 planning commit 加实施授权 | Git Operator | prepare；bug 委派 Bug Fixer，其他委派 Full Stack Coder | 实施授权或规划门禁缺失 |
 | `implementing` | 干净 worktree 与已验证范围 | Full Stack Coder 或 Bug Fixer | 验证 JSON handoff | 实现或验收 blocked |
 | `ready_to_commit` | 完整变更交接、成功 checks 与完整 bundle | Git Operator | 本地 commit、同步并 prepare ReviewManifest | 范围、HEAD、验证、hook 或 prepare 不一致 |
-| `ready_to_review` | Git Operator 的 fixed point、review commit、干净状态及 manifest handoff | Coding | 验证交接后委派 Code Reviewer 独立 verify | manifest、bundle 或 handoff 无效 |
+| `ready_to_review` | Git Operator 的 fixed point、review commit、干净状态及完整 prepare envelope handoff | Coding | 验证交接后委派 Code Reviewer 独立 verify | manifest、bundle 或 handoff 无效 |
 | `review_passed` | 两轴 coverage 完整且无 blocking finding | Git Operator | 汇入或最终整合并清理 | main 前进或整合前置条件失败 |
 | `awaiting_finding_ids` | 当前 blocking findings | Coding | 询问一次具体 finding IDs | 等待用户决定 |
 | `fixing_findings` | 用户批准的当前 finding IDs | Bug Fixer | 验证、后继 commit、同步后汇入或整合 | 授权、提交关系或验证失败 |
@@ -39,7 +39,7 @@
 
 拆分任务按 `blocked_by` frontier 推进。同一 frontier 仅在 `write_scope` 互斥时并发非 Git 实施，task worktree 从同一 feature HEAD 创建。Full Stack Coder 可修改验收所需源码、测试、配置、导航索引、lockfile 和自己的 checklist；不得修改父 plan、task 元数据或其他 task。acceptance evidence 与 Verification 必须逐项对应，Git Operator 将实现和 checkbox 放入同一 review commit。task 审查 bundle 包含 spec、plan、当前 task、evidence 和 Verification；通过后按编号汇入并清理，再开放下一 frontier。全部 task 汇入后同步 main，对 feature 完整 committed range 做聚合审查。
 
-普通目录式流程由 Git Operator 在 commit/sync 成功后执行全局 `review-manifest-cli.mjs prepare`。输入包含 review worktree/fixed point/review commit、`mode: single|task|aggregate`、spec/plan/可选 task，以及非空 `checks: ["<check>"]`、`acceptance_evidence: [{"criterion":"<criterion>","evidence":"<evidence>"}]`、`verification: [{"command":"<command>","result":"<result>"}]`；`spec_status=absent` 时不含 mode/spec/plan/task 路径。Coding 验证其 `review_manifest`、`manifest_digest`、`bundle_digest` 与 Git 事实，只把 manifest 和同一 bundle 交给 Code Reviewer 独立 verify；CLI、字段或 bundle 不一致均 blocked。Coding 不访问工作区、Shell/Git，不委派 File Explorer prepare，也不自行 prepare、verify/编排审查。
+普通目录式流程由 Git Operator 在 commit/sync 成功后执行全局 `review-manifest-cli.mjs prepare`。prepare stdout 是当前格式 envelope，包含 `review_manifest`、`verify_input` 及其 `manifest_digest`、`bundle_digest`；`verify_input` 原样保留 review endpoints、`checks`、`acceptance_evidence`、`verification` 和 present 模式所需的 mode/spec/plan/task 输入，`spec_status=absent` 时不含 mode/spec/plan/task 路径；原始值形状为 checks: ["<check>"]、acceptance_evidence: [{criterion,evidence}]、verification: [{command,result}]。Coding 验证其 `review_manifest`、`manifest_digest`、`bundle_digest` 与 Git 事实，并严格校验 envelope，只把同一 envelope 原样交给 Code Reviewer 的 `review-manifest-cli.mjs verify`，不得推导、删除或重建输入；CLI、字段或 bundle 不一致均 blocked。Coding 不访问工作区、Shell/Git，不委派 File Explorer prepare，也不自行 prepare、verify/编排审查。
 
 普通目录式流程的首次完整双轴审查若有 blocking findings，只修用户批准的 IDs。修复验证、新 review commit 的后继关系/HEAD 和同步通过后，不执行第二次评审，自动继续 task 汇入或最终整合与清理。Canonical Skill 是独立协议：`complete-review-fix` 后自动同步并执行最终评审，若再次出现 blocking findings 再请求新的具体 IDs。两套流程不得互换状态或格式。
 
