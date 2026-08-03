@@ -19,7 +19,7 @@
       "policy_requirements": {}
     },
     "read-only-discovery": {
-      "instruction": "File Explorer 只读定位，或执行受信的只读 ReviewManifest 准备运行时；不编辑、联网或委派。",
+      "instruction": "File Explorer 只读定位，不编辑、联网或委派。",
       "policy_requirements": {
         "filesystem": ["read"],
         "network": ["none"],
@@ -87,7 +87,7 @@
       "policy_requirements": {}
     },
     "safe-local-git-only": {
-      "instruction": "禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑。",
+      "instruction": "禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑；ReviewManifest 只允许 prepare，不得 verify 或调度审查。",
       "policy_requirements": {
         "git": ["write"],
         "write_scope": ["git"],

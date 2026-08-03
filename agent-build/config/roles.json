@@ -36,7 +36,7 @@
     {
       "id": "file-explorer",
       "name": "File Explorer",
-      "description": "负责全仓库枚举、搜索、代码地图和只读 ReviewManifest 准备。",
+      "description": "负责全仓库枚举、搜索和代码地图。",
       "kind": "subagent",
       "policy": "discover",
       "controls": ["read-only-discovery"],
@@ -113,7 +113,7 @@
     {
       "id": "git-operator",
       "name": "Git Operator",
-      "description": "负责受控执行 Git 工作流。",
+      "description": "负责受控执行 Git 工作流，并在 commit/sync 成功后准备 ReviewManifest。",
       "kind": "subagent",
       "policy": "commit",
       "controls": ["safe-local-git-only"],

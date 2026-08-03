@@ -294,7 +294,7 @@ test('subagents return one JSON handoff envelope with role-specific details', ()
   for (const role of ['full-stack-coder', 'bug-fixer']) {
     assert.match(compiled.get(role), /base_commit.*initial_status.*changed_paths.*acceptance_evidence/s, role);
   }
-  assert.match(compiled.get('git-operator'), /full_commit_sha.*worktree_clean/s);
+  assert.match(compiled.get('git-operator'), /full_commit_sha.*worktree_clean.*review_manifest.*manifest_digest.*bundle_digest/s);
   for (const role of ['review-standards', 'review-spec']) assert.match(compiled.get(role), /review_result/s, role);
 });
 
@@ -483,7 +483,7 @@ test('generated implementation and review roles preserve their scoped contracts'
   assert.equal(result.status, 0, result.stderr);
 
   const implementationAssertions = [
-    /Git Operator prepare -> Full Stack Coder -> Git Operator commit\/sync -> Coding 委派 File Explorer prepare ReviewManifest -> Code Reviewer -> Review Standards \+ Review Spec/,
+    /Git Operator prepare -> Full Stack Coder -> Git Operator commit\/sync\/prepare ReviewManifest -> Coding 验证交接 -> Code Reviewer verify -> Review Standards \+ Review Spec/,
     /不需要首次暂存前再次授权/,
     /base_commit/
   ];
@@ -1781,13 +1781,16 @@ test('structured dual-axis review controls the final integration gate', () => {
   for (const content of [coding, fixer, operator]) {
     for (const pattern of removedBranchPatterns) assert.doesNotMatch(content, pattern);
   }
-  assert.match(coding, /review-manifest-cli\.mjs.*prepare --repository <review-worktree>/s);
-  assert.match(coding, /调度 Code Reviewer 前/);
-  assert.match(coding, /委派 File Explorer/);
+  assert.match(coding, /Git Operator.*review-manifest-cli\.mjs prepare/s);
+  assert.match(coding, /Coding 验证其 `review_manifest`、`manifest_digest`、`bundle_digest`/);
+  assert.match(coding, /不委派 File Explorer prepare/);
   assert.match(coding, /checks: \["<check>"\].*acceptance_evidence.*criterion.*evidence.*verification.*command.*result/s);
-  assert.match(compiled.get('file-explorer'), /review_manifest.*manifest_digest.*bundle_digest/s);
-  assert.match(compiled.get('file-explorer'), /review-manifest-cli\.mjs prepare/);
-  assert.match(compiled.get('file-explorer'), /null、空字符串、空对象或缺失 checks 均阻塞/);
+  assert.match(compiled.get('git-operator'), /review_manifest.*manifest_digest.*bundle_digest/s);
+  assert.match(compiled.get('git-operator'), /review-manifest-cli\.mjs.*prepare --repository <review-worktree>/s);
+  assert.match(compiled.get('git-operator'), /null、空值或缺失 checks 均阻塞/);
+  assert.match(compiled.get('git-operator'), /不得执行 `review-manifest-cli\.mjs verify`/);
+  assert.doesNotMatch(compiled.get('file-explorer'), /ReviewManifest|review-manifest-cli|review_manifest|manifest_digest|bundle_digest/);
+  assert.doesNotMatch(compiled.get('file-explorer'), /null、空字符串、空对象或缺失 checks/);
 });
 
 test('review agents preserve the AI Work Flow committed-range contract', () => {
