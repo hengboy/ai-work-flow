@@ -19,7 +19,7 @@
         "code-reviewer"
       ],
       "tools": [],
-      "routing_sections": ["browser-governance", "retry-governance", "planning-governance", "implementation-governance"]
+      "routing_sections": ["browser-governance", "retry-governance", "planning-governance", "orchestration-governance", "change-handoff-governance", "git-lifecycle-governance", "review-orchestration-governance"]
     },
     {
       "id": "planning",
@@ -39,7 +39,7 @@
       "policy": "discover",
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash"],
-      "routing_sections": ["browser-governance"]
+      "routing_sections": ["browser-governance", "handoff-governance"]
     },
     {
       "id": "researcher",
@@ -49,7 +49,7 @@
       "policy": "research",
       "delegates": [],
       "tools": ["WebSearch", "WebFetch", "Write"],
-      "routing_sections": ["browser-governance"]
+      "routing_sections": ["browser-governance", "handoff-governance"]
     },
     {
       "id": "document-maintainer",
@@ -89,7 +89,7 @@
       "policy": "write-code",
       "delegates": ["file-explorer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Task"],
-      "routing_sections": ["browser-governance", "retry-governance", "implementation-governance"]
+      "routing_sections": ["browser-governance", "retry-governance", "handoff-governance", "change-handoff-governance"]
     },
     {
       "id": "bug-fixer",
@@ -99,7 +99,7 @@
       "policy": "write-code",
       "delegates": ["file-explorer", "git-operator", "researcher", "document-maintainer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Task"],
-      "routing_sections": ["browser-governance", "retry-governance", "implementation-governance"]
+      "routing_sections": ["browser-governance", "retry-governance", "handoff-governance", "change-handoff-governance"]
     },
     {
       "id": "git-operator",
@@ -109,7 +109,7 @@
       "policy": "commit",
       "delegates": [],
       "tools": ["Read", "Bash", "Skill"],
-      "routing_sections": ["browser-governance", "planning-governance", "implementation-governance"]
+      "routing_sections": ["browser-governance", "planning-governance", "handoff-governance", "change-handoff-governance", "git-lifecycle-governance"]
     },
     {
       "id": "code-reviewer",
@@ -119,7 +119,7 @@
       "policy": "review",
       "delegates": ["review-standards", "review-spec"],
       "tools": ["Read", "Glob", "Grep", "Bash", "Task"],
-      "routing_sections": ["browser-governance", "retry-governance", "review-governance"]
+      "routing_sections": ["browser-governance", "retry-governance", "handoff-governance", "review-evidence-governance", "review-orchestration-governance"]
     },
     {
       "id": "review-standards",
@@ -129,7 +129,7 @@
       "policy": "review",
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash"],
-      "routing_sections": ["browser-governance", "review-governance"]
+      "routing_sections": ["browser-governance", "handoff-governance", "review-evidence-governance"]
     },
     {
       "id": "review-spec",
@@ -139,7 +139,7 @@
       "policy": "review",
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash"],
-      "routing_sections": ["browser-governance", "review-governance"]
+      "routing_sections": ["browser-governance", "handoff-governance", "review-evidence-governance"]
     }
   ]
 }

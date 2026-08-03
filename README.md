@@ -211,7 +211,7 @@ Planning 通过问询确认目标和关键决策，写入配对工件：
 
 拆分计划按 `blocked_by` 形成依赖前沿。每个 task 独立实现、提交和双轴评审，Git Operator 按编号顺序汇入 feature；全部 task 完成后进行一次聚合评审。评审覆盖完整、无阻塞 finding 且 `main` 未前进时自动使用 `git merge --ff-only` 整合；存在阻塞 finding 时进入下一段所述的用户决策门禁。
 
-评审出现阻塞 finding 时，只修复用户确认的 finding IDs。修复提交必须晚于原 `review_commit` 且等于当前 feature 或 task HEAD；重新同步后由用户明确选择再次执行完整双轴评审，或继续后续流程，不会因旧 finding 自动复审。
+评审出现阻塞 finding 时，只修复用户确认的 finding IDs。修复提交必须晚于原 `review_commit` 且等于当前 feature 或 task HEAD；重新同步并验证前置条件后，普通目录式流程自动汇入 task 或执行最终整合与清理，不执行第二次评审，也不再询问是否继续。
 
 ### Spec/Ticket canonical runtime
 
@@ -246,7 +246,7 @@ Runtime 中的修复完成后，`complete-review-fix` 将执行状态恢复到�
 
 Checkpoint 只接受当前格式；旧字段、旧绝对路径或未知格式不会迁移、兼容或降级恢复。恢复前必须验证 Checkpoint integrity：执行计划 revision、canonical 路径、baseline、branch/worktree、Ticket 条目及各 Ticket 提交都必须与 Git 事实一致。`invalid` 时停止并报告精确 diagnostics，不猜测、不降级、不重派已完成 Ticket。
 
-有效 Checkpoint 按状态继续：`executing` 从最低未完成 Ticket 继续，`reviewing` 进入冻结 manifest 评审或继续等待用户决定，`fixing` 等待追加修复提交，`integrating` 只做整合和清理，`complete` 只报告结果。runtime 没有 Ticket reclaim/reset 命令；存在 `in_progress` Ticket 时保留现场并停止，不会自动重派。
+有效 Checkpoint 按状态继续：`executing` 从最低未完成 Ticket 继续，`reviewing` 进入冻结 manifest 评审或等待用户决定，`fixing` 等待追加修复提交。`integrating` 还需检查 review decision：已有 fix decision/commit 时先同步并执行最终评审，最终评审通过后才整合和清理；`complete` 只报告结果。runtime 没有 Ticket reclaim/reset 命令；存在 `in_progress` Ticket 时保留现场并停止，不会自动重派。
 
 ## 角色与 Skills
 
@@ -254,14 +254,14 @@ Checkpoint 只接受当前格式；旧字段、旧绝对路径或未知格式不
 
 | 角色 | 职责边界 |
 | --- | --- |
-| Coding | 路由、等待受委派结果并汇总 |
+| Coding | 按唯一状态表路由、等待、验证交接并自动推进人工门禁之间的步骤 |
 | Planning | 问询、确认并按 spec-first 状态机生成规格与计划，不实施代码 |
-| File Explorer | 全库枚举、搜索和代码地图 |
+| File Explorer | 读取导航索引并在必要时聚焦发现入口与直接依赖 |
 | Researcher | 只读取外部官方来源，并写入 `.ai-work-flow/research/<topic>.md` |
 | Document Maintainer | 只维护 README、docs 等普通文档 |
 | Planning Writer | 单次完整写入一个目录式 spec 或 plan |
 | Task Planner | 将已确认计划拆分为可跟踪任务 |
-| Full Stack Coder | 实现源码、测试、必要配置和修复 |
+| Full Stack Coder | 实现源码、测试、必要配置，并随实现维护代码导航索引 |
 | Bug Fixer | 受限修复可复现 bug 或获批 blocking finding；Codex `gpt-5.6-luna`/`max`，OpenCode `baibai/gpt-5.6-luna`/`max`，Claude `sonnet`/`high` |
 | Git Operator | 受控执行 Git 工作流 |
 | Code Reviewer | 编排 Standards + Spec 双轴评审 |
@@ -299,6 +299,7 @@ Checkpoint 只接受当前格式；旧字段、旧绝对路径或未知格式不
 - 整合前要求 feature worktree 干净、提交端点精确匹配且 `main` 未前进；主工作树中的未知改动默认阻塞。Spec/Ticket runtime 允许当前 execution records，并只在显式 `--allow-stash true` 授权后暂存其他改动；默认使用 `git merge --ff-only`。
 - 升级安装只迁移明确支持的缺失角色和旧角色 ID；已有角色字段残缺时停止，不静默修复。
 - 浏览器自动化、E2E 测试或视觉验证只有在当前请求明确要求且平台提供相应工具时才允许；既有测试配置不构成授权。交接读取只能使用用户或上游交接的精确路径及其直接依赖。
+- 子代理使用统一的 `{status,summary,artifacts,checks,details,blocking_reason?}` JSON handoff；canonical Ticket 仍使用 runtime schema，不与通用 handoff 格式合并。
 
 ## 开发验证
 

@@ -11,12 +11,16 @@ description: 在当前项目创建、更新或使用 AI Work Flow 代码导航�
 
 ## 使用索引
 
+这是**只读定位模式**，由 File Explorer 或其他发现角色执行：
+
 1. 先读取 `.ai-work-flow/index/feature-navigation.md`，再按目标功能只读取相关的 `frontend-navigation.md` 或 `backend-navigation.md`。
 2. 索引命中用户术语时，直接打开表中记录的入口文件；不得执行全局文件检索，也不得搜索无关路径。
 3. 只有索引缺失、没有目标功能或记录路径无法定位时，才使用聚焦搜索。
 4. 定位后只交接入口与完成请求所需的直接 import、caller 或 schema 依赖；源码修改由 **Full Stack Coder** 执行，不要为已经定位的功能扩大搜索范围。
 
 ## 初始化与维护
+
+这是**随实现维护模式**，由 Full Stack Coder 在获准实现范围内执行；只读发现不得因为索引过期直接修改文件：
 
 1. 读取项目指令和稳定资料：`AGENTS.md`、`CLAUDE.md`、`MEMORY.md`、README、构建文件及已知入口。
 2. 判断项目形态：前端、后端、全栈、monorepo、库或 worker。

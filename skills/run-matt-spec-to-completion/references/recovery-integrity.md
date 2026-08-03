@@ -11,4 +11,4 @@
 
 `invalid` 时显示 module 返回的精确 diagnostics；不得猜测、降级任务、重派 `done` 任务或用 `git log` 文本匹配替代验证。路径变动时用 `relocateCheckpoint` 更新记录。
 
-**有效 Checkpoint 的恢复规则：** `executing` 从最低未完成 Frontier 继续，`reviewing` 进入冻结 manifest 审查，`fixing` 等待追加 fix commit，`integrating` 只做整合清理，`complete` 只报告结果。先检查 main 上的 `merged` 和 `complete`，避免重建已整合的 worktree。
+**有效 Checkpoint 的恢复规则：** `executing` 且存在未完成 Ticket 时从最低未完成 Frontier 继续；全部 Ticket done 时先 `sync-main` 再 `begin-review`，已有 fix/resync 记录时执行最终评审。`reviewing` 进入冻结 manifest 审查，`fixing` 等待追加 fix commit，`integrating` 只在评审通过后做整合清理，`complete` 只报告结果。先检查 main 上的 `merged` 和 `complete`，避免重建已整合的 worktree。

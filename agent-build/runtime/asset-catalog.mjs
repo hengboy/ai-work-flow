@@ -16,6 +16,23 @@ const POLICY_CAPABILITIES = {
 };
 const ROLE_KINDS = new Set(['primary', 'subagent', 'reviewer']);
 export const MAX_AGENT_DEPTH = 2;
+const MAX_COMPILED_PROMPT_LENGTH = 53_000;
+const ROLE_TEMPLATE_HEADINGS = ['职责结果', '输入前置条件', '确定性工作流', '暂停条件', '交接格式'];
+const ROUTING_SECTION_ASSIGNMENTS = {
+  coding: ['browser-governance', 'retry-governance', 'planning-governance', 'orchestration-governance', 'change-handoff-governance', 'git-lifecycle-governance', 'review-orchestration-governance'],
+  planning: ['browser-governance', 'retry-governance', 'planning-governance'],
+  'file-explorer': ['browser-governance', 'handoff-governance'],
+  researcher: ['browser-governance', 'handoff-governance'],
+  'document-maintainer': ['browser-governance', 'handoff-governance'],
+  'planning-writer': ['browser-governance', 'handoff-governance', 'planning-governance'],
+  'task-planner': ['browser-governance', 'handoff-governance', 'planning-governance'],
+  'full-stack-coder': ['browser-governance', 'retry-governance', 'handoff-governance', 'change-handoff-governance'],
+  'bug-fixer': ['browser-governance', 'retry-governance', 'handoff-governance', 'change-handoff-governance'],
+  'git-operator': ['browser-governance', 'planning-governance', 'handoff-governance', 'change-handoff-governance', 'git-lifecycle-governance'],
+  'code-reviewer': ['browser-governance', 'retry-governance', 'handoff-governance', 'review-evidence-governance', 'review-orchestration-governance'],
+  'review-standards': ['browser-governance', 'handoff-governance', 'review-evidence-governance'],
+  'review-spec': ['browser-governance', 'handoff-governance', 'review-evidence-governance']
+};
 const TOOL_REQUIREMENTS = {
   Read: ['filesystem', new Set(['read', 'write'])],
   Glob: ['filesystem', new Set(['read', 'write'])],
@@ -158,6 +175,9 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
     if (!ROLE_KINDS.has(role.kind)) errors.push(`Role ${role.id} has invalid kind: ${role.kind}.`);
     if (!unique(role.delegates ?? [])) errors.push(`Role ${role.id} has duplicate delegates.`);
     if (!unique(role.tools ?? [])) errors.push(`Role ${role.id} has duplicate tools.`);
+    if (ROUTING_SECTION_ASSIGNMENTS[role.id] && JSON.stringify(role.routing_sections) !== JSON.stringify(ROUTING_SECTION_ASSIGNMENTS[role.id])) {
+      errors.push(`Role ${role.id} has an invalid routing section assignment.`);
+    }
     for (const delegate of role.delegates ?? []) {
       if (typeof delegate !== 'string' || !ids.includes(delegate)) errors.push(`Role ${role.id} delegates to an unknown role: ${delegate}.`);
     }
@@ -213,6 +233,10 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
     const body = readFileSync(resolve(templatesRoot, name), 'utf8');
     if (!body.trim()) errors.push(`Template is empty: ${name}.`);
     const roleId = name.slice(0, -3);
+    const headingPositions = ROLE_TEMPLATE_HEADINGS.map((heading) => body.indexOf(`## ${heading}`));
+    if (headingPositions.some((position) => position < 0) || headingPositions.some((position, index) => index > 0 && position <= headingPositions[index - 1])) {
+      errors.push(`Template ${name} must contain the ordered role interface headings: ${ROLE_TEMPLATE_HEADINGS.join(', ')}.`);
+    }
     for (const marker of SPEC_FIRST_TEMPLATE_CONTRACTS[roleId] ?? []) {
       if (!body.includes(marker)) errors.push(`Template ${name} is missing spec-first contract marker: ${marker}.`);
     }
@@ -248,6 +272,24 @@ export function loadAgentAssets(configRoot = resolve(import.meta.dirname, '..', 
     role.id,
     `<!-- ai-work-flow:routing-digest=${routingDigest} sections=${role.routing_sections.join(',')} -->\n\n${delegationContract(role)}\n\n${role.routing_sections.map((id) => sections.get(id)).join('\n\n')}\n\n${bodies.get(role.id)}`
   ]));
+  const totalCompiledLength = [...compiledBodies.values()].reduce((total, body) => total + body.length, 0);
+  if (totalCompiledLength > MAX_COMPILED_PROMPT_LENGTH) fail(`Compiled agent prompts exceed ${MAX_COMPILED_PROMPT_LENGTH} characters: ${totalCompiledLength}.`);
+  for (const role of catalog.roles.filter((candidate) => candidate.kind !== 'primary')) {
+    const prompt = compiledBodies.get(role.id);
+    for (const field of ['status', 'summary', 'artifacts', 'checks', 'details', 'blocking_reason']) {
+      if (!prompt.includes(`"${field}"`)) fail(`Compiled prompt ${role.id} is missing JSON handoff field: ${field}.`);
+    }
+  }
+  const coding = compiledBodies.get('coding');
+  const codingStates = [...coding.matchAll(/^\| `([^`]+)` \|/gm)].map((match) => match[1]);
+  const expectedCodingStates = ['discovery', 'ready_to_implement', 'implementing', 'ready_to_commit', 'ready_to_review', 'review_passed', 'awaiting_finding_ids', 'fixing_findings', 'resync_required', 'complete'];
+  if (JSON.stringify(codingStates) !== JSON.stringify(expectedCodingStates)) fail('Compiled Coding prompt has an invalid deterministic state table.');
+  for (const marker of ['产品决策', '共享理解批准', 'plan-id 同名冲突', '拆分模式', '删除旧 tasks', 'planning commit', '实施授权', 'blocking finding IDs', 'stash 授权', '冲突语义', '不可恢复故障']) {
+    if (!coding.includes(marker)) fail(`Compiled Coding prompt is missing manual gate: ${marker}.`);
+  }
+  if (!coding.includes('普通目录式流程') || !coding.includes('不执行第二次评审') || !coding.includes('complete-review-fix') || !coding.includes('最终评审')) {
+    fail('Compiled Coding prompt does not distinguish ordinary and canonical review-fix successors.');
+  }
   return {
     configRoot: config,
     templatesRoot: templates,

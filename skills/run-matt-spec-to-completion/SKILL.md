@@ -1,68 +1,58 @@
 ---
 name: run-matt-spec-to-completion
-description: "执行已签署的 Spec，完成 Ticket 实施、评审、整合与执行记录提交。"
+description: Execute a canonical Spec/Ticket workflow to completion through the AI Work Flow runtime, including recovery, review, integration, and cleanup.
 disable-model-invocation: true
 ---
 
-# 执行 AI Work Flow Spec 至完成
+# Run Canonical Spec To Completion
 
 ## 目标
 
-将由 `to-spec` 和 `to-tickets` 写入的 Spec 和 Ticket 执行、评审并合并到 `main`。已安装环境通过 `$XDG_CONFIG_HOME/ai-work-flow/execution-runtime/execution-cli.mjs` 维护状态；未设置时使用 `~/.config/ai-work-flow/execution-runtime/execution-cli.mjs`。平台 Skill 只调用该 runtime，生命周期所有权和硬性约束见 [执行架构](references/execution-architecture.md)。
+以 canonical `<repository>/.scratch/<featureSlug>/spec.md` 为输入，通过唯一 runtime 状态入口执行全部 Ticket、最终双轴评审、整合和清理。目录式 `.ai-work-flow/plans/` 不属于本协议。
 
-## 前置条件
+## 输入前置条件
 
-- 输入必须是 `<target-project>/.scratch/<featureSlug>/spec.md`；运行时从此路径推导 `featureSlug`，并拒绝其他位置或兼容路径。
-- Spec 目录必须包含由 `to-tickets` 写入的 `issues/NN-<slug>.md`。
-- 必须存在 `docs/agents/issue-tracker.md`；缺少时停止并报告项目配置阻塞。
-- 在 skill 目录运行 `npm run check:runtime`；安装与失败处理见 [运行时依赖](references/installation.md)。
+- spec 同目录存在由 `to-tickets` 生成的 `issues/NN-<slug>.md`。
+- 项目存在 `docs/agents/issue-tracker.md`；缺少时阻塞。
+- 在 Skill 根目录运行 `npm run check:runtime`。依赖安装与失败处理只在需要时读取 [运行时依赖](references/installation.md)。
+- runtime 固定为 `${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/execution-runtime/execution-cli.mjs`，它是 Execution plan 与 Checkpoint 的唯一 writer。
+- 所有持久化时间使用 `Asia/Shanghai`、带 `+08:00` 的 RFC 3339，不使用 `Z`。
 
-## 约束
+## Checkpoint 路由
 
-### JSON 时间
+先读取 runtime `status`，再只读取当前状态所需 reference：
 
-执行计划和 Checkpoint 中的所有日期时间字段必须使用 `Asia/Shanghai`，以带 `+08:00` 偏移的 RFC 3339 格式写入或更新。不得写入 UTC `Z` 时间戳；schema 验证失败时停止流程。
+| Checkpoint | 读取 | 唯一下一步 | 暂停条件 |
+| --- | --- | --- | --- |
+| 不存在 | `installation.md`、`execution-architecture.md` | `prepare` 初始化 | spec、issues、tracker 或 runtime 预检失败 |
+| `invalid` | `recovery-integrity.md` | 报告 diagnostics | 不猜测、不降级、不重新派发 |
+| `executing` 且有未完成 Ticket | `completion-protocol.md`、`execution-architecture.md` | claim/委派/record 最低未完成 Ticket | 现存 `in_progress` worker 无停止证据或 Ticket blocked |
+| `executing` 且全部 Ticket done | `execution-architecture.md` | `sync-main` 后 `begin-review`；已有 fix/resync 记录时执行最终评审 | 同步冲突或 review bundle 无效 |
+| `reviewing` | `execution-architecture.md` | 完成冻结 manifest 的双轴评审 | blocking findings 需要具体 IDs |
+| `fixing` | `execution-architecture.md` | 完成获批修复并调用 `complete-review-fix` | 修复、checks 或追加提交无效 |
+| `integrating` | `execution-architecture.md` | `integrate`，成功后 `cleanup` | `resync_required`、stash 授权或整合失败 |
+| `complete` | 无 | 只报告最终结果 | 无 |
 
-## 执行步骤
+`complete-review-fix` 后自动执行同步和最终评审，不直接调用 integrate。最终评审再次出现 blocking findings 时进入用户门禁，只接受当前结果中的具体 finding IDs；不得自动循环修复。
 
-### 1. 初始化
+## 确定性工作流
 
-1. 解析 canonical `spec.md`，推导 feature slug，并使用 `ai-work-flow/<feature>` 分支。
-2. 记录 baseline，并在 `.worktrees/<feature>` 创建 feature worktree；runtime 在创建前维护共享 Git `info/exclude` 的 `/.worktrees/`。
-3. 通过 runtime 在同一 feature lock 内物化并验证 `execution-plan.json` 与 Checkpoint，但不提交。
+1. 初始化或恢复后连续处理最低未完成 Ticket。原生 worker 通过带 `role_id`、`session_id`、`claim_id` 的 canonical JSON Handoff 写入 `record-ticket`；不得把本提示词的通用子代理 JSON 代替 canonical schema。
+2. 全部 Ticket done 后 `sync-main`；冲突交 Full Stack Coder 保留双方语义，Git Operator 创建解决提交，再 `complete-sync`。
+3. `begin-review` 冻结 ReviewManifest。standards source 使用冻结 review commit 的 `CONTEXT.md`，spec bundle 使用 canonical spec、Ticket/issues 与当前可验证 runtime facts。两叶子接收相同 manifest/digest 和 bundle。
+4. `record-review` 写入完整 Standards/Spec 结果与 coverage。无 blocking 自动整合；有 blocking 仅询问具体 IDs，并以 `review-decision fix` 记录。
+5. 获批修复由 Full Stack Coder 实施验证、Git Operator 创建晚于 review commit 的提交；`complete-review-fix` 接收非空 checks。随后自动 `sync-main`、`begin-review` 和最终双轴评审。
+6. 最终评审通过后 `integrate`。返回 `resync_required` 时重新同步并最终评审；主工作树有 execution record 之外改动时只在用户明确授权后使用 `--allow-stash true`。`merged` 后调用 `cleanup`。
 
-**完成条件：** main 中的 spec 目录包含通过 schema 校验的执行计划与 Checkpoint，feature worktree 干净。
+各命令、记录所有权、ReviewManifest 和整合细节以 [执行架构](references/execution-architecture.md) 为准。恢复只按 [恢复完整性](references/recovery-integrity.md)；委派只按 [Completion Adapter 协议](references/completion-protocol.md)。
 
-### 2. 恢复
+## 暂停条件
 
-1. 从 main 读取已有记录，并按 [恢复完整性](references/recovery-integrity.md) 验证；`invalid` 时报告 diagnostics 并停止。
-2. 仅在记录允许时复用或重建 feature worktree；创建前拒绝符号链接父路径，路径变动时由 runtime 更新 Checkpoint。
-3. 从有效 Checkpoint 的状态继续：`executing`、`reviewing`、`fixing`、`integrating` 或 `complete`。
-
-**完成条件：** 返回有效 Checkpoint 和匹配的 worktree，或返回唯一、精确的 blocked 诊断。
-
-### 3. 执行
-
-1. 连续执行每个可执行 Frontier，直至 blocked、需要评审输入或全部 Ticket 完成。
-2. `delegated` 使用 [Completion Adapter 协议](references/completion-protocol.md)；所有 Ticket 状态仍经 runtime 的 `claim --role-id <role> --session-id <session>` 和 stdin JSON Handoff `record-ticket` 变更。claim 生成并持久化 `claim_id`，worker 必须原样返回 role/session/claim identity；身份或 envelope/payload 重叠字段不一致时零状态推进失败。
-3. 在 main 记录每个 Ticket 的终态并更新本地 Issue 复选框；blocked 结果立即停止流程。
-
-**完成条件：** 所有 Ticket 为 `done` 后先同步最新 `main`，再进入 `reviewing`；否则返回可恢复状态或 blocked 结果。
-
-### 4. 评审与整合
-
-1. 全部 Ticket `done` 后，先调用 `sync-main --repository <repository> --feature <feature> --worktree <worktree>`。它记录精确 `main_commit`；冲突时返回未合并路径，Full Stack Coder 保留双方语义并提交解决结果，再调用 `complete-sync`。同步完成后，向 `begin-review --repository <repository> --feature <feature> --worktree <worktree>` 的 stdin 提供显式 `{spec_status, spec_source, standards_source}`。`standards_source` 必须非空，且每项以冻结 `review_commit` 标识可读取的已提交标准文件；自动编排固定使用该提交中的 `CONTEXT.md`，不得把 `spec.md` 当作 Standards 来源。Review Spec 必须接收由 canonical `.scratch/<featureSlug>/spec.md + 对应 Ticket/issues + runtime 执行事实` 组成的完整 `spec context/bundle`。该额外 bundle 不属于 ReviewManifest 的机器冻结范围；ReviewManifest 只机器冻结并校验固定提交端点、commit list、changed paths、review checks、diff/shards、显式 spec status/source 与 standards source。Code Reviewer 必须在同一委派中把相同 bundle 传给两个叶子；bundle 的收集、完整性、来源绑定、digest/revision 和两叶子一致性属于 `instruction-only`，不得声称由 ReviewManifest digest 机器绑定或证明。该执行流程的 runtime facts 仅限 canonical runtime 当前可获得且可验证的 execution plan、Checkpoint 中的 Ticket 状态/提交，以及当前 Completion Result 或 runtime 命令返回的执行事实。Completion Result 的 `checks` 只有在当前交接中仍可获得并验证时才能纳入；Completion Result 的 `checks` 未由 Checkpoint 持久化。恢复后若缺少所需 Ticket completion 或 `checks`，代理必须按指令 fail closed，不得声称 Checkpoint 已持久化这些结果。任一必需输入缺失，或额外 bundle 的 instruction-only 校验不一致时停止，不得只审 spec、静默忽略 Ticket/issues 或 runtime facts。runtime 冻结并返回唯一 `ReviewManifest`；两个叶子仍使用同一机器冻结的 manifest 与 digest。
-2. 以 `{manifest_digest, coverage, findings_summary, result}` 调用 `record-review --repository <repository> --feature <feature>`。`result` 必须分别提供 Standards 和 Spec 的 `{verdict, blocking_findings, advisory_findings}`，每个 finding 包含稳定 ID、摘要和证据；两轴 coverage 必须完整。仅有建议时自动进入整合；有阻塞 finding 时进入 `awaiting_user`，用户只能以 `review-decision` 的 `fix` 和确认的 `finding_ids` 选择修复，不能 approve 绕过。
-3. 无阻塞时调用 `integrate --repository <repository> --feature <feature> --worktree <worktree>`；若返回 `resync_required`，必须重新同步并最终复审。main 有 execution record 之外的改动时必须改用明确的 `integrate --repository <repository> --feature <feature> --worktree <worktree> --allow-stash true`，该授权只服务本次 execution。若返回 `merged`，再调用 `cleanup --repository <repository> --feature <feature>`。
-4. `fix` 后由 **Full Stack Coder** 修复并验证，由 **Git Operator** 创建晚于 `review_commit` 的追加提交，再调用 `complete-review-fix --repository <repository> --feature <feature> --worktree <worktree>` 并从 stdin 提供非空 `checks`。随后 runtime 回到同步和最终复审；仍有阻塞 finding 时再次等待用户，不自动循环。
-
-**完成条件：** main 包含唯一的 runtime execution record 提交，消息固定为 `chore(ai-work-flow): record <feature> execution`；若合并后清理失败，保留 `merged` 并且下次只重试清理。
+只在 blocking finding IDs、stash 授权、无法自动解决的冲突语义、活动 worker 无停止证据或不可恢复 diagnostics 时请求用户。已授权阶段之间不询问是否继续、是否提交或是否评审。
 
 ## 回复格式
 
-正常回答按需使用以下标签；无内容的标签省略。
-
-- **结果：** 概述已完成的执行阶段或最终结果。
-- **状态：** 报告当前 Checkpoint、Ticket 或整合状态。
-- **注意：** 说明可恢复状态、用户确认或后续动作。
-- **阻塞：** 说明唯一、精确的阻塞诊断和所需决策。
+- **结果：** 已完成阶段或最终结果。
+- **状态：** 当前 Checkpoint、Ticket、评审或整合状态。
+- **注意：** 可恢复状态与已确定下一步。
+- **阻塞：** 唯一诊断及所需决定。

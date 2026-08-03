@@ -21,6 +21,8 @@ description: 生成符合 Conventional Commits 1.0.0 且使用中文说明的标
 4. 只能以参数数组和 `--` 暂存声明 PathChange 的目标/源路径。确认暂存结构化集合与声明清单完全一致，且暂存差异非空。
 5. 创建一个本地提交，并报告完整 `review_commit` SHA 与空的 porcelain 状态。提交 hook 失败时不 reset、clean 或重试；立即重读同一 porcelain `-z` 状态，分别交接真实 index/worktree PathChange 和原始失败原因。
 
+所有预检成功后自动完成精确暂存、提交和清洁状态校验，不再询问是否继续提交。
+
 ## 提交信息格式
 
 使用 Conventional Commits 1.0.0 结构：

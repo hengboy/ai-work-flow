@@ -20,6 +20,8 @@ description: 验证全局 AI Work Flow 配置并重新生成 Codex、Claude Code
 3. 默认运行 `node "<该脚本路径>" generate`。用户明确指定平台时，使用 `--platform codex`、`--platform claude`、`--platform opencode` 或逗号分隔组合。
 4. 报告更新的全局文件，并提醒用户新会话才会读取生成后的 agents。
 
+预检成功后自动完成生成和结果校验，不再询问是否继续生成。只有 validate/generate 失败才停止。
+
 ## 回复格式
 
 正常回答按需使用以下标签；无内容的标签省略。
