@@ -191,7 +191,8 @@ test('compiled governance is scoped to each role concern', () => {
   for (const role of assets.roles) {
     const prompt = compiled.get(role.id);
     assert.deepEqual(role.routing_sections, expectedSections[role.id], role.id);
-    assert.match(prompt, /只有用户.*明确要求浏览器自动化.*E2E 测试.*视觉验证.*才能调用 Browser、Chrome DevTools、Playwright/s, role.id);
+    assert.match(prompt, /只有用户.*明确要求浏览器自动化.*E2E 测试.*视觉验证.*才能调用 Browser、Chrome DevTools、Playwright CLI/s, role.id);
+    assert.doesNotMatch(prompt, /Playwright(?! CLI)/, role.id);
     assert.doesNotMatch(prompt, /Policy 与能力边界|`delegation_targets` 单独表示/, role.id);
     assert.doesNotMatch(assets.bodies.get(role.id), /XDG_CONFIG_HOME.*routing\.md/, role.id);
   }
@@ -980,7 +981,7 @@ test('coding owns discovery routing while generated prompts retain it', () => {
     assert.match(generated, /File Explorer 读取 `\.ai-work-flow\/index\/` 并聚焦发现/, platform);
     assert.match(generated, /ai-work-flow:routing-digest=/, platform);
   }
-  assert.match(routing, /File Explorer 读取代码导航索引并完成聚焦发现/);
+  assert.match(routing, /所有文件检索、未知路径定位和代码导航索引读取必须交由 File Explorer 执行/);
 });
 
 test('project navigation is a managed global skill and stores indexes in the project workflow directory', () => {
@@ -998,13 +999,15 @@ test('project navigation is a managed global skill and stores indexes in the pro
   assert.doesNotMatch(skill, /\.agents\/skills\/project-code-navigation/);
   for (const source of [coding, explorer, coder]) assert.match(source, /\.ai-work-flow\/index\//);
   assert.match(skill, /只读定位模式/);
+  assert.match(skill, /所有文件检索必须交由 File Explorer 执行/);
+  assert.doesNotMatch(skill, /其他发现角色/);
   assert.match(skill, /随实现维护模式/);
   assert.match(skill, /不得执行全局文件检索/);
   assert.match(skill, /同一轮改动中更新对应索引/);
   assert.match(skill, /新功能缺少导航索引视为未完成/);
   assert.match(explorer, /索引命中时直接验证记录路径，不扩大搜索/);
   assert.match(coder, /新功能缺少索引视为未完成/);
-  assert.match(routing, /File Explorer 读取代码导航索引/);
+  assert.match(routing, /所有文件检索、未知路径定位和代码导航索引读取必须交由 File Explorer 执行/);
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     assert.match(generatedBody(paths, platform, 'file-explorer', extension), /索引命中时直接验证记录路径/);
@@ -1145,7 +1148,7 @@ test('workflow browser automation requires an explicit user request', () => {
   assert.equal(result.status, 0, result.stderr);
 
   const assertions = [
-    /只有用户在当前请求中明确要求浏览器自动化、E2E 测试或视觉验证时.*才能调用 Browser、Chrome DevTools、Playwright 或操作可见浏览器/s,
+    /只有用户在当前请求中明确要求浏览器自动化、E2E 测试或视觉验证时.*才能调用 Browser、Chrome DevTools、Playwright CLI 或操作可见浏览器/s,
     /仓库存在前端或 E2E 配置不构成授权/,
     /获准后默认使用无头模式/
   ];
@@ -1155,6 +1158,7 @@ test('workflow browser automation requires an explicit user request', () => {
   for (const role of catalog.roles) {
     const prompt = loadAgentAssets().compiledBodies.get(role.id);
     for (const assertion of assertions) assert.match(prompt, assertion, role.id);
+    assert.doesNotMatch(prompt, /Playwright(?! CLI)/, role.id);
   }
 });
 

@@ -4,7 +4,7 @@
 
 ## 浏览器自动化门禁
 
-只有用户在当前请求中明确要求浏览器自动化、E2E 测试或视觉验证时，角色才能调用 Browser、Chrome DevTools、Playwright 或操作可见浏览器。仓库存在前端或 E2E 配置不构成授权。获准后默认使用无头模式，除非用户明确要求可见浏览器。
+只有用户在当前请求中明确要求浏览器自动化、E2E 测试或视觉验证时，角色才能调用 Browser、Chrome DevTools、Playwright CLI 或操作可见浏览器。仓库存在前端或 E2E 配置不构成授权。获准后默认使用无头模式，除非用户明确要求可见浏览器。
 
 <!-- ai-work-flow:section-end -->
 
@@ -57,7 +57,7 @@
 
 普通目录式流程为 **Git Operator prepare -> Full Stack Coder -> Git Operator commit/sync -> Code Reviewer -> Review Standards + Review Spec -> Git Operator integrate/cleanup**。单任务只使用 feature worktree；拆分任务按依赖 frontier 实施，非 Git 工作可在 scope 互斥时并行，Git 操作串行。`write_scope` 是初始并发提示而非写入授权；实现可修改完成验收所需的源码、测试、配置、导航索引、lockfile 和当前 task checkbox，不回写已批准的 plan/task 元数据。
 
-File Explorer 读取代码导航索引并完成聚焦发现；Full Stack Coder 在新增、移动、重命名、拆分、合并、删除文件或改变入口、路由、API、主职责时随实现维护 `.ai-work-flow/index/`。Coding 只委派执行具体 skill 的可执行角色，不把 skill 当作未指定所有者的工作。
+所有文件检索、未知路径定位和代码导航索引读取必须交由 File Explorer 执行；其他角色只消费其精确交接。Full Stack Coder 在新增、移动、重命名、拆分、合并、删除文件或改变入口、路由、API、主职责时随实现维护 `.ai-work-flow/index/`。Coding 只委派执行具体 skill 的可执行角色，不把 skill 当作未指定所有者的工作。
 
 <!-- ai-work-flow:section-end -->
 

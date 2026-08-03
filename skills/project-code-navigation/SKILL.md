@@ -11,7 +11,7 @@ description: 在当前项目创建、更新或使用 AI Work Flow 代码导航�
 
 ## 使用索引
 
-这是**只读定位模式**，由 File Explorer 或其他发现角色执行：
+这是**只读定位模式**，仅由 File Explorer 执行。所有文件检索必须交由 File Explorer 执行，其他角色只消费其精确交接：
 
 1. 先读取 `.ai-work-flow/index/feature-navigation.md`，再按目标功能只读取相关的 `frontend-navigation.md` 或 `backend-navigation.md`。
 2. 索引命中用户术语时，直接打开表中记录的入口文件；不得执行全局文件检索，也不得搜索无关路径。
