@@ -1981,6 +1981,8 @@ test('platform generation enforces the declared workspace access where supported
       assert.equal(openCode.permission.task, expectedTaskPermission, role.id);
     } else if (role.id === 'git-operator') {
       assert.deepEqual(openCode.permission.skill, { '*': 'deny', 'git-commit': 'allow' }, role.id);
+    } else if (role.id === 'file-explorer') {
+      assert.deepEqual(openCode.permission.skill, { '*': 'deny', 'project-code-navigation': 'allow' }, role.id);
     } else if (policy.filesystem === 'read') {
       assert.equal(openCode.permission.read, 'allow', role.id);
       assert.equal(openCode.permission.edit, 'deny', role.id);
@@ -2902,6 +2904,7 @@ test('OpenCode permissions deny every ungranted independent key', () => {
   const byId = new Map(catalog.roles.map((role) => [role.id, role]));
   const coding = byId.get('coding');
   const gitOperator = byId.get('git-operator');
+  const fileExplorer = byId.get('file-explorer');
   const reviewer = byId.get('review-standards');
   assert.equal(evaluateOpenCodePermission(coding, policies[coding.policy], 'task'), 'allow');
   for (const key of ['read', 'edit', 'glob', 'grep', 'bash', 'skill', 'webfetch', 'websearch', 'question', 'external_directory', 'unknown']) {
@@ -2909,6 +2912,8 @@ test('OpenCode permissions deny every ungranted independent key', () => {
   }
   assert.equal(evaluateOpenCodePermission(gitOperator, policies[gitOperator.policy], 'skill', 'git-commit'), 'allow');
   assert.equal(evaluateOpenCodePermission(gitOperator, policies[gitOperator.policy], 'skill', 'unrelated-skill'), 'deny');
+  assert.equal(evaluateOpenCodePermission(fileExplorer, policies[fileExplorer.policy], 'skill', 'project-code-navigation'), 'allow');
+  assert.equal(evaluateOpenCodePermission(fileExplorer, policies[fileExplorer.policy], 'skill', 'unrelated-skill'), 'deny');
   assert.equal(evaluateOpenCodePermission(reviewer, policies[reviewer.policy], 'task'), 'deny');
   assert.equal(evaluateOpenCodePermission(reviewer, policies[reviewer.policy], 'bash'), 'allow');
   assert.equal(capabilityMatrix('opencode', reviewer, policies.review).shell, 'instruction-only');

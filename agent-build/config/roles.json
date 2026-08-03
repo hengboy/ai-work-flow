@@ -41,7 +41,7 @@
       "policy": "discover",
       "controls": ["read-only-discovery"],
       "delegates": [],
-      "tools": ["Read", "Glob", "Grep", "Bash"],
+      "tools": ["Read", "Glob", "Grep", "Bash", "Skill"],
       "routing_sections": ["browser-governance", "handoff-governance"]
     },
     {

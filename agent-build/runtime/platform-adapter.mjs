@@ -151,6 +151,9 @@ export function opencodePermission(role, policy) {
   if (role.id === 'git-operator' && role.tools.includes('Skill')) {
     permission.skill = { '*': 'deny', 'git-commit': 'allow' };
   }
+  if (role.id === 'file-explorer' && role.tools.includes('Skill')) {
+    permission.skill = { '*': 'deny', 'project-code-navigation': 'allow' };
+  }
   if (policy.filesystem === 'none') {
     permission.read = 'deny';
     permission.edit = 'deny';
