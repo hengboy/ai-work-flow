@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import test from 'node:test';
 import { parse as parseToml } from '@iarna/toml';
 import YAML from 'yaml';
@@ -68,6 +68,18 @@ function environment() {
     config: resolve(base, 'config'),
     project: resolve(base, 'project')
   };
+}
+
+function snapshotTree(path, root = path) {
+  const entry = lstatSync(path);
+  const relativePath = relative(root, path) || '.';
+  if (entry.isSymbolicLink()) return [[relativePath, 'symbolic-link', readlinkSync(path)]];
+  if (entry.isFile()) return [[relativePath, 'file', readFileSync(path, 'utf8')]];
+  if (!entry.isDirectory()) return [[relativePath, 'other']];
+  return [
+    [relativePath, 'directory'],
+    ...readdirSync(path).sort().flatMap((name) => snapshotTree(resolve(path, name), root))
+  ];
 }
 
 function env(paths) {
@@ -2271,6 +2283,35 @@ test('obsolete managed tree cleanup rejects symlinks and rolls back transaction 
   ], { transactionPath: transaction, roots: [paths.home, paths.config], failAfterStep: 1 }), /Injected transaction failure/);
   assert.equal(readFileSync(resolve(linkedSkill, 'owned.txt'), 'utf8'), 'restore\n');
   assert.ok(!existsSync(transaction));
+});
+
+test('dangling managed links fail before any managed write', () => {
+  const installPaths = environment();
+  const linkedSkill = resolve(installPaths.home, '.codex/skills', executionSkill);
+  mkdirSync(resolve(linkedSkill, '..'), { recursive: true });
+  symlinkSync(resolve(installPaths.base, 'missing-skill'), linkedSkill);
+  const installBefore = snapshotTree(installPaths.base);
+
+  const rejectedInstall = install(installPaths);
+  assert.equal(rejectedInstall.status, 1, rejectedInstall.stderr);
+  assert.match(rejectedInstall.stderr, /symbolic link/);
+  assert.ok(lstatSync(linkedSkill).isSymbolicLink());
+  assert.deepEqual(snapshotTree(installPaths.base), installBefore);
+
+  const generatePaths = environment();
+  assert.equal(install(generatePaths).status, 0);
+  const obsoleteCli = ['execution', '-cli.mjs'].join('');
+  const linkedRuntimeFile = resolve(generatePaths.config, 'ai-work-flow/execution-runtime', obsoleteCli);
+  mkdirSync(resolve(linkedRuntimeFile, '..'), { recursive: true });
+  symlinkSync(resolve(generatePaths.base, 'missing-runtime'), linkedRuntimeFile);
+  mkdirSync(generatePaths.project, { recursive: true });
+  const generateBefore = snapshotTree(generatePaths.base);
+
+  const rejectedGenerate = run(generatePaths, 'generate');
+  assert.equal(rejectedGenerate.status, 1, rejectedGenerate.stderr);
+  assert.match(rejectedGenerate.stderr, /symbolic link/);
+  assert.ok(lstatSync(linkedRuntimeFile).isSymbolicLink());
+  assert.deepEqual(snapshotTree(generatePaths.base), generateBefore);
 });
 
 test('installation removes obsolete managed Git Committer templates and generated agents', () => {

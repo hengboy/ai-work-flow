@@ -204,16 +204,26 @@ function planExecutionRuntime(paths) {
   return plan;
 }
 
+function hasPathEntry(path) {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
 function planObsoleteManagedContent(paths) {
   const plan = [];
   for (const platformRoot of [paths.codexDir, paths.claudeDir, paths.openCodeDir, paths.dir]) {
     const skill = resolve(platformRoot, 'skills', OBSOLETE_SKILL);
-    if (existsSync(skill)) plan.push({ type: 'delete-tree', path: skill });
+    if (hasPathEntry(skill)) plan.push({ type: 'delete-tree', path: skill });
   }
   const installedRuntime = resolve(paths.dir, 'execution-runtime');
   for (const relativePath of OBSOLETE_EXECUTION_RUNTIME_FILES) {
     const target = resolve(installedRuntime, relativePath);
-    if (existsSync(target)) plan.push({ type: 'delete', path: target });
+    if (hasPathEntry(target)) plan.push({ type: 'delete', path: target });
   }
   return plan;
 }
