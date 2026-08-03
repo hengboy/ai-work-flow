@@ -17,7 +17,8 @@ const POLICY_CAPABILITIES = {
 const ROLE_KINDS = new Set(['primary', 'subagent', 'reviewer']);
 export const MAX_AGENT_DEPTH = 2;
 const MAX_COMPILED_PROMPT_LENGTH = 53_000;
-const ROLE_TEMPLATE_HEADINGS = ['职责结果', '输入前置条件', '确定性工作流', '暂停条件', '交接格式'];
+const ROLE_TEMPLATE_HEADINGS = ['职责结果', '不可违反约束', '输入前置条件', '确定性工作流', '暂停条件', '交接格式'];
+const CONTROL_MARKER = '<!-- ai-work-flow:controls -->';
 const ROUTING_SECTION_ASSIGNMENTS = {
   coding: ['browser-governance', 'retry-governance', 'planning-governance', 'orchestration-governance', 'change-handoff-governance', 'git-lifecycle-governance', 'review-orchestration-governance'],
   planning: ['browser-governance', 'retry-governance', 'planning-governance'],
@@ -77,12 +78,72 @@ function validateRole(role, errors) {
     if (typeof role[property] !== 'string' || !role[property]) errors.push(`Role ${role.id} must have a non-empty ${property}.`);
   }
   for (const property of Object.keys(role)) {
-    if (!['id', 'name', 'description', 'kind', 'default_primary', 'policy', 'delegates', 'tools', 'routing_sections'].includes(property)) errors.push(`Role ${role.id} has unknown field: ${property}.`);
+    if (!['id', 'name', 'description', 'kind', 'default_primary', 'policy', 'controls', 'delegates', 'tools', 'routing_sections'].includes(property)) errors.push(`Role ${role.id} has unknown field: ${property}.`);
   }
   if (role.default_primary !== undefined && typeof role.default_primary !== 'boolean') errors.push(`Role ${role.id}.default_primary must be a boolean.`);
   if (!Array.isArray(role.delegates)) errors.push(`Role ${role.id}.delegates must be an array.`);
   if (!Array.isArray(role.tools)) errors.push(`Role ${role.id}.tools must be an array.`);
+  if (!Array.isArray(role.controls) || role.controls.length === 0) errors.push(`Role ${role.id}.controls must be a non-empty array.`);
   if (!Array.isArray(role.routing_sections) || role.routing_sections.length === 0) errors.push(`Role ${role.id}.routing_sections must be a non-empty array.`);
+}
+
+function validateControls(controlDocument, roles, policyDocument, errors) {
+  if (!isPlainObject(controlDocument) || controlDocument.version !== 1 || !isPlainObject(controlDocument.controls)) {
+    errors.push('controls.json must contain version: 1 and a controls object.');
+    return {};
+  }
+  for (const property of Object.keys(controlDocument)) {
+    if (!['version', 'controls'].includes(property)) errors.push(`controls.json has unknown field: ${property}.`);
+  }
+  const controls = controlDocument.controls;
+  for (const [id, control] of Object.entries(controls)) {
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) errors.push(`Control id is invalid: ${id}.`);
+    if (!isPlainObject(control)) {
+      errors.push(`Control ${id} must be an object.`);
+      continue;
+    }
+    for (const property of Object.keys(control)) {
+      if (!['instruction', 'policy_requirements'].includes(property)) errors.push(`Control ${id} has unknown field: ${property}.`);
+    }
+    if (typeof control.instruction !== 'string' || !control.instruction.trim()) errors.push(`Control ${id} must have a non-empty instruction.`);
+    if (!isPlainObject(control.policy_requirements)) {
+      errors.push(`Control ${id}.policy_requirements must be an object.`);
+      continue;
+    }
+    for (const [capability, allowed] of Object.entries(control.policy_requirements)) {
+      const validValues = POLICY_CAPABILITIES[capability];
+      if (!validValues) {
+        errors.push(`Control ${id} has unknown capability: ${capability}.`);
+        continue;
+      }
+      if (!Array.isArray(allowed) || allowed.length === 0 || !unique(allowed)) {
+        errors.push(`Control ${id}.${capability} must be a non-empty array without duplicates.`);
+        continue;
+      }
+      for (const value of allowed) if (!validValues.has(value)) errors.push(`Control ${id}.${capability} has invalid policy value: ${value}.`);
+    }
+  }
+  const referenced = new Set();
+  for (const role of roles) {
+    if (!unique(role.controls ?? [])) errors.push(`Role ${role.id} has duplicate controls.`);
+    for (const id of role.controls ?? []) {
+      if (typeof id !== 'string' || !Object.hasOwn(controls, id)) errors.push(`Role ${role.id} references an unknown control: ${id}.`);
+      else referenced.add(id);
+    }
+    const policy = policyDocument?.policies?.[role.policy];
+    if (!policy) continue;
+    for (const id of role.controls ?? []) {
+      const requirements = controls[id]?.policy_requirements;
+      if (!isPlainObject(requirements)) continue;
+      for (const [capability, allowed] of Object.entries(requirements)) {
+        if (Array.isArray(allowed) && !allowed.includes(policy[capability])) {
+          errors.push(`Role ${role.id} policy does not satisfy control ${id}: ${capability}=${policy[capability]}.`);
+        }
+      }
+    }
+  }
+  for (const id of Object.keys(controls)) if (!referenced.has(id)) errors.push(`Control is not referenced: ${id}.`);
+  return controls;
 }
 
 function parseRoutingSections(source, errors) {
@@ -151,19 +212,26 @@ function validatePolicy(name, policy, errors) {
   }
 }
 
-function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames, configRoot, templatesRoot) {
+function validateAssetRelationships(catalog, controlDocument, policyDocument, defaults, bodyNames, configRoot, templatesRoot) {
   const errors = [];
-  if (!isPlainObject(catalog) || catalog.version !== 1 || !Array.isArray(catalog.roles)) {
-    errors.push('roles.json must contain version: 1 and a roles array.');
+  if (!isPlainObject(catalog) || catalog.version !== 2 || !Array.isArray(catalog.roles)) {
+    errors.push('roles.json must contain version: 2 and a roles array.');
   }
   const roles = Array.isArray(catalog?.roles) ? catalog.roles : [];
+  if (isPlainObject(catalog)) for (const property of Object.keys(catalog)) {
+    if (!['version', 'roles'].includes(property)) errors.push(`roles.json has unknown field: ${property}.`);
+  }
   for (const role of roles) validateRole(role, errors);
   if (!isPlainObject(policyDocument) || policyDocument.version !== 1 || !isPlainObject(policyDocument.policies)) {
     errors.push('policies.json must contain version: 1 and a policies object.');
   } else {
+    for (const property of Object.keys(policyDocument)) {
+      if (!['version', 'policies'].includes(property)) errors.push(`policies.json has unknown field: ${property}.`);
+    }
     for (const [name, policy] of Object.entries(policyDocument.policies)) validatePolicy(name, policy, errors);
     for (const role of roles) if (!isPlainObject(policyDocument.policies[role.policy])) errors.push(`Role ${role.id} references an unknown policy: ${role.policy}.`);
   }
+  const controls = validateControls(controlDocument, roles, policyDocument, errors);
   const ids = roles.map((role) => role?.id).filter(Boolean);
   if (!unique(ids)) errors.push('roles.json contains duplicate role ids.');
   const primaryRoles = roles.filter((role) => role.kind === 'primary');
@@ -207,6 +275,9 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
   if (!isPlainObject(defaults) || defaults.version !== 1 || !isPlainObject(defaults.roles)) {
     errors.push('default-config.json must contain version: 1 and a roles object.');
   } else {
+    for (const property of Object.keys(defaults)) {
+      if (!['version', 'roles'].includes(property)) errors.push(`default-config.json has unknown field: ${property}.`);
+    }
     const configured = Object.keys(defaults.roles);
     for (const id of ids) {
       if (!Object.hasOwn(defaults.roles, id)) errors.push(`default-config.json is missing role: ${id}.`);
@@ -237,12 +308,13 @@ function validateAssetRelationships(catalog, policyDocument, defaults, bodyNames
     if (headingPositions.some((position) => position < 0) || headingPositions.some((position, index) => index > 0 && position <= headingPositions[index - 1])) {
       errors.push(`Template ${name} must contain the ordered role interface headings: ${ROLE_TEMPLATE_HEADINGS.join(', ')}.`);
     }
+    if (body.split(CONTROL_MARKER).length - 1 !== 1) errors.push(`Template ${name} must contain exactly one controls placeholder.`);
     for (const marker of SPEC_FIRST_TEMPLATE_CONTRACTS[roleId] ?? []) {
       if (!body.includes(marker)) errors.push(`Template ${name} is missing spec-first contract marker: ${marker}.`);
     }
   }
   if (errors.length) fail(`Agent asset catalog is invalid:\n${errors.join('\n')}`);
-  return { routing, sections };
+  return { routing, sections, controls };
 }
 
 function delegationContract(role) {
@@ -257,12 +329,13 @@ export function loadAgentAssets(configRoot = resolve(import.meta.dirname, '..', 
   const config = resolve(configRoot);
   const templates = resolve(templatesRoot);
   const catalog = readJson(resolve(config, 'roles.json'));
+  const controlDocument = readJson(resolve(config, 'controls.json'));
   const policyDocument = readJson(resolve(config, 'policies.json'));
   const defaults = readJson(resolve(config, 'default-config.json'));
   const bodyNames = readdirSync(templates, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
     .map((entry) => entry.name);
-  const { routing, sections } = validateAssetRelationships(catalog, policyDocument, defaults, bodyNames, config, templates);
+  const { routing, sections, controls } = validateAssetRelationships(catalog, controlDocument, policyDocument, defaults, bodyNames, config, templates);
   const bodies = new Map(catalog.roles.map((role) => [
     role.id,
     readFileSync(resolve(templates, `${role.id}.md`), 'utf8').trimEnd()
@@ -270,7 +343,7 @@ export function loadAgentAssets(configRoot = resolve(import.meta.dirname, '..', 
   const routingDigest = createHash('sha256').update(routing).digest('hex');
   const compiledBodies = new Map(catalog.roles.map((role) => [
     role.id,
-    `<!-- ai-work-flow:routing-digest=${routingDigest} sections=${role.routing_sections.join(',')} -->\n\n${delegationContract(role)}\n\n${role.routing_sections.map((id) => sections.get(id)).join('\n\n')}\n\n${bodies.get(role.id)}`
+    `<!-- ai-work-flow:routing-digest=${routingDigest} sections=${role.routing_sections.join(',')} -->\n\n${delegationContract(role)}\n\n${role.routing_sections.map((id) => sections.get(id)).join('\n\n')}\n\n${bodies.get(role.id).replace(CONTROL_MARKER, `<!-- ai-work-flow:control-ids=${role.controls.join(',')} -->\n\n${role.controls.map((id) => `- ${controls[id].instruction}`).join('\n')}`)}`
   ]));
   const totalCompiledLength = [...compiledBodies.values()].reduce((total, body) => total + body.length, 0);
   if (totalCompiledLength > MAX_COMPILED_PROMPT_LENGTH) fail(`Compiled agent prompts exceed ${MAX_COMPILED_PROMPT_LENGTH} characters: ${totalCompiledLength}.`);
@@ -294,6 +367,7 @@ export function loadAgentAssets(configRoot = resolve(import.meta.dirname, '..', 
     configRoot: config,
     templatesRoot: templates,
     roles: catalog.roles,
+    controls,
     policies: policyDocument.policies,
     defaults,
     bodies,

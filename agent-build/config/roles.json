@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "roles": [
     {
       "id": "coding",
@@ -8,6 +8,7 @@
       "kind": "primary",
       "default_primary": true,
       "policy": "coding",
+      "controls": ["no-direct-workspace-operations", "coding-orchestration-only"],
       "delegates": [
         "file-explorer",
         "researcher",
@@ -27,6 +28,7 @@
       "description": "通过持续问询建立共享理解，并按 spec-first 状态机生成可实施计划。",
       "kind": "primary",
       "policy": "planning",
+      "controls": ["no-direct-workspace-operations", "planning-no-implementation"],
       "delegates": ["file-explorer", "planning-writer", "task-planner", "git-operator"],
       "tools": ["Task"],
       "routing_sections": ["browser-governance", "retry-governance", "planning-governance"]
@@ -37,6 +39,7 @@
       "description": "负责全仓库枚举、搜索和代码地图。",
       "kind": "subagent",
       "policy": "discover",
+      "controls": ["read-only-discovery"],
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash"],
       "routing_sections": ["browser-governance", "handoff-governance"]
@@ -47,6 +50,7 @@
       "description": "负责研究外部官方资料并将带引用的 Markdown 报告存入项目研究目录。",
       "kind": "subagent",
       "policy": "research",
+      "controls": ["official-research-only", "research-report-path-only", "single-research-report-only"],
       "delegates": [],
       "tools": ["WebSearch", "WebFetch", "Write"],
       "routing_sections": ["browser-governance", "handoff-governance"]
@@ -57,6 +61,7 @@
       "description": "负责维护项目普通文档。",
       "kind": "subagent",
       "policy": "write-docs",
+      "controls": ["ordinary-docs-only", "no-git-mutation"],
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
       "routing_sections": ["browser-governance", "handoff-governance"]
@@ -67,6 +72,7 @@
       "description": "单次只负责完整写入一个目录式规格或实施计划。",
       "kind": "subagent",
       "policy": "write-plans",
+      "controls": ["single-planning-artifact-only", "no-git-mutation"],
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
       "routing_sections": ["browser-governance", "handoff-governance", "planning-governance"]
@@ -77,6 +83,7 @@
       "description": "负责把已确认计划拆分为可跟踪的实施任务。",
       "kind": "subagent",
       "policy": "write-tasks",
+      "controls": ["task-artifacts-only"],
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
       "routing_sections": ["browser-governance", "handoff-governance", "planning-governance"]
@@ -87,6 +94,7 @@
       "description": "负责实现源码、测试、必要配置和修复。",
       "kind": "subagent",
       "policy": "write-code",
+      "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "no-git-mutation"],
       "delegates": ["file-explorer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Task"],
       "routing_sections": ["browser-governance", "retry-governance", "handoff-governance", "change-handoff-governance"]
@@ -97,6 +105,7 @@
       "description": "负责修复可复现 bug 和用户明确批准的阻塞 finding。",
       "kind": "subagent",
       "policy": "write-code",
+      "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "approved-findings-only", "no-git-mutation"],
       "delegates": ["file-explorer", "git-operator", "researcher", "document-maintainer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Task"],
       "routing_sections": ["browser-governance", "retry-governance", "handoff-governance", "change-handoff-governance"]
@@ -107,6 +116,7 @@
       "description": "负责受控执行 Git 工作流。",
       "kind": "subagent",
       "policy": "commit",
+      "controls": ["safe-local-git-only"],
       "delegates": [],
       "tools": ["Read", "Bash", "Skill"],
       "routing_sections": ["browser-governance", "planning-governance", "handoff-governance", "change-handoff-governance", "git-lifecycle-governance"]
@@ -117,6 +127,7 @@
       "description": "仅由 Coding 调用的双轴审查编排角色，负责在差异稳定后调度标准审查和规范审查。",
       "kind": "subagent",
       "policy": "review",
+      "controls": ["review-read-only", "fixed-review-range-only", "review-orchestration-only"],
       "delegates": ["review-standards", "review-spec"],
       "tools": ["Read", "Glob", "Grep", "Bash", "Task"],
       "routing_sections": ["browser-governance", "retry-governance", "handoff-governance", "review-evidence-governance", "review-orchestration-governance"]
@@ -127,6 +138,7 @@
       "description": "仅由 Code Reviewer 调用的终端角色，负责依据仓库标准审查稳定差异。",
       "kind": "reviewer",
       "policy": "review",
+      "controls": ["review-read-only", "fixed-review-range-only", "review-leaf-no-delegation"],
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash"],
       "routing_sections": ["browser-governance", "handoff-governance", "review-evidence-governance"]
@@ -137,6 +149,7 @@
       "description": "仅由 Code Reviewer 调用的终端角色，负责依据已批准的规范审查稳定差异。",
       "kind": "reviewer",
       "policy": "review",
+      "controls": ["review-read-only", "fixed-review-range-only", "review-leaf-no-delegation"],
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash"],
       "routing_sections": ["browser-governance", "handoff-governance", "review-evidence-governance"]

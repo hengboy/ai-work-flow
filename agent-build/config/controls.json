@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "controls": {
+    "no-direct-workspace-operations": {
+      "instruction": "主协调角色不得直接访问工作区、Shell、Skill 或 Git。",
+      "policy_requirements": {
+        "filesystem": ["none"],
+        "shell": ["none"],
+        "git": ["none"],
+        "write_scope": ["none"]
+      }
+    },
+    "coding-orchestration-only": {
+      "instruction": "Coding 只分类、委派、验证交接和推进已授权状态。",
+      "policy_requirements": {}
+    },
+    "planning-no-implementation": {
+      "instruction": "Planning 不实施、不评审，也不自动进入实施。",
+      "policy_requirements": {}
+    },
+    "read-only-discovery": {
+      "instruction": "File Explorer 只读定位，不编辑、联网或委派。",
+      "policy_requirements": {
+        "filesystem": ["read"],
+        "network": ["none"],
+        "write_scope": ["none"],
+        "delegation": ["none"]
+      }
+    },
+    "official-research-only": {
+      "instruction": "Researcher 只使用获准的官方来源，不读取本地项目。",
+      "policy_requirements": {
+        "network": ["official"],
+        "delegation": ["none"]
+      }
+    },
+    "research-report-path-only": {
+      "instruction": "只写 `.ai-work-flow/research/*.md`，不得创建子目录。",
+      "policy_requirements": {
+        "write_scope": ["research"]
+      }
+    },
+    "single-research-report-only": {
+      "instruction": "一次委派只写一个预先指定的研究报告。",
+      "policy_requirements": {}
+    },
+    "ordinary-docs-only": {
+      "instruction": "只修改指定普通文档，只读事实来源和直接依赖。",
+      "policy_requirements": {
+        "write_scope": ["docs"],
+        "delegation": ["none"]
+      }
+    },
+    "single-planning-artifact-only": {
+      "instruction": "一次只写一个指定的 spec 或 plan，不修改其他工件。",
+      "policy_requirements": {
+        "write_scope": ["planning-artifacts"],
+        "delegation": ["none"]
+      }
+    },
+    "task-artifacts-only": {
+      "instruction": "只维护当前 plan 的 `tasks/NN-*.md`，不修改其他内容或 Git 状态。",
+      "policy_requirements": {
+        "git": ["none"],
+        "write_scope": ["tasks"],
+        "delegation": ["none"]
+      }
+    },
+    "no-git-mutation": {
+      "instruction": "禁止 Git mutation；只允许工作流明确要求的只读查询。",
+      "policy_requirements": {
+        "git": ["none", "read"]
+      }
+    },
+    "implementation-worktree-only": {
+      "instruction": "只在指定干净 worktree 做验收所需的最小修改。",
+      "policy_requirements": {
+        "write_scope": ["code"]
+      }
+    },
+    "planning-artifacts-immutable": {
+      "instruction": "不得修改已批准规划工件或其他 task。",
+      "policy_requirements": {}
+    },
+    "approved-findings-only": {
+      "instruction": "Bug Fixer 只修复可复现 bug 或获批 blocking finding IDs。",
+      "policy_requirements": {}
+    },
+    "safe-local-git-only": {
+      "instruction": "禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑。",
+      "policy_requirements": {
+        "git": ["write"],
+        "write_scope": ["git"],
+        "delegation": ["none"]
+      }
+    },
+    "review-read-only": {
+      "instruction": "审查角色只读，不编辑、不执行 Git mutation。",
+      "policy_requirements": {
+        "filesystem": ["read"],
+        "git": ["read"],
+        "write_scope": ["none"]
+      }
+    },
+    "fixed-review-range-only": {
+      "instruction": "finding 只能来自固定 committed range 和 ReviewManifest 证据。",
+      "policy_requirements": {}
+    },
+    "review-orchestration-only": {
+      "instruction": "Code Reviewer 只能委派 Review Standards 和 Review Spec。",
+      "policy_requirements": {}
+    },
+    "review-leaf-no-delegation": {
+      "instruction": "审查叶子不得继续委派。",
+      "policy_requirements": {
+        "delegation": ["none", "review-only"]
+      }
+    }
+  }
+}

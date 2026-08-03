@@ -7,7 +7,7 @@ import { loadAgentAssets } from './asset-catalog.mjs';
 import { assertEnvironmentName, assertSafeEnvironmentPaths, environmentPath, loadResolvedConfiguration, validateConfiguration } from './config.mjs';
 import { globalPaths } from './paths.mjs';
 import { fail, isPlainObject, readJson, write } from './shared.mjs';
-import { applyGenerationPlan, capabilityMatrix, generationStatus, planGeneration } from './platform-adapter.mjs';
+import { applyGenerationPlan, capabilityMatrix, controlMatrix, generationStatus, planGeneration } from './platform-adapter.mjs';
 import { applyTransaction, recoverTransaction } from './transaction.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
@@ -446,7 +446,7 @@ function reportCapabilities(platforms, assets, config) {
       role,
       policy: assets.policies[role.policy],
       settings: config.roles[role.id][platform],
-      body: assets.bodies.get(role.id)
+      body: assets.compiledBodies.get(role.id)
     })))).digest('hex');
     console.log(`Generation digest ${platform}: ${digest}`);
     for (const role of assets.roles) {
@@ -455,6 +455,11 @@ function reportCapabilities(platforms, assets, config) {
       console.log(`CAPABILITY ${platform}/${role.id}: ${report}`);
       const warnings = Object.entries(matrix).filter(([, level]) => level !== 'enforced').map(([capability, level]) => `${capability}=${level}`);
       if (warnings.length) console.warn(`WARNING ${platform}/${role.id}: ${warnings.join(', ')}`);
+      const controlLevels = controlMatrix(platform, role, assets.policies[role.policy], assets.controls);
+      const controlReport = Object.entries(controlLevels).map(([controlId, level]) => `${controlId}=${level}`).join(', ');
+      console.log(`CONTROL ${platform}/${role.id}: ${controlReport}`);
+      const controlWarnings = Object.entries(controlLevels).filter(([, level]) => level !== 'enforced').map(([controlId, level]) => `${controlId}=${level}`);
+      if (controlWarnings.length) console.warn(`WARNING CONTROL ${platform}/${role.id}: ${controlWarnings.join(', ')}`);
     }
   }
 }

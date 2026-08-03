@@ -374,6 +374,19 @@ export function capabilityMatrix(platform, role, policy) {
   };
 }
 
+export function controlMatrix(platform, role, policy, controls) {
+  if (!strategies[platform]) fail(`Unknown platform: ${platform}`);
+  const rank = { unsupported: 0, 'instruction-only': 1, enforced: 2 };
+  return Object.fromEntries(role.controls.map((controlId) => {
+    const requirements = controls[controlId].policy_requirements;
+    const levels = Object.keys(requirements).map((capability) => capabilityLevel(platform, role, capability, policy[capability]));
+    const level = levels.length
+      ? levels.reduce((weakest, candidate) => rank[candidate] < rank[weakest] ? candidate : weakest, 'enforced')
+      : 'instruction-only';
+    return [controlId, level];
+  }));
+}
+
 // --- Entry point ---
 
 export function planGeneration({ platform, paths, roles, policies, config, bodies }) {

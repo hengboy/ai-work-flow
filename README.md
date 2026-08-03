@@ -279,7 +279,7 @@ Checkpoint 只接受当前格式；旧字段、旧绝对路径或未知格式不
 
 ## 平台能力边界
 
-角色模板中的权限和职责是工作流契约，但三平台不能统一强制所有边界。安装、生成和 `env status` 会输出每个平台/角色的 capability matrix；级别含义如下：
+角色模板中的权限和职责是工作流契约，但三平台不能统一强制所有边界。`agent-build/config/controls.json` 定义稳定控制 ID、单条约束和可映射的 Policy 要求，`roles.json` 按角色声明控制项。安装、生成和 `env status` 保留每个平台/角色的 `CAPABILITY` matrix，并在其后输出 `CONTROL` matrix；`WARNING CONTROL` 汇总所有未达到 `enforced` 的控制项。级别含义如下：
 
 | 级别 | 含义 |
 | --- | --- |
@@ -287,7 +287,7 @@ Checkpoint 只接受当前格式；旧字段、旧绝对路径或未知格式不
 | `instruction-only` | 只能依赖 agent 指令遵守，平台没有等价强制能力 |
 | `unsupported` | 当前平台 adapter 无法表达或证明该约束 |
 
-关键差异：Codex 只对允许读取/写入的文件系统模式提供部分沙箱强制；Claude Code 的文件系统边界是 `instruction-only`；OpenCode 能强制文件系统、是否允许委派，以及 Planning Writer、Task Planner、Researcher 的生成路径类别，但不能按一次委派动态限制 Writer 只能写 spec 或 plan，也通常不能限制具体委派目标。阶段顺序、单目标写入和用户确认仍是 `instruction-only`。三平台的 shell、Git 和委派目标多为 `instruction-only`，network/browser 约束均为 `unsupported`。因此这些角色边界不能视为统一安全沙箱，运行高风险任务前应检查 `env status` 的 capability 警告。
+关键差异：Codex 只对允许读取/写入的文件系统模式提供部分沙箱强制；Claude Code 的文件系统边界是 `instruction-only`；OpenCode 能强制文件系统、是否允许委派，以及 Researcher 的报告路径类别，但不能按一次委派动态限制 Writer 只能写 spec 或 plan，也通常不能限制具体委派目标。控制项包含多个 capability 时采用最弱级别，顺序为 `unsupported < instruction-only < enforced`；没有平台能力映射的语义控制固定为 `instruction-only`。阶段顺序、单目标写入和用户确认仍是 `instruction-only`。三平台的 shell、Git 和委派目标多为 `instruction-only`，network/browser 约束均为 `unsupported`。因此这些角色边界不能视为统一安全沙箱，运行高风险任务前应检查 `env status` 的 capability 与 control 警告。
 
 ## 安全与一致性
 

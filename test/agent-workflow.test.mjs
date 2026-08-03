@@ -10,7 +10,7 @@ import YAML from 'yaml';
 
 import { MARKER_END, MARKER_START, updateManagedMarker } from '../agent-build/runtime/managed-content.mjs';
 import { loadAgentAssets } from '../agent-build/runtime/asset-catalog.mjs';
-import { capabilityEvidence, capabilityMatrix, evaluateOpenCodePermission } from '../agent-build/runtime/platform-adapter.mjs';
+import { capabilityEvidence, capabilityMatrix, controlMatrix, evaluateOpenCodePermission } from '../agent-build/runtime/platform-adapter.mjs';
 import { applyTransaction, recoverTransaction } from '../agent-build/runtime/transaction.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -19,6 +19,7 @@ const configDir = resolve(root, 'agent-build/config');
 const templatesDir = resolve(root, 'agent-build/templates');
 const executionSkill = `run-${['M', 'att'].join('').toLowerCase()}-spec-to-completion`;
 const catalog = JSON.parse(readFileSync(resolve(configDir, 'roles.json'), 'utf8'));
+const controls = JSON.parse(readFileSync(resolve(configDir, 'controls.json'), 'utf8')).controls;
 const policies = JSON.parse(readFileSync(resolve(configDir, 'policies.json'), 'utf8')).policies;
 const managedSkillDirectories = [
   'generate-ai-work-flow-agents',
@@ -169,6 +170,40 @@ test('every role has one role-specific body template and a compiled governance b
   }
 });
 
+test('every role compiles one ordered non-violation section from declared controls', () => {
+  const assets = loadAgentAssets();
+  assert.equal(catalog.version, 2);
+  for (const role of catalog.roles) {
+    assert.ok(role.controls.length > 0, role.id);
+    assert.equal(new Set(role.controls).size, role.controls.length, role.id);
+    const template = assets.bodies.get(role.id);
+    const compiled = assets.compiledBodies.get(role.id);
+    assert.equal((template.match(/^## 不可违反约束$/gm) ?? []).length, 1, role.id);
+    assert.equal((template.match(/<!-- ai-work-flow:controls -->/g) ?? []).length, 1, role.id);
+    assert.equal((compiled.match(/^## 不可违反约束$/gm) ?? []).length, 1, role.id);
+    assert.ok(compiled.indexOf('## 职责结果') < compiled.indexOf('## 不可违反约束'), role.id);
+    assert.ok(compiled.indexOf('## 不可违反约束') < compiled.indexOf('## 输入前置条件'), role.id);
+    assert.match(compiled, new RegExp(`<!-- ai-work-flow:control-ids=${role.controls.join(',')} -->`), role.id);
+    for (const controlId of role.controls) {
+      const instruction = controls[controlId].instruction;
+      assert.equal(compiled.split(instruction).length - 1, 1, `${role.id}/${controlId}`);
+    }
+  }
+});
+
+test('control matrix reports the weakest platform enforcement level', () => {
+  const researcher = catalog.roles.find((role) => role.id === 'researcher');
+  const researcherMatrix = controlMatrix('opencode', researcher, policies.research, controls);
+  assert.equal(researcherMatrix['research-report-path-only'], 'enforced');
+  assert.equal(researcherMatrix['official-research-only'], 'unsupported');
+  assert.equal(researcherMatrix['single-research-report-only'], 'instruction-only');
+
+  const reviewer = catalog.roles.find((role) => role.id === 'review-standards');
+  const reviewerMatrix = controlMatrix('opencode', reviewer, policies.review, controls);
+  assert.equal(reviewerMatrix['review-read-only'], 'instruction-only');
+  assert.equal(reviewerMatrix['review-leaf-no-delegation'], 'enforced');
+});
+
 test('compiled governance is scoped to each role concern', () => {
   const assets = loadAgentAssets();
   const compiled = assets.compiledBodies;
@@ -304,7 +339,7 @@ test('role bodies derive their common structure and reply sections from the cata
     const body = readFileSync(resolve(templatesDir, `${role.id}.md`), 'utf8');
     assert.match(body, new RegExp(`^# ${role.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), role.id);
     assert.match(body, new RegExp(`你是 \\*\\*${role.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*。`), role.id);
-    const positions = ['职责结果', '输入前置条件', '确定性工作流', '暂停条件', '交接格式']
+    const positions = ['职责结果', '不可违反约束', '输入前置条件', '确定性工作流', '暂停条件', '交接格式']
       .map((heading) => body.indexOf(`## ${heading}`));
     assert.ok(positions.every((position) => position >= 0), `${role.id}: role interface headings`);
     assert.deepEqual(positions, [...positions].sort((left, right) => left - right), `${role.id}: role interface order`);
@@ -1051,6 +1086,7 @@ test('bug fixer is a narrowly governed coding subagent on every platform', () =>
   const coding = catalog.roles.find((candidate) => candidate.id === 'coding');
   const defaults = JSON.parse(readFileSync(resolve(configDir, 'default-config.json'), 'utf8'));
   const body = readFileSync(resolve(templatesDir, 'bug-fixer.md'), 'utf8');
+  const compiled = loadAgentAssets().compiledBodies.get('bug-fixer');
 
   assert.equal(catalog.roles.length, 13);
   assert.equal(role.kind, 'subagent');
@@ -1066,8 +1102,7 @@ test('bug fixer is a narrowly governed coding subagent on every platform', () =>
   });
   assert.match(body, /bug 必须有复现方式、预期和实际行为/);
   assert.match(body, /当前审查结果、blocking 分类和获批 IDs/);
-  assert.match(body, /只修复可复现 bug.*用户明确批准.*blocking finding IDs/s);
-  assert.match(body, /不得.*自行评审、提交或扩大范围/);
+  assert.match(compiled, /Bug Fixer 只修复可复现 bug 或获批 blocking finding IDs/);
   assert.match(body, /未知路径委派 File Explorer/);
   assert.match(body, /Git Operator 执行/);
   assert.match(body, /普通目录式 finding 修复.*不执行第二次评审/s);
@@ -1116,7 +1151,7 @@ test('review roles declare one non-recursive aggregation hop', () => {
     assert.match(byId.get(role).description, /仅由 Code Reviewer 调用/);
     assert.match(byId.get(role).description, /终端/);
   }
-  assert.match(reviewer, /不得.*重新委派另一个 Code Reviewer/s);
+  assert.match(loadAgentAssets().compiledBodies.get('code-reviewer'), /Code Reviewer 只能委派 Review Standards 和 Review Spec/);
   assert.deepEqual(byId.get('code-reviewer').delegates, ['review-standards', 'review-spec']);
   assert.deepEqual(byId.get('review-standards').delegates, []);
   assert.deepEqual(byId.get('review-spec').delegates, []);
@@ -1172,7 +1207,7 @@ test('planning workflow persists an approved spec before its digest-bound plan',
   const compiledCoding = loadAgentAssets().compiledBodies.get('coding');
 
   assert.match(planningWriter, /\.ai-work-flow\/plans\/<plan-id>\/spec\.md.*同目录 `plan\.md`/s);
-  assert.match(planningWriter, /不得操作 Git、实施、委派/);
+  assert.match(planningWriter, /不得执行 Git mutation/);
   assert.match(planningWriter, /## Spec 模板/);
   assert.match(planningWriter, /## Plan 模板/);
   assert.match(compiledCoding, /`source_spec_digest`/);
@@ -1187,7 +1222,7 @@ test('planning workflow persists an approved spec before its digest-bound plan',
     const generatedPlanningWriter = readFileSync(agentPath(paths, platform, 'planning-writer', extension), 'utf8');
     const generatedCoding = generatedBody(paths, platform, 'coding', extension);
     assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedPlanningWriter) : generatedBody(paths, platform, 'planning-writer', extension), /source_spec_digest/, platform);
-    assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedPlanningWriter) : generatedBody(paths, platform, 'planning-writer', extension), /不得操作 Git、实施、委派/, platform);
+    assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedPlanningWriter) : generatedBody(paths, platform, 'planning-writer', extension), /禁止 Git mutation/, platform);
     assert.match(generatedCoding, /旧平铺计划.*一律拒绝/s, platform);
   }
   assert.match(coding, /原始完整字节.*SHA-256/s);
@@ -1251,7 +1286,7 @@ test('planning writer catalog and prompt describe one exact spec or plan target'
   const role = catalog.roles.find((candidate) => candidate.id === 'planning-writer');
   const prompt = loadAgentAssets().compiledBodies.get('planning-writer');
   assert.equal(role.description, '单次只负责完整写入一个目录式规格或实施计划。');
-  assert.match(prompt, /单次只负责完整写入一个目录式规格或实施计划/);
+  assert.match(prompt, /一次只写一个指定的 spec 或 plan/);
   assert.match(prompt, /目标缺失、同时给出两个目标.*必须阻塞/);
   assert.doesNotMatch(role.description, /ADR|交接|跟踪器/);
 });
@@ -1353,10 +1388,8 @@ test('researcher stores Markdown reports in a narrow project research directory'
     write_scope: 'research',
     delegation: 'none'
   });
-  assert.match(prompt, /只研究外部官方来源/);
-  assert.match(prompt, /不得读取或枚举本地项目内容/);
-  assert.match(prompt, /`\.ai-work-flow\/research\/<research-topic>\.md`/);
-  assert.match(prompt, /目录不存在时可创建 `\.ai-work-flow\/research\/`，不得创建子目录/);
+  assert.match(prompt, /只使用获准的官方来源，不读取本地项目/);
+  assert.match(prompt, /只写 `\.ai-work-flow\/research\/\*\.md`，不得创建子目录/);
   assert.match(prompt, /Markdown/);
 
   const paths = environment();
@@ -1449,6 +1482,7 @@ test('planning confirms plan splitting and commits only final planning artifacts
   const planning = readFileSync(resolve(templatesDir, 'planning.md'), 'utf8');
   const planningWriter = readFileSync(resolve(templatesDir, 'planning-writer.md'), 'utf8');
   const taskPlanner = readFileSync(resolve(templatesDir, 'task-planner.md'), 'utf8');
+  const compiledTaskPlanner = loadAgentAssets().compiledBodies.get('task-planner');
   const gitOperator = readFileSync(resolve(templatesDir, 'git-operator.md'), 'utf8');
 
   assert.match(planning, /\.ai-work-flow\/plans\/<plan-id>\/spec\.md/);
@@ -1469,7 +1503,7 @@ test('planning confirms plan splitting and commits only final planning artifacts
   assert.match(planningWriter, /写 spec 时不创建或修改 plan\/tasks.*写 plan 时不创建或修改 spec\/tasks/s);
   assert.match(planningWriter, /ready-for-implementation/);
   assert.match(taskPlanner, /spec\.md.*plan\.md.*File Explorer.*代码地图/s);
-  assert.match(taskPlanner, /获准写入时.*只能写入或删除.*\.ai-work-flow\/plans\/<plan-id>\/tasks\//s);
+  assert.match(compiledTaskPlanner, /只维护当前 plan 的 `tasks\/NN-\*\.md`/);
   assert.match(taskPlanner, /草案阶段.*不得创建、修改或删除任何 task 文件/s);
   assert.match(taskPlanner, /写入阶段.*完整任务草案.*用户已明确确认.*颗粒度/s);
   assert.match(taskPlanner, /校验每项 `source_plan_digest`.*待写内容与已确认草案完全一致/s);
@@ -1480,6 +1514,7 @@ test('planning confirms plan splitting and commits only final planning artifacts
 
 test('task planner emits a deterministic dependency-safe task artifact contract', () => {
   const body = readFileSync(resolve(templatesDir, 'task-planner.md'), 'utf8');
+  const compiled = loadAgentAssets().compiledBodies.get('task-planner');
   for (const field of ['task_id:', 'order:', 'blocked_by:', 'source_plan:', 'source_plan_digest:', 'write_scope:']) {
     assert.match(body, new RegExp(field), field);
   }
@@ -1505,7 +1540,7 @@ test('task planner emits a deterministic dependency-safe task artifact contract'
   assert.match(body, /source_plan: `\.\.\/plan\.md`/);
   assert.match(body, /`source_plan_digest`.*完整字节.*SHA-256/s);
   assert.match(body, /`tasks\/`.*只包含.*`NN-<short-name>\.md`/s);
-  assert.match(body, /不得创建 `index\.md` 或其他文件/);
+  assert.match(compiled, /只维护当前 plan 的 `tasks\/NN-\*\.md`，不修改其他内容或 Git 状态/);
   assert.doesNotMatch(body, /^- plan_id:/m);
   assert.doesNotMatch(body, /^- plan_digest:/m);
   assert.doesNotMatch(body, /^---$/m);
@@ -1552,17 +1587,18 @@ test('implementation roles preserve planning and task commit boundaries', () => 
   const operator = readFileSync(resolve(templatesDir, 'git-operator.md'), 'utf8');
   const reviewer = readFileSync(resolve(templatesDir, 'code-reviewer.md'), 'utf8');
   const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
+  const compiled = loadAgentAssets().compiledBodies;
 
   assert.match(coder, /task 的 `write_scope` 是非穷举并发提示，不是授权边界/);
   assert.match(coder, /task 模式可修改必要源码、测试、配置、lockfile、索引和自己的 checkbox/);
-  assert.match(coder, /不得.*其他 task/s);
+  assert.match(compiled.get('full-stack-coder'), /不得修改已批准规划工件或其他 task/);
   assert.match(coder, /acceptance evidence 与 Verification/);
 
   assert.match(operator, /planning commit.*`spec\.md`\/`plan\.md`/s);
   assert.match(operator, /规划 PathChange 仅允许当前 spec、plan 与完整 tasks/);
   assert.match(operator, /task.*按编号汇入 feature/s);
   assert.match(operator, /串行执行/);
-  assert.match(operator, /不得.*push.*amend.*reset.*clean.*隐式 stash.*跳 hook/s);
+  assert.match(compiled.get('git-operator'), /禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑/);
 
   assert.match(reviewer, /完整 spec context\/bundle/);
   assert.match(reviewer, /source binding.*bundle 完整性/s);
@@ -1734,7 +1770,7 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
   assert.match(routing, /上下文只使用 `git show <review-commit>:<path>`/);
   assert.match(routing, /不得从 committed diff 外新增 finding/);
   assert.match(bodies['code-reviewer'], /不合并、不跨轴重排/);
-  assert.match(bodies['code-reviewer'], /不得读取工作树文件取证/);
+  assert.match(compiledBodies.get('code-reviewer'), /审查角色只读，不编辑、不执行 Git mutation/);
   assert.match(compiledBodies.get('code-reviewer'), /只根据不可变 ReviewManifest 调度/);
   assert.match(compiledBodies.get('code-reviewer'), /新会话重试一次/);
   assert.match(compiledBodies.get('code-reviewer'), /manifest、digest、SHA、shards 和来源均不变/);
@@ -1979,6 +2015,35 @@ test('capability reporting reflects adapter limits and rejects invalid policy ca
   assert.equal(invalidDelegate.status, 1);
   assert.match(invalidDelegate.stderr, /delegates to an unknown role/);
   assert.equal(readFileSync(generated, 'utf8'), before);
+});
+
+test('CLI reports control enforcement and control text participates in generation drift', () => {
+  const paths = environment();
+  const installed = install(paths);
+  assert.equal(installed.status, 0, installed.stderr);
+  assert.equal(
+    readFileSync(resolve(paths.config, 'ai-work-flow/config/controls.json'), 'utf8'),
+    readFileSync(resolve(configDir, 'controls.json'), 'utf8')
+  );
+  assert.equal((installed.stdout.match(/^CONTROL [^\n]+$/gm) ?? []).length, 3 * catalog.roles.length);
+  assert.equal((installed.stderr.match(/^WARNING CONTROL [^\n]+$/gm) ?? []).length, 3 * catalog.roles.length);
+  assert.match(installed.stdout, /CONTROL opencode\/researcher: official-research-only=unsupported, research-report-path-only=enforced, single-research-report-only=instruction-only/);
+  assert.match(installed.stderr, /WARNING CONTROL opencode\/researcher: official-research-only=unsupported, single-research-report-only=instruction-only/);
+
+  const beforeDigest = installed.stdout.match(/Generation digest codex: ([a-f0-9]{64})/)?.[1];
+  const generated = agentPath(paths, 'codex', 'coding', 'toml');
+  const beforeAgent = readFileSync(generated, 'utf8');
+  const controlPath = resolve(paths.config, 'ai-work-flow/config/controls.json');
+  const changedControls = JSON.parse(readFileSync(controlPath, 'utf8'));
+  changedControls.controls['coding-orchestration-only'].instruction += '仅用于摘要变更。';
+  writeFileSync(controlPath, `${JSON.stringify(changedControls, null, 2)}\n`);
+
+  const regenerated = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
+  assert.equal(regenerated.status, 0, regenerated.stderr);
+  const afterDigest = regenerated.stdout.match(/Generation digest codex: ([a-f0-9]{64})/)?.[1];
+  assert.notEqual(afterDigest, beforeDigest);
+  assert.notEqual(readFileSync(generated, 'utf8'), beforeAgent);
+  assert.match(readFileSync(generated, 'utf8'), /仅用于摘要变更/);
 });
 
 test('only writer bodies require git diff reporting', () => {
@@ -2348,6 +2413,25 @@ test('the installed asset catalog rejects inconsistent templates before generati
   assert.equal(readFileSync(generated, 'utf8'), 'preserved agent\n');
 });
 
+test('invalid installed controls cannot mutate generated agents or runtime state', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const generated = agentPath(paths, 'codex', 'coding', 'toml');
+  const runtime = resolve(paths.config, 'ai-work-flow/agent-workflow.mjs');
+  const environmentFile = defaultEnvironmentPath(paths);
+  const before = new Map([generated, runtime, environmentFile].map((path) => [path, readFileSync(path, 'utf8')]));
+  const controlPath = resolve(paths.config, 'ai-work-flow/config/controls.json');
+  const invalid = JSON.parse(readFileSync(controlPath, 'utf8'));
+  invalid.controls['coding-orchestration-only'].instruction = '';
+  writeFileSync(controlPath, `${JSON.stringify(invalid, null, 2)}\n`);
+
+  const result = runInstalledWorkflow(paths, 'generate', '--platform', 'codex');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /must have a non-empty instruction/);
+  for (const [path, contents] of before) assert.equal(readFileSync(path, 'utf8'), contents, path);
+  assert.ok(!existsSync(resolve(paths.config, 'ai-work-flow/.generation-transaction.json')));
+});
+
 test('a platform planning failure prevents writes for every requested platform', () => {
   const paths = environment();
   assert.equal(run(paths, 'init').status, 0);
@@ -2676,6 +2760,44 @@ test('catalog compiles referenced routing sections and rejects invalid governanc
     mutate(catalog);
     writeFileSync(path, `${JSON.stringify(catalog, null, 2)}\n`);
     assert.throws(() => loadAgentAssets(root.config, root.templates), /Agent asset catalog is invalid/);
+  }
+});
+
+test('control catalog validation fails closed on malformed interfaces and relationships', () => {
+  const cases = [
+    ['roles version', 'roles.json', (document) => { document.version = 1; }, /roles\.json must contain version: 2/],
+    ['controls version', 'controls.json', (document) => { document.version = 2; }, /controls\.json must contain version: 1/],
+    ['roles unknown field', 'roles.json', (document) => { document.extra = true; }, /roles\.json has unknown field: extra/],
+    ['policies unknown field', 'policies.json', (document) => { document.extra = true; }, /policies\.json has unknown field: extra/],
+    ['defaults unknown field', 'default-config.json', (document) => { document.extra = true; }, /default-config\.json has unknown field: extra/],
+    ['control unknown field', 'controls.json', (document) => { document.controls['coding-orchestration-only'].extra = true; }, /Control coding-orchestration-only has unknown field: extra/],
+    ['empty instruction', 'controls.json', (document) => { document.controls['coding-orchestration-only'].instruction = ''; }, /must have a non-empty instruction/],
+    ['unknown capability', 'controls.json', (document) => { document.controls['coding-orchestration-only'].policy_requirements.unknown = ['none']; }, /has unknown capability: unknown/],
+    ['invalid value', 'controls.json', (document) => { document.controls['coding-orchestration-only'].policy_requirements.git = ['invalid']; }, /has invalid policy value: invalid/],
+    ['duplicate allowed value', 'controls.json', (document) => { document.controls['no-git-mutation'].policy_requirements.git = ['read', 'read']; }, /must be a non-empty array without duplicates/],
+    ['duplicate role reference', 'roles.json', (document) => { document.roles[0].controls.push(document.roles[0].controls[0]); }, /Role coding has duplicate controls/],
+    ['unknown role reference', 'roles.json', (document) => { document.roles[0].controls[0] = 'missing-control'; }, /references an unknown control: missing-control/],
+    ['unreferenced control', 'roles.json', (document) => {
+      const role = document.roles.find((candidate) => candidate.id === 'bug-fixer');
+      role.controls = role.controls.filter((id) => id !== 'approved-findings-only');
+    }, /Control is not referenced: approved-findings-only/],
+    ['policy conflict', 'controls.json', (document) => { document.controls['approved-findings-only'].policy_requirements.write_scope = ['docs']; }, /policy does not satisfy control approved-findings-only/]
+  ];
+
+  for (const [name, file, mutate, expected] of cases) {
+    const assets = copiedAssets();
+    const path = resolve(assets.config, file);
+    const document = JSON.parse(readFileSync(path, 'utf8'));
+    mutate(document);
+    writeFileSync(path, `${JSON.stringify(document, null, 2)}\n`);
+    assert.throws(() => loadAgentAssets(assets.config, assets.templates), expected, name);
+  }
+
+  for (const [name, replacement] of [['missing', ''], ['duplicate', '<!-- ai-work-flow:controls -->\n<!-- ai-work-flow:controls -->']]) {
+    const assets = copiedAssets();
+    const path = resolve(assets.templates, 'coding.md');
+    writeFileSync(path, readFileSync(path, 'utf8').replace('<!-- ai-work-flow:controls -->', replacement));
+    assert.throws(() => loadAgentAssets(assets.config, assets.templates), /must contain exactly one controls placeholder/, name);
   }
 });
 
