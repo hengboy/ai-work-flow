@@ -31,7 +31,7 @@
 `source_plan_digest` 是已保存 `plan.md` 原始完整字节的 SHA-256 小写十六进制摘要，不得基于规范化文本或内容摘要计算。每个 task 文件的完整内容必须单独作为一个带 `markdown` info string 的 Markdown fenced code block 输出，格式如下。不得在 fenced code block 外输出 task 文件正文；fence 外只可报告文件名和摘要。
 
 ```markdown
-# NN - <Task title>
+# NN - <任务标题>
 
 - task_id: `<unique-task-id>`
 - order: `NN`
@@ -40,23 +40,23 @@
 - source_plan_digest: `<sha256>`
 - write_scope: `<expected primary paths or modules; non-exhaustive>`
 
-## Outcome
+## 预期结果
 
 描述该 task 完成后可观察到的单一结果。
 
-## Implementation Checklist
+## 实施清单
 
 - [ ] 实施项
 
-## Acceptance Criteria
+## 验收标准
 
 - [ ] 可观察、可判定标准
 
-## Verification Steps
+## 验证步骤
 
 - [ ] 命令/操作/预期结果
 
-## Out of Scope
+## 范围外事项
 
 说明该 task 明确不处理的事项。
 ```

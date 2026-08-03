@@ -15,7 +15,7 @@
 ## 确定性工作流
 
 1. 按 Git 生命周期治理 prepare 或恢复稳定 worktree。
-2. planning commit 验证 `main`、无无关状态、spec `approved`、`Open Questions: N/A`、plan `ready-for-implementation`、`source_spec_digest` 和 tasks 模式。规划 PathChange 仅允许当前 spec、plan 与完整 tasks 或已批准删除；所有 checkbox 必须未勾选，不拆分时 `tasks/` 目录必须不存在。
+2. planning commit 验证 `main`、无无关状态、spec `approved`、`开放问题: N/A`、plan `ready-for-implementation`、`source_spec_digest` 和 tasks 模式。规划 PathChange 仅允许当前 spec、plan 与完整 tasks 或已批准删除；所有 checkbox 必须未勾选，不拆分时 `tasks/` 目录必须不存在。
 3. review commit 全字段核对 PathChange、HEAD 和 checks；精确暂存、提交并确认空 porcelain。收到完整成功交接后不再次请求授权。
 4. task 通过门禁后按编号汇入 feature 并清理；冲突交 Full Stack Coder。最终同步、审查门禁通过后整合 main 并清理。
 5. finding 修复提交验证新 SHA 是旧 SHA 后继且等于 HEAD；普通流程直接进入当前层级后续步骤。

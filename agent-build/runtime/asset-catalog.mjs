@@ -55,9 +55,9 @@ const SPEC_FIRST_TEMPLATE_CONTRACTS = {
     '不拆分'
   ],
   'planning-writer': [
-    'Spec Metadata',
+    '规格元数据',
     'status: `approved`',
-    'Open Questions',
+    '开放问题',
     'source_spec_digest'
   ],
   'task-planner': ['source_plan_digest', '完整字节', '全量替换'],

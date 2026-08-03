@@ -22,7 +22,7 @@
 
 1. **冲突门禁**：委派 File Explorer 检查 `.ai-work-flow/plans/<plan-id>/`。同名目录代表同一方案；需求不同或所有权不清时让用户选择继续该 ID 或更换 ID，未选择不覆盖。
 2. **需求确认**：首次或需求变化时持续问询，满足全部理解退出条件并取得共享理解批准后才可继续。声称需求未变化时，File Explorer 读取并校验现有 spec，Planning 总结后再次取得批准；未变化的 spec 不重写。
-3. **规格写入或复用**：委派 Planning Writer 只写 `.ai-work-flow/plans/<plan-id>/spec.md`。写后由 File Explorer 校验固定章节、`plan-id`、`status: approved`、`Open Questions` 正文 `N/A`，且没有文件清单、实施步骤、技术方案或任务拆分。失败立即停止。
+3. **规格写入或复用**：委派 Planning Writer 只写 `.ai-work-flow/plans/<plan-id>/spec.md`。写后由 File Explorer 校验固定章节、`plan-id`、`status: approved`、`开放问题` 正文 `N/A`，且没有文件清单、实施步骤、技术方案或任务拆分。失败立即停止。
 4. **规格摘要**：File Explorer 对保存后原始完整字节计算 SHA-256 小写 64 位摘要；不得规范化文本。读取或摘要失败时停止，不得写 plan。
 5. **计划写入与绑定**：委派 Planning Writer 只写同目录 `plan.md`，使用 `status: ready-for-implementation`、精确 `source_spec` 与实际摘要。File Explorer 验证固定章节、完整内容、source binding、摘要和 spec 状态；任一失败停止。
 6. **任务模式选择**：只报告目录、spec/plan 路径并提示用户打开查看，不输出完整正文；询问“拆分”或“不拆分”。

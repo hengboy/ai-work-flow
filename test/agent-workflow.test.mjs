@@ -777,8 +777,8 @@ test('install atomically adds a completely missing planning writer with spec-fir
   const defaults = JSON.parse(readFileSync(resolve(configDir, 'default-config.json'), 'utf8'));
   assert.deepEqual(migrated.roles['planning-writer'], defaults.roles['planning-writer']);
   assert.match(readFileSync(agentPath(paths, 'codex', 'planning-writer', 'toml'), 'utf8'), /source_spec_digest/);
-  assert.match(readFileSync(agentPath(paths, 'claude', 'planning-writer', 'md'), 'utf8'), /Spec Metadata/);
-  assert.match(readFileSync(agentPath(paths, 'opencode', 'planning-writer', 'md'), 'utf8'), /Open Questions/);
+  assert.match(readFileSync(agentPath(paths, 'claude', 'planning-writer', 'md'), 'utf8'), /规格元数据/);
+  assert.match(readFileSync(agentPath(paths, 'opencode', 'planning-writer', 'md'), 'utf8'), /开放问题/);
 });
 
 test('validate and install dry-run never write a missing task planner migration', () => {
@@ -1239,16 +1239,16 @@ test('planning writer fixed spec and plan templates keep ordered sections and bl
   assert.equal(templates.length, 2);
   const [specTemplate, planTemplate] = templates;
   const specSections = [
-    'Spec Metadata', 'Problem Statement', 'Goals and Success Criteria', 'Users and User Stories',
-    'Functional Requirements', 'Non-Functional Requirements', 'Scope', 'Interfaces and Data',
-    'Failure Modes', 'Acceptance Criteria', 'Compatibility and Migration', 'Out of Scope',
-    'Assumptions', 'Open Questions'
+    '规格元数据', '问题陈述', '目标与成功标准', '用户与用户故事',
+    '功能需求', '非功能需求', '范围', '接口与数据',
+    '失败模式', '验收标准', '兼容性与迁移', '范围外事项',
+    '假设', '开放问题'
   ];
   const planSections = [
-    'Plan Metadata', 'Problem Statement', 'Solution', 'Goals and Success Criteria',
-    'User Stories', 'Scope', 'Implementation Decisions', 'Implementation Changes',
-    'Public Interfaces', 'Data Flow and Failure Modes', 'Testing Decisions',
-    'Rollout and Compatibility', 'Out of Scope', 'Assumptions', 'Further Notes'
+    '计划元数据', '问题陈述', '解决方案', '目标与成功标准',
+    '用户故事', '范围', '实施决策', '实施改动',
+    '公共接口', '数据流与失败模式', '测试决策',
+    '发布与兼容性', '范围外事项', '假设', '补充说明'
   ];
   for (const [template, sections] of [[specTemplate, specSections], [planTemplate, planSections]]) {
     const positions = sections.map((heading) => template.indexOf(`## ${heading}`));
@@ -1257,7 +1257,7 @@ test('planning writer fixed spec and plan templates keep ordered sections and bl
     for (const heading of sections.slice(0, -1)) assert.match(template, new RegExp(`^## ${heading}\\n\\n`, 'm'));
     assert.match(template, new RegExp(`^## ${sections.at(-1)}(?:\\n\\n|\\n?$)`, 'm'));
   }
-  assert.match(specTemplate, /- status: `approved`[\s\S]*## Open Questions\n\nN\/A$/);
+  assert.match(specTemplate, /- status: `approved`[\s\S]*## 开放问题\n\nN\/A$/);
   assert.match(planTemplate, /source_spec: `\.ai-work-flow\/plans\/<plan-id>\/spec\.md`/);
   assert.match(planTemplate, /source_spec_digest: `<sha256-lowercase-hex>`/);
 });
@@ -1272,7 +1272,7 @@ test('coding rejects legacy flat and plan-only planning artifacts', () => {
 
 test('coding validates non-empty checkbox acceptance criteria before split execution', () => {
   const prompt = loadAgentAssets().compiledBodies.get('coding');
-  assert.match(prompt, /空 Acceptance Criteria.*没有 `- \[ \]`\/`- \[x\]` checklist.*阻塞/s);
+  assert.match(prompt, /空 `验收标准`.*没有 `- \[ \]`\/`- \[x\]` checklist.*阻塞/s);
   assert.match(prompt, /acceptance evidence 与 Verification.*逐项对应/s);
 });
 
@@ -1369,7 +1369,7 @@ test('spec-first validation and task replacement contracts reject partial state'
 
   for (const source of [planning, writer, coding]) {
     assert.match(source, /status: `approved`|`status: approved`/);
-    assert.match(source, /Open Questions/);
+    assert.match(source, /开放问题/);
   }
   assert.match(writer, /不得包含文件改动清单、实施步骤、技术方案或任务拆分/);
   assert.match(coding, /摘要错误一律拒绝/);
@@ -1530,7 +1530,7 @@ test('task planner emits a deterministic dependency-safe task artifact contract'
   for (const field of ['task_id:', 'order:', 'blocked_by:', 'source_plan:', 'source_plan_digest:', 'write_scope:']) {
     assert.match(body, new RegExp(field), field);
   }
-  for (const heading of ['Outcome', 'Implementation Checklist', 'Acceptance Criteria', 'Verification Steps', 'Out of Scope']) {
+  for (const heading of ['预期结果', '实施清单', '验收标准', '验证步骤', '范围外事项']) {
     assert.match(body, new RegExp(`^## ${heading}$`, 'm'), heading);
   }
   assert.match(body, /`NN-<short-name>\.md`/);
@@ -1560,7 +1560,7 @@ test('task planner emits a deterministic dependency-safe task artifact contract'
 
 test('task planner wraps each complete task artifact in a markdown fenced code block', () => {
   const source = readFileSync(resolve(templatesDir, 'task-planner.md'), 'utf8');
-  const completeTaskFence = /```markdown\n# NN - <Task title>\n\n- task_id:[\s\S]*- order:[\s\S]*- blocked_by: `<task IDs or none>`\n- source_plan: `\.\.\/plan\.md`[\s\S]*- source_plan_digest:[\s\S]*- write_scope: `<expected primary paths or modules; non-exhaustive>`\n\n## Outcome[\s\S]*## Implementation Checklist\n\n- \[ \] 实施项[\s\S]*## Acceptance Criteria\n\n- \[ \][\s\S]*## Verification Steps\n\n- \[ \][\s\S]*## Out of Scope[\s\S]*```/;
+  const completeTaskFence = /```markdown\n# NN - <任务标题>\n\n- task_id:[\s\S]*- order:[\s\S]*- blocked_by: `<task IDs or none>`\n- source_plan: `\.\.\/plan\.md`[\s\S]*- source_plan_digest:[\s\S]*- write_scope: `<expected primary paths or modules; non-exhaustive>`\n\n## 预期结果[\s\S]*## 实施清单\n\n- \[ \] 实施项[\s\S]*## 验收标准\n\n- \[ \][\s\S]*## 验证步骤\n\n- \[ \][\s\S]*## 范围外事项[\s\S]*```/;
   assert.match(source, completeTaskFence);
   assert.match(source, /不得在 fenced code block 外输出 task 文件正文/);
 
@@ -2817,7 +2817,7 @@ test('control catalog validation fails closed on malformed interfaces and relati
 test('catalog rejects missing spec-first contract markers before generation', () => {
   for (const [roleId, marker] of [
     ['planning', 'source_spec_digest'],
-    ['planning-writer', 'Open Questions'],
+    ['planning-writer', '开放问题'],
     ['task-planner', '全量替换'],
     ['coding', '旧平铺计划'],
     ['git-operator', 'source_spec_digest']

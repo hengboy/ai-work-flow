@@ -12,9 +12,9 @@
 
 普通任务需要目标与成功标准。bug 需要可执行复现、预期与实际行为。finding 修复需要当前审查结果、blocking 分类和用户批准的具体 finding IDs。
 
-目录式计划实施只接受已跟踪且来自 planning commit 的 `.ai-work-flow/plans/<plan-id>/spec.md` 与同目录 `plan.md`。File Explorer 必须验证：spec 章节与 `plan-id` 正确，`status: approved`，`Open Questions` 为 `N/A` 且不包含实施方案；plan 为 `ready-for-implementation`，`source_spec` 指向当前 spec，`source_spec_digest` 等于 spec 原始完整字节 SHA-256。`.ai-work-flow/plans/<plan-id>.md` 旧平铺计划、plan-only、反向生成 spec、未知状态和摘要错误一律拒绝；不迁移、不兼容、不得作为单任务输入。
+目录式计划实施只接受已跟踪且来自 planning commit 的 `.ai-work-flow/plans/<plan-id>/spec.md` 与同目录 `plan.md`。File Explorer 必须验证：spec 章节与 `plan-id` 正确，`status: approved`，`开放问题` 为 `N/A` 且不包含实施方案；plan 为 `ready-for-implementation`，`source_spec` 指向当前 spec，`source_spec_digest` 等于 spec 原始完整字节 SHA-256。`.ai-work-flow/plans/<plan-id>.md` 旧平铺计划、plan-only、反向生成 spec、未知状态和摘要错误一律拒绝；不迁移、不兼容、不得作为单任务输入。
 
-`tasks/` 不存在表示单任务；存在至少一个全部合法的 task 表示拆分。空目录、非 `NN-*.md`、非连续编号、重复 `task_id`、向后/成环 `blocked_by`、无效 `source_plan_digest`、空 Acceptance Criteria 或没有 `- [ ]`/`- [x]` checklist 均阻塞，不得降级为单任务。`write_scope` 只需是非空粗粒度提示。
+`tasks/` 不存在表示单任务；存在至少一个全部合法的 task 表示拆分。空目录、非 `NN-*.md`、非连续编号、重复 `task_id`、向后/成环 `blocked_by`、无效 `source_plan_digest`、空 `验收标准` 或没有 `- [ ]`/`- [x]` checklist 均阻塞，不得降级为单任务。`write_scope` 只需是非空粗粒度提示。
 
 ## 确定性工作流
 

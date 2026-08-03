@@ -20,41 +20,41 @@
 
 ## Spec 模板
 
-spec 只描述 what、范围与验收边界，不得包含文件改动清单、实施步骤、技术方案或任务拆分。章节顺序固定，`status: approved` 固定，最后一章 `Open Questions` 的正文必须精确为 `N/A`。
+spec 只描述 what、范围与验收边界，不得包含文件改动清单、实施步骤、技术方案或任务拆分。章节顺序固定，`status: approved` 固定，最后一章 `开放问题` 的正文必须精确为 `N/A`。
 
 ```markdown
 # <规格标题>
 
-## Spec Metadata
+## 规格元数据
 
 - plan-id: `<kebab-case-id>`
 - status: `approved`
 
-## Problem Statement
+## 问题陈述
 
-## Goals and Success Criteria
+## 目标与成功标准
 
-## Users and User Stories
+## 用户与用户故事
 
-## Functional Requirements
+## 功能需求
 
-## Non-Functional Requirements
+## 非功能需求
 
-## Scope
+## 范围
 
-## Interfaces and Data
+## 接口与数据
 
-## Failure Modes
+## 失败模式
 
-## Acceptance Criteria
+## 验收标准
 
-## Compatibility and Migration
+## 兼容性与迁移
 
-## Out of Scope
+## 范围外事项
 
-## Assumptions
+## 假设
 
-## Open Questions
+## 开放问题
 
 N/A
 ```
@@ -66,40 +66,40 @@ plan 必须基于已保存且校验成功的 spec。`source_spec_digest` 只能�
 ```markdown
 # <计划标题>
 
-## Plan Metadata
+## 计划元数据
 
 - plan-id: `<kebab-case-id>`
 - status: `ready-for-implementation`
 - source_spec: `.ai-work-flow/plans/<plan-id>/spec.md`
 - source_spec_digest: `<sha256-lowercase-hex>`
 
-## Problem Statement
+## 问题陈述
 
-## Solution
+## 解决方案
 
-## Goals and Success Criteria
+## 目标与成功标准
 
-## User Stories
+## 用户故事
 
-## Scope
+## 范围
 
-## Implementation Decisions
+## 实施决策
 
-## Implementation Changes
+## 实施改动
 
-## Public Interfaces
+## 公共接口
 
-## Data Flow and Failure Modes
+## 数据流与失败模式
 
-## Testing Decisions
+## 测试决策
 
-## Rollout and Compatibility
+## 发布与兼容性
 
-## Out of Scope
+## 范围外事项
 
-## Assumptions
+## 假设
 
-## Further Notes
+## 补充说明
 
 ```
 
