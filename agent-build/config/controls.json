@@ -83,7 +83,7 @@
       "policy_requirements": {}
     },
     "approved-findings-only": {
-      "instruction": "Bug Fixer 只修复获批 blocking finding IDs。",
+      "instruction": "Bug Fixer 只修复用户直接给出的 bug 或获批 blocking finding IDs。",
       "policy_requirements": {}
     },
     "safe-local-git-only": {

@@ -1102,7 +1102,7 @@ test('bug fixer is a narrowly governed coding subagent on every platform', () =>
   });
   assert.match(body, /bug 必须有复现方式、预期和实际行为/);
   assert.match(body, /当前审查结果、blocking 分类和获批 IDs/);
-  assert.match(compiled, /Bug Fixer 只修复获批 blocking finding IDs/);
+  assert.match(compiled, /Bug Fixer 只修复用户直接给出的 bug 或获批 blocking finding IDs/);
   assert.match(body, /未知路径委派 File Explorer/);
   assert.match(body, /Git Operator 执行/);
   assert.match(body, /普通目录式 finding 修复.*不执行第二次评审/s);
@@ -1130,12 +1130,15 @@ test('bug fixer is a narrowly governed coding subagent on every platform', () =>
   assert.match(navigation, /agent-build\/templates\/bug-fixer\.md/);
 });
 
-test('coding routes only reproducible bugs or explicitly approved current blocking findings to bug fixer', () => {
+test('coding routes user-reported bugs or explicitly approved current blocking findings to bug fixer', () => {
   const coding = loadAgentAssets().compiledBodies.get('coding');
   const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
   assert.match(coding, /bug 需要可执行复现、预期与实际行为/);
   assert.match(coding, /finding 修复需要当前审查结果、blocking 分类和用户批准的具体 finding IDs/);
-  assert.match(coding, /Bug Fixer 只处理可复现 bug 或获批 finding IDs/);
+  assert.match(coding, /Bug Fixer 只处理用户直接给出的 bug 或获批 finding IDs/);
+  assert.match(coding, /用户在 Coding 中直接给出 bug.*必须委派 Bug Fixer.*不得改派 Full Stack Coder.*输入不足.*Bug Fixer.*blocked/s);
+  assert.match(coding, /`ready_to_implement`.*用户直接给出的 bug 授权.*bug 委派 Bug Fixer/s);
+  assert.match(coding, /`implementing`.*Full Stack Coder 或 Bug Fixer/s);
   assert.match(coding, /`fixing_findings`.*Bug Fixer/s);
   assert.match(routing, /blocking finding.*用户必须确认具体 finding IDs/s);
   assert.match(routing, /Git Operator.*Git mutation/s);
