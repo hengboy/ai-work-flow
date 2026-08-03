@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { selectTicketFrontier } from "../lib/ticket-frontier.mjs";
+import { selectTicketFrontier } from "../../../execution-runtime/lib/ticket-frontier.mjs";
 
 const executionPlan = {
   tickets: [

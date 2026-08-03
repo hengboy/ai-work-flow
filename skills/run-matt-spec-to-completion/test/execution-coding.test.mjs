@@ -7,11 +7,11 @@ import { join, relative } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { beginReview, completeIntegration, completeReviewFix, completeTicket, createCheckpoint, decideReview, markMerged, readCheckpoint, recordReview, startTickets, writeCheckpoint } from "../lib/checkpoint.mjs";
-import { createExecutionCoding } from "../lib/execution-coding.mjs";
-import { materializeSpec, verifyExecutionPlan, writeExecutionPlan } from "../lib/spec-intake.mjs";
-import { assertCheckpoint, assertExecutionPlan } from "../lib/validation.mjs";
-import { createReviewManifest, reviewManifestDigest } from "../lib/review-manifest.mjs";
+import { beginReview, completeIntegration, completeReviewFix, completeTicket, createCheckpoint, decideReview, markMerged, readCheckpoint, recordReview, startTickets, writeCheckpoint } from "../../../execution-runtime/lib/checkpoint.mjs";
+import { createExecutionCoding } from "../../../execution-runtime/lib/execution-coding.mjs";
+import { materializeSpec, verifyExecutionPlan, writeExecutionPlan } from "../../../execution-runtime/lib/spec-intake.mjs";
+import { assertCheckpoint, assertExecutionPlan } from "../../../execution-runtime/lib/validation.mjs";
+import { createReviewManifest, reviewManifestDigest } from "../../../execution-runtime/lib/review-manifest.mjs";
 
 const execFileAsync = promisify(execFile);
 

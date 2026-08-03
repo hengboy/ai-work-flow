@@ -207,7 +207,7 @@ Planning 通过问询确认目标和关键决策，写入配对工件：
 
 ### 普通实施
 
-确认方案后，流程按 **Git Operator prepare -> Full Stack Coder -> Git Operator commit/sync -> Code Reviewer -> Review Standards + Review Spec -> Git Operator integrate/cleanup** 执行。实现和评审在同一个隔离 worktree 中进行；实现完成并通过验证后创建仅本地 review commit，Code Reviewer 只审查已提交的固定范围。
+确认方案后，流程按 **Git Operator prepare -> Full Stack Coder -> Git Operator commit/sync -> Coding 委派 File Explorer prepare ReviewManifest -> Code Reviewer -> Review Standards + Review Spec -> Git Operator integrate/cleanup** 执行。实现和评审在同一个隔离 worktree 中进行；实现完成并通过验证后创建仅本地 review commit，Code Reviewer 只审查已提交的固定范围。
 
 拆分计划按 `blocked_by` 形成依赖前沿。每个 task 独立实现、提交和双轴评审，Git Operator 按编号顺序汇入 feature；全部 task 完成后进行一次聚合评审。评审覆盖完整、无阻塞 finding 且 `main` 未前进时自动使用 `git merge --ff-only` 整合；存在阻塞 finding 时进入下一段所述的用户决策门禁。
 
@@ -226,6 +226,8 @@ Planning 通过问询确认目标和关键决策，写入配对工件：
 ```sh
 runtime="${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/execution-runtime/execution-cli.mjs"
 ```
+
+`execution-runtime/` 是生产所有权边界：`lib/*.mjs`、`review-manifest-cli.mjs`、四个 schemas、`package.json` 和锁文件一并安装。Skill 只保留编排说明、references、私有 scripts 和测试，不提供旧 lib 或 CLI 转发路径。
 
 初始化、认领 Ticket、记录交接、同步、评审和整合均通过 runtime 完成，例如：
 
@@ -310,4 +312,4 @@ npm test --prefix skills/run-matt-spec-to-completion
 npm run check:runtime --prefix skills/run-matt-spec-to-completion
 ```
 
-`run-matt-spec-to-completion` 是独立 npm 包。`check:runtime` 会加载 schema 验证器；依赖缺失时按其锁文件自动执行生产依赖安装，仍失败则停止 Spec/Ticket 执行。
+`run-matt-spec-to-completion` package 只承载 Skill 私有测试与检查入口。生产依赖由 `execution-runtime/package.json` 和锁文件拥有；`check:runtime` 加载该 runtime 的 schema 验证器，依赖缺失时在 runtime 目录按锁文件自动执行生产依赖安装，仍失败则停止 Spec/Ticket 执行。

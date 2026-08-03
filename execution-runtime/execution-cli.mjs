@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 import process from "node:process";
 import { randomUUID } from "node:crypto";
-import { createExecutionCoding } from "../skills/run-matt-spec-to-completion/lib/execution-coding.mjs";
-import { deriveSpecLocation } from "../skills/run-matt-spec-to-completion/lib/paths.mjs";
-import { findMainWorktree } from "../skills/run-matt-spec-to-completion/lib/worktree-lifecycle.mjs";
-import { beginSync, blockTicket, beginReview, completeReviewFix, completeSync, completeTicket, decideReview, recordReview, startTickets } from "../skills/run-matt-spec-to-completion/lib/checkpoint.mjs";
-import { currentHead, git, gitOutput, gitSucceeds, isAncestor } from "../skills/run-matt-spec-to-completion/lib/git.mjs";
-import { selectTicketFrontier } from "../skills/run-matt-spec-to-completion/lib/ticket-frontier.mjs";
-import { assertCompletionResult, assertHandoffResult } from "../skills/run-matt-spec-to-completion/lib/validation.mjs";
-import { assertReviewCoverage, createReviewManifest } from "../skills/run-matt-spec-to-completion/lib/review-manifest.mjs";
-import { toShanghaiTimestamp } from "../skills/run-matt-spec-to-completion/lib/time.mjs";
+import { createExecutionCoding } from "./lib/execution-coding.mjs";
+import { deriveSpecLocation } from "./lib/paths.mjs";
+import { findMainWorktree } from "./lib/worktree-lifecycle.mjs";
+import { beginSync, blockTicket, beginReview, completeReviewFix, completeSync, completeTicket, decideReview, recordReview, startTickets } from "./lib/checkpoint.mjs";
+import { currentHead, git, gitOutput, gitSucceeds, isAncestor } from "./lib/git.mjs";
+import { selectTicketFrontier } from "./lib/ticket-frontier.mjs";
+import { assertCompletionResult, assertHandoffResult } from "./lib/validation.mjs";
+import { assertReviewCoverage, createReviewManifest } from "./lib/review-manifest.mjs";
+import { toShanghaiTimestamp } from "./lib/time.mjs";
 import { createRuntimeStateStore, withFeatureLock } from "./state-store.mjs";
 
 function parseArgs(argv) {

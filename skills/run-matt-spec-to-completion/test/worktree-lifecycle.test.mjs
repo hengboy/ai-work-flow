@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { createExecutionWorktree, ensureExecutionWorktree } from "../lib/worktree-lifecycle.mjs";
+import { createExecutionWorktree, ensureExecutionWorktree } from "../../../execution-runtime/lib/worktree-lifecycle.mjs";
 
 const execFileAsync = promisify(execFile);
 

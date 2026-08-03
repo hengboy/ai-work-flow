@@ -1,9 +1,9 @@
 import { open, readFile, realpath, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { checkpointPath } from "../skills/run-matt-spec-to-completion/lib/paths.mjs";
-import { writeCheckpoint } from "../skills/run-matt-spec-to-completion/lib/checkpoint.mjs";
-import { requireCheckpointIntegrity } from "../skills/run-matt-spec-to-completion/lib/checkpoint-integrity.mjs";
+import { checkpointPath } from "./lib/paths.mjs";
+import { writeCheckpoint } from "./lib/checkpoint.mjs";
+import { requireCheckpointIntegrity } from "./lib/checkpoint-integrity.mjs";
 
 const LOCK_GRACE_MS = 60_000;
 const lockContext = new AsyncLocalStorage();

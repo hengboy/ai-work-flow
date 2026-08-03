@@ -13,9 +13,9 @@ import { createExecutionWorktree, ensureExecutionWorktree, findExecutionWorktree
 import { createPreMergeStash } from "./pre-merge-stash.mjs";
 import { createIntegrationLifecycle } from "./integration-lifecycle.mjs";
 import { selectTicketFrontier } from "./ticket-frontier.mjs";
-import { createRuntimeStateStore, withFeatureLock } from "../../../execution-runtime/state-store.mjs";
+import { createRuntimeStateStore, withFeatureLock } from "../state-store.mjs";
 
-const executionCli = fileURLToPath(new URL("../../../execution-runtime/execution-cli.mjs", import.meta.url));
+const executionCli = fileURLToPath(new URL("../execution-cli.mjs", import.meta.url));
 const REVIEW_STANDARDS_PATH = "CONTEXT.md";
 
 async function frozenStandardsSource(worktree) {

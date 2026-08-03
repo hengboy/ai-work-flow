@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createIntegrationLifecycle } from "../lib/integration-lifecycle.mjs";
-import { createPreMergeStash } from "../lib/pre-merge-stash.mjs";
+import { createIntegrationLifecycle } from "../../../execution-runtime/lib/integration-lifecycle.mjs";
+import { createPreMergeStash } from "../../../execution-runtime/lib/pre-merge-stash.mjs";
 
 test("merges the verified execution commit instead of the mutable branch reference", async () => {
   const reviewGateHead = "a".repeat(40);

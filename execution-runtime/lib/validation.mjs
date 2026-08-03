@@ -1,30 +1,6 @@
-import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-
-async function loadRuntimeDependencies() {
-  return Promise.all([import("ajv/dist/2020.js"), import("ajv-formats")]);
-}
-
-function installRuntimeDependencies() {
-  const skillDirectory = fileURLToPath(new URL("../", import.meta.url));
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  execFileSync(npm, ["ci", "--omit=dev"], { cwd: skillDirectory, stdio: "inherit" });
-}
-
-let runtime;
-try {
-  runtime = await loadRuntimeDependencies();
-} catch (error) {
-  if (error?.code !== "ERR_MODULE_NOT_FOUND" && error?.code !== "MODULE_NOT_FOUND") throw error;
-  installRuntimeDependencies();
-  runtime = await Promise.all([
-    import(new URL("../node_modules/ajv/dist/2020.js", import.meta.url).href),
-    import(new URL("../node_modules/ajv-formats/dist/index.js", import.meta.url).href),
-  ]);
-}
-
-const [{ default: Ajv2020 }, { default: addFormats }] = runtime;
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 addFormats(ajv);
 
@@ -36,7 +12,7 @@ const [planSchema, checkpointSchema, completionSchema, handoffSchema] = await Pr
   schema("execution-plan-schema.json"),
   schema("checkpoint-schema.json"),
   schema("completion-result-schema.json"),
-  JSON.parse(await readFile(new URL("../../../execution-runtime/handoff-result-schema.json", import.meta.url), "utf8")),
+  schema("handoff-result-schema.json"),
 ]);
 
 const validatePlan = ajv.compile(planSchema);

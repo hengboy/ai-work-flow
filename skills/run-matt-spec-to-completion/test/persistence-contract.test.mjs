@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import test from "node:test";
 
-import { beginReview, completeIntegration, completeReview, completeReviewFix, completeTicket, createCheckpoint, decideReview, markMerged, readCheckpoint, recordReview, startTickets, writeCheckpoint } from "../lib/checkpoint.mjs";
-import { materializeSpec, readExecutionPlan, writeExecutionPlan } from "../lib/spec-intake.mjs";
-import { deriveSpecLocation, sourceSpecPath } from "../lib/paths.mjs";
-import { assertCheckpoint, assertExecutionPlan } from "../lib/validation.mjs";
-import { createReviewManifest } from "../lib/review-manifest.mjs";
+import { beginReview, completeIntegration, completeReview, completeReviewFix, completeTicket, createCheckpoint, decideReview, markMerged, readCheckpoint, recordReview, startTickets, writeCheckpoint } from "../../../execution-runtime/lib/checkpoint.mjs";
+import { materializeSpec, readExecutionPlan, writeExecutionPlan } from "../../../execution-runtime/lib/spec-intake.mjs";
+import { deriveSpecLocation, sourceSpecPath } from "../../../execution-runtime/lib/paths.mjs";
+import { assertCheckpoint, assertExecutionPlan } from "../../../execution-runtime/lib/validation.mjs";
+import { createReviewManifest } from "../../../execution-runtime/lib/review-manifest.mjs";
 
 function reviewManifest(fixedPoint, reviewCommit) {
   return createReviewManifest({ fixed_point: fixedPoint, review_commit: reviewCommit, commit_list: [{ sha: reviewCommit, subject: "review" }], changed_paths: [], checks: [], diff_command: ["git", "diff", "--no-ext-diff", `${fixedPoint}...${reviewCommit}`], spec_status: "absent", spec_source: null, standards_source: [{ path: "CONTEXT.md", revision: reviewCommit }], shards: [] });

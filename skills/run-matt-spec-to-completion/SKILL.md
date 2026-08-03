@@ -14,8 +14,8 @@ disable-model-invocation: true
 
 - spec 同目录存在由 `to-tickets` 生成的 `issues/NN-<slug>.md`。
 - 项目存在 `docs/agents/issue-tracker.md`；缺少时阻塞。
-- 在 Skill 根目录运行 `npm run check:runtime`。依赖安装与失败处理只在需要时读取 [运行时依赖](references/installation.md)。
-- runtime 固定为 `${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/execution-runtime/execution-cli.mjs`，它是 Execution plan 与 Checkpoint 的唯一 writer。
+- 在 Skill 根目录运行 `npm run check:runtime`；该私有脚本检查 `execution-runtime` 自有 package、schemas 与验证器。依赖安装与失败处理只在需要时读取 [运行时依赖](references/installation.md)。
+- runtime 固定为 `${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/execution-runtime/execution-cli.mjs`；其 `lib/`、schemas 和 `review-manifest-cli.mjs` 同属唯一 runtime owner，state store 是 Execution plan 与 Checkpoint 的唯一 writer。
 - 所有持久化时间使用 `Asia/Shanghai`、带 `+08:00` 的 RFC 3339，不使用 `Z`。
 
 ## Checkpoint 路由

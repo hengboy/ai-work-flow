@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { assertPathChange } from "./paths.mjs";
 
 const SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -32,6 +33,31 @@ export function reviewManifestDigest(manifest) {
   return createHash("sha256").update(JSON.stringify(canonicalize(unsigned))).digest("hex");
 }
 
+export function reviewBundleDigest(bundle) {
+  const { bundle_digest, ...unsigned } = bundle;
+  return createHash("sha256").update(JSON.stringify(canonicalize(unsigned))).digest("hex");
+}
+
+function assertDirectoryBundle(bundle, manifest) {
+  if (!bundle || bundle.type !== "directory" || !["single", "task", "aggregate"].includes(bundle.mode) || !Array.isArray(bundle.sources)) {
+    throw new Error("ReviewManifest has invalid directory bundle");
+  }
+  const expectedRoles = bundle.mode === "task" ? ["spec", "plan", "task"] : ["spec", "plan"];
+  const roles = bundle.sources.map((source) => source?.role);
+  if (!sameJson(roles, expectedRoles) || bundle.sources.some((source) => (
+    typeof source.path !== "string" || !source.path || source.revision !== manifest.review_commit || !DIGEST_PATTERN.test(source.digest)
+  ))) {
+    throw new Error("ReviewManifest directory bundle sources are not fixed to the review commit");
+  }
+  const paths = bundle.sources.map((source) => source.path);
+  if (new Set(paths).size !== paths.length || !sameJson(bundle.sources[0], manifest.spec_source)) {
+    throw new Error("ReviewManifest directory bundle source binding is invalid");
+  }
+  if (!DIGEST_PATTERN.test(bundle.acceptance_evidence_digest) || !DIGEST_PATTERN.test(bundle.verification_digest) || bundle.bundle_digest !== reviewBundleDigest(bundle)) {
+    throw new Error("ReviewManifest directory bundle digest is invalid");
+  }
+}
+
 export function assertReviewManifest(manifest, context) {
   if (!manifest || manifest.version !== 1 || !SHA_PATTERN.test(manifest.fixed_point) || !SHA_PATTERN.test(manifest.review_commit)) {
     throw new Error("ReviewManifest has invalid fixed review endpoints");
@@ -48,12 +74,13 @@ export function assertReviewManifest(manifest, context) {
     throw new Error(`ReviewManifest has invalid changed paths: ${error.message}`, { cause: error });
   }
   if (manifest.commit_list.some((commit) => !commit || !SHA_PATTERN.test(commit.sha) || typeof commit.subject !== "string") ||
-    manifest.checks.some((check) => typeof check !== "string" || !check) ||
+    manifest.checks.some((check) => typeof check !== "string" || !check.trim()) ||
     manifest.diff_command.some((argument) => typeof argument !== "string" || !argument) ||
     manifest.standards_source.length === 0 || manifest.standards_source.some((source) => !source || typeof source.path !== "string" || !source.path || typeof source.revision !== "string" || !SHA_PATTERN.test(source.revision) || source.revision !== manifest.review_commit) ||
-    (manifest.spec_source && (typeof manifest.spec_source.path !== "string" || !manifest.spec_source.path || typeof manifest.spec_source.revision !== "string" || !manifest.spec_source.revision))) {
+    (manifest.spec_source && (typeof manifest.spec_source.path !== "string" || !manifest.spec_source.path || typeof manifest.spec_source.revision !== "string" || !SHA_PATTERN.test(manifest.spec_source.revision) || ("digest" in manifest.spec_source && !DIGEST_PATTERN.test(manifest.spec_source.digest))))) {
     throw new Error("ReviewManifest has invalid structured content");
   }
+  if (manifest.directory_bundle) assertDirectoryBundle(manifest.directory_bundle, manifest);
   if (!sameJson(manifest.diff_command, fixedDiffCommand(manifest.fixed_point, manifest.review_commit))) {
     throw new Error("ReviewManifest must use the fixed review diff command");
   }

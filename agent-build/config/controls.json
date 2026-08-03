@@ -19,7 +19,7 @@
       "policy_requirements": {}
     },
     "read-only-discovery": {
-      "instruction": "File Explorer 只读定位，不编辑、联网或委派。",
+      "instruction": "File Explorer 只读定位，或执行受信的只读 ReviewManifest 准备运行时；不编辑、联网或委派。",
       "policy_requirements": {
         "filesystem": ["read"],
         "network": ["none"],

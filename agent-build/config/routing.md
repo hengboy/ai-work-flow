@@ -57,7 +57,7 @@ spec 只保留确认后的 what、边界与验收共享认知。plan 不重复 s
 
 用户明确批准当前阶段后，Coding 自动完成该阶段内全部确定性步骤：发现、委派、等待、验证、受控本地提交、同步、评审、整合和清理。不得询问“是否继续”“是否提交”或“是否评审”，也不得重复请求已经授予的提交授权。
 
-普通目录式流程为 **Git Operator prepare -> Full Stack Coder -> Git Operator commit/sync -> Code Reviewer -> Review Standards + Review Spec -> Git Operator integrate/cleanup**。单任务只使用 feature worktree；拆分任务按依赖 frontier 实施，非 Git 工作可在 scope 互斥时并行，Git 操作串行。`write_scope` 是初始并发提示而非写入授权；实现可修改完成验收所需的源码、测试、配置、导航索引、lockfile 和当前 task checkbox，不回写已批准的 plan/task 元数据。
+普通目录式流程为 **Git Operator prepare -> Full Stack Coder -> Git Operator commit/sync -> Coding 委派 File Explorer prepare ReviewManifest -> Code Reviewer -> Review Standards + Review Spec -> Git Operator integrate/cleanup**。单任务只使用 feature worktree；拆分任务按依赖 frontier 实施，非 Git 工作可在 scope 互斥时并行，Git 操作串行。`write_scope` 是初始并发提示而非写入授权；实现可修改完成验收所需的源码、测试、配置、导航索引、lockfile 和当前 task checkbox，不回写已批准的 plan/task 元数据。Git Operator 只交付提交与工作树事实，不准备或验证 ReviewManifest，也不承担 Code Reviewer 预检或编排职责。
 
 所有文件检索、未知路径定位和代码导航索引读取必须交由 File Explorer 执行；其他角色只消费其精确交接。Full Stack Coder 在新增、移动、重命名、拆分、合并、删除文件或改变入口、路由、API、主职责时随实现维护 `.ai-work-flow/index/`。Coding 只委派执行具体 skill 的可执行角色，不把 skill 当作未指定所有者的工作。
 
@@ -105,7 +105,7 @@ git log <fixed-point>..<review-commit> --oneline
 
 两个端点必须可解析，fixed point 是 review commit 的祖先，diff 非空，审查 worktree 的 `HEAD` 等于 review commit 且工作树干净。输入 range、commit list 或 changed paths 与 ReviewManifest 不一致时阻塞。禁止用无参数 `git diff`、`git diff --cached` 或工作树文件读取命令取证。每项 finding 引用 ReviewManifest shard ID 和 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>` hunk；上下文只使用 `git show <review-commit>:<path>`，不得从 committed diff 外新增 finding。
 
-ReviewManifest 机器冻结端点、commit list、changed paths、review checks、diff、spec/standards source、稳定 shards 和 digest；不包含或绑定 Ticket/issues、acceptance evidence、Verification 或额外 runtime facts。完整 `spec context/bundle` 由代理按 `instruction-only` 校验 source binding、digest、revision、完整性和可恢复性：目录式单任务为 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`；拆分 task 为 `spec.md + plan.md + 当前 task + acceptance evidence + Verification 结果`；canonical 为 `.scratch/<featureSlug>/spec.md + 对应 Ticket/issues + runtime 执行事实`。不得退化为单文件审查或静默遗漏上下文。Completion Result 的 `checks` 未由 Checkpoint 持久化；恢复后缺少所需 completion/checks 时 fail closed。
+ReviewManifest 机器冻结端点、commit list、真实 PathChange、review checks、diff、spec/standards source、稳定 shards 和 digest。普通目录式 manifest 还机器绑定 spec/plan/可选 task 的 review commit revision/path 与原始字节 digest，以及 acceptance evidence/Verification digest：Coding 在调度 Code Reviewer 前委派只读 File Explorer 执行安装运行时 `execution-runtime/review-manifest-cli.mjs prepare`，Code Reviewer 使用同一 bundle 执行 `execution-runtime/review-manifest-cli.mjs verify`；任一 source binding、digest、revision、changed path shard 或完整性失败均 fail closed。目录式单任务 bundle 为 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`；拆分 task 加当前 task、acceptance evidence 与 Verification 结果；聚合审查绑定 spec+plan 与聚合 evidence/Verification。canonical bundle 为 `.scratch/<featureSlug>/spec.md + 对应 Ticket/issues + runtime 执行事实`，继续由 canonical runtime/Checkpoint 完整性契约验证。不得退化为 instruction-only、单文件审查或静默遗漏上下文。Completion Result 的 `checks` 未由 Checkpoint 持久化；恢复后缺少所需 completion/checks 时 fail closed。
 
 Standards 轴使用冻结 revision 的仓库 Standards、`CONTEXT.md` 等来源，`spec.md` 不是 Standards 来源；仓库规则优先于 Fowler 异味基准，工具已强制规则跳过，异味仅作判断性意见。Spec 轴检查缺失/部分需求、scope creep 和行为错误。叶子 `details.review_result` 保留 `{verdict, blocking_findings, advisory_findings, manifest_digest, coverage}`；finding 具有稳定 ID、摘要与证据。缺失、重复、越界 shard 或 digest 不一致时阻塞。
 
@@ -115,7 +115,7 @@ Standards 轴使用冻结 revision 的仓库 Standards、`CONTEXT.md` 等来源�
 
 ## 审查编排与门禁
 
-审查拓扑固定为 **Coding -> Code Reviewer -> Review Standards / Review Spec**。Code Reviewer 只根据不可变 ReviewManifest 调度；`spec_status=present` 时并行调用两叶子，`absent` 时只调用 Standards。两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest/digest，以及同一委派中的相同 spec bundle。Code Reviewer 保留 Standards、Spec 原顺序，不跨轴合并或重排。
+审查拓扑固定为 **Coding -> File Explorer prepare ReviewManifest -> Code Reviewer -> Review Standards / Review Spec**。Code Reviewer 只根据不可变 ReviewManifest 调度；`spec_status=present` 时并行调用两叶子，`absent` 时只调用 Standards。两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest/digest，以及同一委派中的相同 spec bundle。Code Reviewer 保留 Standards、Spec 原顺序，不跨轴合并或重排。
 
 coverage 完整且无 blocking finding 时自动整合；advisory findings 只报告。blocking finding 进入 `awaiting_user`，用户必须确认具体 finding IDs，不能 approve 绕过。普通目录式流程的获批修复验证并形成合格后继 review commit 后，自动同步并继续：task 汇入、清理和下一 frontier，或单任务/聚合最终整合与清理；不执行第二次评审，也不进入新的用户决策点。冲突解决或 `resync_required` 后仍重新评审最终提交。
 

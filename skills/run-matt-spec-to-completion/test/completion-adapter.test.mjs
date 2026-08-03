@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createNativeAdapter, createUnsupportedAdapter, normalizeCompletion } from "../lib/completion-adapter.mjs";
+import { createNativeAdapter, createUnsupportedAdapter, normalizeCompletion } from "../../../execution-runtime/lib/completion-adapter.mjs";
 
 const SHA = "a".repeat(40);
 const done = (ticketId) => ({ ticket_id: ticketId, status: "done", commits: [SHA], checks: ["node --test: pass"], changed_paths: [], summary: ticketId });

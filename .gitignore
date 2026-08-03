@@ -3,3 +3,4 @@
 /docs/reports/
 /node_modules/
 /.playwright-mcp/
+/execution-runtime/node_modules/

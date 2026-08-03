@@ -400,8 +400,8 @@ test("concurrent prepare calls share one feature lock", async () => {
 
 test("only the runtime state store imports the checkpoint writer", async () => {
   const [coding, lifecycle, stateStore] = await Promise.all([
-    readFile(new URL("../lib/execution-coding.mjs", import.meta.url), "utf8"),
-    readFile(new URL("../lib/integration-lifecycle.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../../../execution-runtime/lib/execution-coding.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../../../execution-runtime/lib/integration-lifecycle.mjs", import.meta.url), "utf8"),
     readFile(new URL("../../../execution-runtime/state-store.mjs", import.meta.url), "utf8"),
   ]);
   assert.doesNotMatch(coding, /writeCheckpoint|checkpointWriter/);

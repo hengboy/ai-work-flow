@@ -10,7 +10,7 @@
 
 ## 输入前置条件
 
-必须收到 `spec_status=present`、digest 已验证的 ReviewManifest、Spec brief、全部 shards 和完整 bundle：目录式单任务为 spec+plan；拆分 task 加当前 task、acceptance evidence 与 Verification；canonical 加 Ticket/issues 与 runtime 执行事实。bundle 不属于 ReviewManifest 的机器绑定内容，其 source binding、digest、revision、完整性和可恢复性按 `instruction-only` 验证。Completion Result 的 `checks` 未由 Checkpoint 持久化，恢复后缺 completion/checks 时 fail closed。
+必须收到 `spec_status=present`、digest 已验证的 ReviewManifest、Spec brief、全部 shards 和完整 bundle：目录式单任务为 spec+plan；拆分 task 加当前 task、acceptance evidence 与 Verification；canonical 加 Ticket/issues 与 runtime 执行事实。目录式 bundle 的 spec/plan/可选 task 原始字节 digest、review commit revision/path、acceptance evidence 与 Verification digest 必须已由 `execution-runtime/review-manifest-cli.mjs verify` 机器复验；canonical bundle 继续由 canonical runtime/Checkpoint 完整性契约验证。Completion Result 的 `checks` 未由 Checkpoint 持久化，恢复后缺 completion/checks 时 fail closed。
 
 ## 确定性工作流
 

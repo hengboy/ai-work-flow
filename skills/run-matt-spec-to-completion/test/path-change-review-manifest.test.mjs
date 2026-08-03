@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { parsePorcelainV2, pathChangesEqual } from "../lib/paths.mjs";
-import { commitWithPathChangeReport } from "../lib/git.mjs";
-import { assertReviewCoverage, assertReviewManifest, createReviewManifest, createReviewShardAssignments } from "../lib/review-manifest.mjs";
+import { parsePorcelainV2, pathChangesEqual } from "../../../execution-runtime/lib/paths.mjs";
+import { commitWithPathChangeReport } from "../../../execution-runtime/lib/git.mjs";
+import { assertReviewCoverage, assertReviewManifest, createReviewManifest, createReviewShardAssignments } from "../../../execution-runtime/lib/review-manifest.mjs";
 
 test("parses porcelain v2 NUL records without splitting special or rename/copy paths", () => {
   const changes = parsePorcelainV2(Buffer.from(

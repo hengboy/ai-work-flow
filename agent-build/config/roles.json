@@ -36,7 +36,7 @@
     {
       "id": "file-explorer",
       "name": "File Explorer",
-      "description": "负责全仓库枚举、搜索和代码地图。",
+      "description": "负责全仓库枚举、搜索、代码地图和只读 ReviewManifest 准备。",
       "kind": "subagent",
       "policy": "discover",
       "controls": ["read-only-discovery"],

@@ -363,7 +363,6 @@ test('installation and platform generation retain the managed prompt content', (
       assert.equal(readFileSync(resolve(installedSkill, 'agents/openai.yaml'), 'utf8'), readFileSync(resolve(sourceSkill, 'agents/openai.yaml'), 'utf8'), directory);
     }
     const installedSkill = resolve(platformRoot, 'skills/run-matt-spec-to-completion');
-    assert.ok(existsSync(resolve(platformRoot, 'execution-runtime/handoff-result-schema.json')));
     const runtimeCheck = spawnSync(process.execPath, [resolve(installedSkill, 'scripts/check-runtime-dependencies.mjs')], {
       cwd: installedSkill,
       encoding: 'utf8',
@@ -382,7 +381,9 @@ test('installation and platform generation retain the managed prompt content', (
   const runtime = resolve(paths.config, 'ai-work-flow/execution-runtime/execution-cli.mjs');
   assert.ok(existsSync(runtime));
   assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/execution-runtime/handoff-result-schema.json')));
-  assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/skills/run-matt-spec-to-completion/lib/validation.mjs')));
+  assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/execution-runtime/lib/validation.mjs')));
+  assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/execution-runtime/package-lock.json')));
+  assert.ok(!existsSync(resolve(paths.config, 'ai-work-flow/skills/run-matt-spec-to-completion/lib')));
   const runtimeResult = spawnSync(process.execPath, [runtime, 'record-ticket', '--repository', paths.project, '--feature', 'example', '--worktree', paths.project], {
     encoding: 'utf8',
     env: env(paths),
@@ -482,7 +483,7 @@ test('generated implementation and review roles preserve their scoped contracts'
   assert.equal(result.status, 0, result.stderr);
 
   const implementationAssertions = [
-    /Git Operator prepare -> Full Stack Coder -> Git Operator commit\/sync -> Code Reviewer -> Review Standards \+ Review Spec/,
+    /Git Operator prepare -> Full Stack Coder -> Git Operator commit\/sync -> Coding 委派 File Explorer prepare ReviewManifest -> Code Reviewer -> Review Standards \+ Review Spec/,
     /不需要首次暂存前再次授权/,
     /base_commit/
   ];
@@ -605,6 +606,23 @@ test('root installer installs every skill globally and generates every platform 
   assert.equal(readdirSync(resolve(paths.home, '.claude/agents')).filter((name) => name.endsWith('.md')).length, catalog.roles.length);
   assert.equal(readdirSync(resolve(paths.config, 'opencode/agents')).filter((name) => name.endsWith('.md')).length, catalog.roles.length);
   assert.match(generatedBody(paths, 'codex', 'coding', 'toml'), /ai-work-flow:routing-digest=/);
+});
+
+test('generation refreshes the owned execution runtime with generated agents', () => {
+  const paths = environment();
+  assert.equal(install(paths).status, 0);
+  const relativeCli = 'execution-runtime/review-manifest-cli.mjs';
+  const installedCli = resolve(paths.config, 'ai-work-flow', relativeCli);
+  const sourceCli = resolve(root, 'execution-runtime/review-manifest-cli.mjs');
+  const installedChecker = resolve(paths.home, '.codex/skills/run-matt-spec-to-completion/scripts/check-runtime-dependencies.mjs');
+  const sourceChecker = resolve(root, 'skills/run-matt-spec-to-completion/scripts/check-runtime-dependencies.mjs');
+  writeFileSync(installedCli, 'stale runtime\n');
+  writeFileSync(installedChecker, 'stale checker\n');
+
+  const generation = run(paths, 'generate');
+  assert.equal(generation.status, 0, generation.stderr);
+  assert.equal(readFileSync(installedCli, 'utf8'), readFileSync(sourceCli, 'utf8'));
+  assert.equal(readFileSync(installedChecker, 'utf8'), readFileSync(sourceChecker, 'utf8'));
 });
 
 test('init creates the default environment without creating a legacy config', () => {
@@ -1727,6 +1745,7 @@ test('structured dual-axis review controls the final integration gate', () => {
   const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
   const fixer = readFileSync(resolve(templatesDir, 'bug-fixer.md'), 'utf8');
   const operator = readFileSync(resolve(templatesDir, 'git-operator.md'), 'utf8');
+  const compiled = loadAgentAssets().compiledBodies;
   const paths = environment();
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
@@ -1762,7 +1781,13 @@ test('structured dual-axis review controls the final integration gate', () => {
   for (const content of [coding, fixer, operator]) {
     for (const pattern of removedBranchPatterns) assert.doesNotMatch(content, pattern);
   }
-  assert.doesNotMatch(coding, /ReviewManifest|git diff --no-ext-diff/);
+  assert.match(coding, /review-manifest-cli\.mjs.*prepare --repository <review-worktree>/s);
+  assert.match(coding, /调度 Code Reviewer 前/);
+  assert.match(coding, /委派 File Explorer/);
+  assert.match(coding, /checks: \["<check>"\].*acceptance_evidence.*criterion.*evidence.*verification.*command.*result/s);
+  assert.match(compiled.get('file-explorer'), /review_manifest.*manifest_digest.*bundle_digest/s);
+  assert.match(compiled.get('file-explorer'), /review-manifest-cli\.mjs prepare/);
+  assert.match(compiled.get('file-explorer'), /null、空字符串、空对象或缺失 checks 均阻塞/);
 });
 
 test('review agents preserve the AI Work Flow committed-range contract', () => {
@@ -1842,16 +1867,16 @@ test('dual-axis review binds standards and complete spec context bundles without
   ]));
   const compiled = loadAgentAssets().compiledBodies;
   const sharedBundleAssertions = [
-    /完整 `spec context\/bundle`/,
+    /spec context\/bundle|目录式 manifest/s,
     /\.ai-work-flow\/plans\/<plan-id>\/spec\.md \+ plan\.md/,
-    /spec\.md \+ plan\.md \+ 当前 task \+ acceptance evidence \+ Verification 结果/,
-    /canonical 为 `\.scratch\/<featureSlug>\/spec\.md \+ 对应 Ticket\/issues \+ runtime 执行事实`/,
-    /不得退化为单文件审查或静默遗漏上下文/
+    /拆分 task 加当前 task、acceptance evidence 与 Verification 结果/,
+    /canonical bundle 为 `\.scratch\/<featureSlug>\/spec\.md \+ 对应 Ticket\/issues \+ runtime 执行事实`/,
+    /不得退化为 instruction-only、单文件审查或静默遗漏上下文/
   ];
   const sharedManifestAssertions = [
-    /ReviewManifest 机器冻结端点、commit list、changed paths、review checks、diff、spec\/standards source、稳定 shards 和 digest/,
-    /不包含或绑定 Ticket\/issues.*runtime facts/s,
-    /按 `instruction-only` 校验 source binding、digest、revision、完整性和可恢复性/
+    /ReviewManifest 机器冻结端点、commit list、真实 PathChange、review checks、diff、spec\/standards source、稳定 shards 和 digest/,
+    /机器绑定 spec\/plan\/可选 task.*acceptance evidence\/Verification digest/s,
+    /不得退化为 instruction-only/
   ];
   const recoveryAssertions = [
     /Completion Result 的 `checks` 未由 Checkpoint 持久化/,
@@ -1867,8 +1892,8 @@ test('dual-axis review binds standards and complete spec context bundles without
   assert.match(bodies['code-reviewer'], /两个叶子收到相同 manifest\/digest、端点、shards、来源，并在同一委派中收到相同额外 bundle/);
   assert.match(bodies['review-standards'], /冻结的 Standards\/`CONTEXT\.md` 来源/);
   assert.match(bodies['review-standards'], /`spec\.md` 不得作为 Standards 来源/);
-  assert.match(bodies['review-spec'], /bundle 不属于 ReviewManifest 的机器绑定内容/);
-  assert.match(bodies['review-spec'], /source binding、digest、revision、完整性和可恢复性按 `instruction-only` 验证/);
+  assert.match(bodies['review-spec'], /review-manifest-cli\.mjs verify.*机器复验/s);
+  assert.doesNotMatch(bodies['review-spec'], /按 `instruction-only` 验证/);
   assert.match(bodies['review-spec'], /不得退化为只审 spec、plan 或当前 task/);
   for (const assertion of recoveryAssertions) assert.match(bodies['review-spec'], assertion);
   assert.match(skill, /spec bundle 使用 canonical spec、Ticket\/issues 与当前可验证 runtime facts/);
@@ -1885,7 +1910,7 @@ test('dual-axis review binds standards and complete spec context bundles without
     for (const assertion of recoveryAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
     assert.match(reviewer, /同一委派中收到相同额外 bundle/, `${platform}/code-reviewer`);
     assert.match(standards, /`spec\.md` 不得作为 Standards 来源/, `${platform}/review-standards`);
-    assert.match(spec, /完整 `spec context\/bundle`/, `${platform}/review-spec`);
+    assert.match(spec, /完整 spec context\/bundle/, `${platform}/review-spec`);
     for (const assertion of sharedManifestAssertions) assert.match(spec, assertion, `${platform}/review-spec`);
     for (const assertion of recoveryAssertions) assert.match(spec, assertion, `${platform}/review-spec`);
   }
@@ -2245,6 +2270,7 @@ test('installation removes obsolete managed templates and execution modules', ()
   writeFileSync(obsoleteBody, 'obsolete body\n');
   for (const platformRoot of [resolve(paths.home, '.codex'), resolve(paths.home, '.claude'), resolve(paths.config, 'opencode')]) {
     const skillRoot = resolve(platformRoot, 'skills/run-matt-spec-to-completion');
+    mkdirSync(resolve(skillRoot, 'lib'));
     writeFileSync(resolve(skillRoot, 'lib', `execution-${legacyPrimaryAgentId}.mjs`), 'obsolete module\n');
     writeFileSync(resolve(skillRoot, 'test', `execution-${legacyPrimaryAgentId}.test.mjs`), 'obsolete test\n');
   }
@@ -2252,11 +2278,11 @@ test('installation removes obsolete managed templates and execution modules', ()
   const result = install(paths);
   assert.equal(result.status, 0, result.stderr);
   assert.ok(!existsSync(obsoleteBody));
+  assert.ok(existsSync(resolve(paths.config, 'ai-work-flow/execution-runtime/lib/execution-coding.mjs')));
   for (const platformRoot of [resolve(paths.home, '.codex'), resolve(paths.home, '.claude'), resolve(paths.config, 'opencode')]) {
     const skillRoot = resolve(platformRoot, 'skills/run-matt-spec-to-completion');
-    assert.ok(!existsSync(resolve(skillRoot, 'lib', `execution-${legacyPrimaryAgentId}.mjs`)));
     assert.ok(!existsSync(resolve(skillRoot, 'test', `execution-${legacyPrimaryAgentId}.test.mjs`)));
-    assert.ok(existsSync(resolve(skillRoot, 'lib/execution-coding.mjs')));
+    assert.ok(!existsSync(resolve(skillRoot, 'lib')));
   }
 });
 

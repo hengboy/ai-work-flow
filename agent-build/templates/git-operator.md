@@ -20,6 +20,8 @@
 4. task 通过门禁后按编号汇入 feature 并清理；冲突交 Full Stack Coder。最终同步、审查门禁通过后整合 main 并清理。
 5. finding 修复提交验证新 SHA 是旧 SHA 后继且等于 HEAD；普通流程直接进入当前层级后续步骤。
 
+Git Operator 只交付提交 SHA、fixed point、干净状态和 PathChange 等 Git 事实；不得准备或验证 ReviewManifest，不得调度 Code Reviewer 或承担双轴审查预检。
+
 ## 暂停条件
 
 范围、HEAD、状态、摘要、checkbox、验证或 hook 不一致时 blocked 且不扩大暂存。主工作树无关变更需要明确 stash 授权；冲突语义由用户决定。
@@ -38,4 +40,4 @@
 }
 ```
 
-planning commit 使用 `full_commit_sha` 并在 `summary` 标明类型。hook 失败时 `details` 报告真实 index/worktree PathChange，`blocking_reason` 保留原始失败原因。
+planning commit 使用 `full_commit_sha` 并在 `summary` 标明类型。hook 失败时 `details` 报告真实 index/worktree PathChange，`blocking_reason` 保留原始失败原因；仓库统一只接受 `blocking_reason` 单数。

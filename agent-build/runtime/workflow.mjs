@@ -73,9 +73,11 @@ function parseArgs(argv) {
 }
 
 function planInstallLifecycle() {
-  const skillDirectories = readdirSync(SKILLS_ROOT, { withFileTypes: true })
+  const skillsRoot = [SKILLS_ROOT, resolve(import.meta.dirname, '..', 'skills')].find((candidate) => existsSync(candidate));
+  if (!skillsRoot) fail('Missing managed skills');
+  const skillDirectories = readdirSync(skillsRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
-    .map((entry) => ({ name: entry.name, source: resolve(SKILLS_ROOT, entry.name) }));
+    .map((entry) => ({ name: entry.name, source: resolve(skillsRoot, entry.name) }));
   const sourceDir = resolve(import.meta.dirname, '..');
   const entry = existsSync(resolve(sourceDir, 'install.mjs')) ? 'install.mjs' : 'agent-workflow.mjs';
   if (!existsSync(resolve(sourceDir, entry))) fail(`Missing workflow runtime entry: ${entry}`);
@@ -90,35 +92,38 @@ function addWriteStep(plan, path, contents) {
   plan.push({ type: 'write', path, contents });
 }
 
-function addSourceTree(plan, source, destination) {
+function addSourceTree(plan, source, destination, excludedNames = new Set()) {
   for (const entry of readdirSync(source, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
+    if (excludedNames.has(entry.name)) continue;
     const sourcePath = resolve(source, entry.name);
     const destinationPath = resolve(destination, entry.name);
-    if (entry.isDirectory()) addSourceTree(plan, sourcePath, destinationPath);
+    if (entry.isDirectory()) addSourceTree(plan, sourcePath, destinationPath, excludedNames);
     else if (entry.isFile()) addWriteStep(plan, destinationPath, readFileSync(sourcePath, 'utf8'));
     else fail(`Install source must contain only regular files and directories: ${sourcePath}`);
   }
 }
 
-function sourceTreeEntries(source, prefix = '') {
+function sourceTreeEntries(source, prefix = '', excludedNames = new Set()) {
   const entries = [];
   for (const entry of readdirSync(source, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
+    if (excludedNames.has(entry.name)) continue;
     const sourcePath = resolve(source, entry.name);
     const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) entries.push(...sourceTreeEntries(sourcePath, relativePath));
+    if (entry.isDirectory()) entries.push(...sourceTreeEntries(sourcePath, relativePath, excludedNames));
     else if (entry.isFile()) entries.push({ path: relativePath, contents: readFileSync(sourcePath, 'utf8') });
     else fail(`Install source must contain only regular files and directories: ${sourcePath}`);
   }
   return entries;
 }
 
-function treeMatches(destination, entries) {
+function treeMatches(destination, entries, excludedNames = new Set()) {
   if (!existsSync(destination)) return false;
   const installed = [];
   const visit = (directory, prefix = '') => {
     const root = lstatSync(directory);
     if (root.isSymbolicLink() || !root.isDirectory()) return false;
     for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
+      if (excludedNames.has(entry.name)) continue;
       const path = resolve(directory, entry.name);
       const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
@@ -132,9 +137,9 @@ function treeMatches(destination, entries) {
   return entries.every((entry, index) => entry.path === installed[index].path && entry.contents === installed[index].contents);
 }
 
-function addTreeStep(plan, source, destination) {
-  const entries = sourceTreeEntries(source);
-  if (!treeMatches(destination, entries)) plan.push({ type: 'tree', path: destination, entries });
+function addTreeStep(plan, source, destination, excludedNames = new Set()) {
+  const entries = sourceTreeEntries(source, '', excludedNames);
+  if (!treeMatches(destination, entries, excludedNames)) plan.push({ type: 'tree', path: destination, entries });
 }
 
 function planCoreRuntime(assets, lifecycle, paths) {
@@ -143,7 +148,6 @@ function planCoreRuntime(assets, lifecycle, paths) {
   addSourceTree(plan, resolve(import.meta.dirname), resolve(paths.dir, 'runtime'));
   addSourceTree(plan, assets.configRoot, resolve(paths.dir, 'config'));
   addSourceTree(plan, assets.templatesRoot, resolve(paths.dir, 'templates'));
-  addSourceTree(plan, resolve(ROOT, 'execution-runtime'), resolve(paths.dir, 'execution-runtime'));
   for (const legacyRoleId of LEGACY_ROLE_RENAMES.keys()) {
     const legacyBody = resolve(paths.dir, 'templates', `${legacyRoleId}.md`);
     if (existsSync(legacyBody)) plan.push({ type: 'delete', path: legacyBody });
@@ -151,26 +155,33 @@ function planCoreRuntime(assets, lifecycle, paths) {
   return plan;
 }
 
-function planManagedSkills(lifecycle, paths) {
+function planManagedSkills(lifecycle, paths, platforms = [...PLATFORMS]) {
   const plan = [];
-  const destinations = [
-    resolve(paths.codexDir, 'skills'),
-    resolve(paths.claudeDir, 'skills'),
-    resolve(paths.openCodeDir, 'skills')
-  ];
+  const destinations = {
+    codex: resolve(paths.codexDir, 'skills'),
+    claude: resolve(paths.claudeDir, 'skills'),
+    opencode: resolve(paths.openCodeDir, 'skills')
+  };
   for (const { name, source } of lifecycle.skillDirectories) {
-    for (const destination of destinations) addTreeStep(plan, source, resolve(destination, name));
+    for (const platform of platforms) addTreeStep(plan, source, resolve(destinations[platform], name), new Set(['node_modules']));
   }
-  for (const destination of destinations) {
-    const runtimeDirectory = resolve(destination, '..', 'execution-runtime');
-    addWriteStep(plan, resolve(runtimeDirectory, 'handoff-result-schema.json'), readFileSync(resolve(ROOT, 'execution-runtime', 'handoff-result-schema.json'), 'utf8'));
-  }
+  return plan;
+}
+
+function planExecutionRuntime(paths) {
+  const plan = [];
+  const source = [resolve(ROOT, 'execution-runtime'), resolve(import.meta.dirname, '..', 'execution-runtime')].find((candidate) => existsSync(candidate));
+  if (!source) fail('Missing execution runtime');
+  addSourceTree(plan, source, resolve(paths.dir, 'execution-runtime'), new Set(['node_modules']));
   return plan;
 }
 
 function planSupplementalRuntime(paths) {
   const plan = [];
-  addTreeStep(plan, resolve(SKILLS_ROOT, 'run-matt-spec-to-completion'), resolve(paths.dir, 'skills', 'run-matt-spec-to-completion'));
+  const relativePath = 'skills/run-matt-spec-to-completion';
+  const source = [resolve(ROOT, relativePath), resolve(import.meta.dirname, '..', relativePath)].find((candidate) => existsSync(candidate));
+  if (!source) fail('Missing supplemental run-matt-spec-to-completion runtime');
+  addTreeStep(plan, source, resolve(paths.dir, relativePath), new Set(['node_modules']));
   return plan;
 }
 
@@ -427,8 +438,9 @@ function init(assets, dryRun) {
 
 function generate(platforms, dryRun, assets, config = loadConfig(assets, dryRun, platforms).config, previousPlatforms = managedPlatforms(globalPaths())) {
   const result = planGenerationFor(platforms, assets, config);
+  const lifecycle = planInstallLifecycle();
   const managed = [...new Set([...previousPlatforms, ...platforms])];
-  const plan = [...result.plan, managedPlatformsStep(result.paths, managed)].filter(Boolean);
+  const plan = [...planManagedSkills(lifecycle, result.paths, platforms), ...planExecutionRuntime(result.paths), ...planSupplementalRuntime(result.paths), ...result.plan, managedPlatformsStep(result.paths, managed)].filter(Boolean);
   return { ...result, changed: applyGenerationTransaction(plan, result.paths, dryRun) };
 }
 
@@ -529,6 +541,7 @@ export function runCli(argv) {
     const plan = [
       ...planManagedSkills(lifecycle, paths),
       ...planSupplementalRuntime(paths),
+      ...planExecutionRuntime(paths),
       ...planCoreRuntime(assets, lifecycle, paths)
     ];
     for (const [path, contents] of installation.environmentContents) addWriteStep(plan, path, contents);
