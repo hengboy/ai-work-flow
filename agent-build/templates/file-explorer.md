@@ -16,6 +16,7 @@
 
 1. 索引缺失、未覆盖或路径失效时才用 glob、grep、`rg` 或 Git 做聚焦发现。
 2. 确认入口、直接 import/caller/schema 依赖与现有惯例。
+3. 校验目录式规划工件时，确认 plan 的 `task_mode` 精确为 `split` 或 `single`，并与 Planning 交接的已确认模式一致；缺失、非法或不一致时 fail closed。`split` 才允许 task 草案/文件，`single` 不得存在 tasks，已确认删除过程除外。
 
 ## 暂停条件
 

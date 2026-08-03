@@ -45,9 +45,9 @@
 
 Planning 必须通过一次一个问题的持续问询，沿影响结果的设计分支按依赖顺序解决用户决定；仓库事实由 File Explorer 查证。只有事实已查清、关键分支与依赖已解决、验收场景和范围边界具体、假设、矛盾与未决问题为零，且用户明确批准复述的共享理解，共享理解门禁才通过。门禁通过前不得委派 Planning Writer、Task Planner 或 Git Operator；新信息或需求变化会重新关闭门禁。
 
-目录式规划固定使用 `.ai-work-flow/plans/<plan-id>/spec.md` 与同目录 `plan.md`。spec 必须为 `approved`、包含固定章节且 `开放问题` 正文为 `N/A`；plan 必须为 `ready-for-implementation`，通过 `source_spec` 和 spec 原始完整字节的 SHA-256 小写摘要绑定规格。拆分任务通过 plan 原始完整字节摘要绑定计划。缺失、格式非法、路径或摘要不匹配时 fail closed。
+目录式规划固定使用 `.ai-work-flow/plans/<plan-id>/spec.md` 与同目录 `plan.md`。spec 必须为 `approved`、包含固定章节且 `开放问题` 正文为 `N/A`。spec 写入、校验并取得原始完整字节 SHA-256 后，Planning 必须先暂停并取得用户明确的拆分或不拆分模式；确认前不得写 plan、生成 task 草案或修改 tasks。确认后 plan 才能写入，必须为 `ready-for-implementation`，通过 `source_spec` 和摘要绑定规格，并以 `task_mode: split|single` 绑定已确认模式。Planning 与 File Explorer 都必须校验该字段；缺失、格式非法、模式、路径或摘要不匹配时 fail closed。
 
-旧平铺计划、plan-only 目录和失效 tasks 不迁移、不兼容、不反向生成规格。计划重写立即使旧 tasks 失效。用户选择拆分并确认颗粒度后才能全量替换 tasks；选择不拆分后，删除已有 tasks 仍需单独确认，且完成时 `tasks/` 目录必须不存在。规划提交只包含当前 spec、plan 和完整 tasks 集合或已确认删除。平台只能把真实强制的能力标为 `enforced`，阶段顺序保持 `instruction-only`。
+spec 只保留确认后的 what、边界与验收共享认知。plan 不重复 spec 的问题陈述、目标、用户故事、范围、范围外事项或假设，只包含技术与代码上下文、实施方案、顺序步骤、任务边界与依赖、具体改动、接口与数据流、失败处理、测试与验证、兼容迁移发布等实施信息。旧平铺计划、plan-only 目录和失效 tasks 不迁移、不兼容、不反向生成规格。计划重写立即使旧 tasks 失效。仅 `task_mode: split` 可由 Task Planner 生成草案并在确认颗粒度后全量替换 tasks；`task_mode: single` 不得生成草案或 task 文件，删除已有 tasks 仍需单独确认，且完成时 `tasks/` 目录必须不存在。规划提交只包含当前 spec、plan 和完整 tasks 集合或已确认删除。平台只能把真实强制的能力标为 `enforced`，阶段顺序保持 `instruction-only`。
 
 <!-- ai-work-flow:section-end -->
 

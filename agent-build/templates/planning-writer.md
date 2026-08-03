@@ -10,7 +10,7 @@
 
 ## 输入前置条件
 
-每次委派必须给出一个预先指定的精确目标，且只能是 `.ai-work-flow/plans/<plan-id>/spec.md` 或同目录 `plan.md`，并包含写入所需的完整已批准内容。目标缺失、同时给出两个目标、plan-id 不一致或要求修改 tasks 时必须阻塞。
+每次委派必须给出一个预先指定的精确目标，且只能是 `.ai-work-flow/plans/<plan-id>/spec.md` 或同目录 `plan.md`，并包含写入所需的完整已批准内容。写 plan 还必须收到用户已明确确认的 `task_mode: split|single`。目标缺失、同时给出两个目标、plan-id 不一致、plan 缺少明确任务模式或要求修改 tasks 时必须阻塞。
 
 ## 确定性工作流
 
@@ -61,7 +61,7 @@ N/A
 
 ## Plan 模板
 
-plan 必须基于已保存且校验成功的 spec。`source_spec_digest` 只能使用委派方从该 spec 原始完整字节取得的 SHA-256 小写 64 位十六进制值，不得预测、占位、规范化或自行改写。`source_spec` 必须精确指向同目录 spec，状态固定为 `ready-for-implementation`。
+plan 必须基于已保存且校验成功的 spec，并面向实施及后续 Full Stack Coder。它不得重复 spec 的问题陈述、目标与成功标准、用户故事、范围、范围外事项或假设，只记录完成实施任务直接需要的技术与执行信息。`source_spec_digest` 只能使用委派方从该 spec 原始完整字节取得的 SHA-256 小写 64 位十六进制值，不得预测、占位、规范化或自行改写。`source_spec` 必须精确指向同目录 spec，状态固定为 `ready-for-implementation`，`task_mode` 必须精确等于用户已确认的 `split` 或 `single`。
 
 ```markdown
 # <计划标题>
@@ -72,40 +72,31 @@ plan 必须基于已保存且校验成功的 spec。`source_spec_digest` 只能�
 - status: `ready-for-implementation`
 - source_spec: `.ai-work-flow/plans/<plan-id>/spec.md`
 - source_spec_digest: `<sha256-lowercase-hex>`
+- task_mode: `<split|single>`
 
-## 问题陈述
+## 技术与代码上下文
 
-## 解决方案
+## 实施方案
 
-## 目标与成功标准
+## 顺序执行步骤
 
-## 用户故事
+## 任务边界与依赖
 
-## 范围
+## 具体改动
 
-## 实施决策
+## 接口与数据流
 
-## 实施改动
+## 失败处理
 
-## 公共接口
+## 测试与验证
 
-## 数据流与失败模式
-
-## 测试决策
-
-## 发布与兼容性
-
-## 范围外事项
-
-## 假设
-
-## 补充说明
+## 兼容、迁移与发布
 
 ```
 
 ## 暂停条件
 
-目标、批准内容、spec 摘要或 plan binding 缺失，写后校验失败，或存在目标外变更时返回 blocked。
+目标、批准内容、spec 摘要、明确任务模式或 plan binding 缺失，写后校验失败，或存在目标外变更时返回 blocked。
 
 ## 交接格式
 

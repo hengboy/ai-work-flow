@@ -1245,10 +1245,9 @@ test('planning writer fixed spec and plan templates keep ordered sections and bl
     '假设', '开放问题'
   ];
   const planSections = [
-    '计划元数据', '问题陈述', '解决方案', '目标与成功标准',
-    '用户故事', '范围', '实施决策', '实施改动',
-    '公共接口', '数据流与失败模式', '测试决策',
-    '发布与兼容性', '范围外事项', '假设', '补充说明'
+    '计划元数据', '技术与代码上下文', '实施方案', '顺序执行步骤',
+    '任务边界与依赖', '具体改动', '接口与数据流', '失败处理',
+    '测试与验证', '兼容、迁移与发布'
   ];
   for (const [template, sections] of [[specTemplate, specSections], [planTemplate, planSections]]) {
     const positions = sections.map((heading) => template.indexOf(`## ${heading}`));
@@ -1260,6 +1259,10 @@ test('planning writer fixed spec and plan templates keep ordered sections and bl
   assert.match(specTemplate, /- status: `approved`[\s\S]*## 开放问题\n\nN\/A$/);
   assert.match(planTemplate, /source_spec: `\.ai-work-flow\/plans\/<plan-id>\/spec\.md`/);
   assert.match(planTemplate, /source_spec_digest: `<sha256-lowercase-hex>`/);
+  assert.match(planTemplate, /task_mode: `<split\|single>`/);
+  for (const duplicatedSection of ['问题陈述', '目标与成功标准', '用户故事', '范围', '范围外事项', '假设']) {
+    assert.doesNotMatch(planTemplate, new RegExp(`^## ${duplicatedSection}$`, 'm'), duplicatedSection);
+  }
 });
 
 test('coding rejects legacy flat and plan-only planning artifacts', () => {
@@ -1349,22 +1352,25 @@ test('spec-first planning binds the plan to raw saved bytes and short-circuits f
   assert.notEqual(digest, normalizedDigest);
   const orderedMarkers = [
     '**冲突门禁**', '**需求确认**', '**规格写入或复用**', '**规格摘要**',
-    '**计划写入与绑定**', '**任务模式选择**', '**拆分模式**', '**单任务模式**', '**规划提交**'
+    '**任务模式选择**', '**计划写入与绑定**', '**拆分模式**', '**单任务模式**', '**规划提交**'
   ];
   const positions = orderedMarkers.map((marker) => planning.indexOf(marker));
   assert.ok(positions.every((position) => position >= 0));
   assert.deepEqual(positions, [...positions].sort((left, right) => left - right));
   assert.match(planning, /原始完整字节.*不得规范化文本/s);
   assert.match(planning, /读取或摘要失败时停止，不得写 plan/);
-  assert.match(planning, /写入、校验、摘要、绑定或全量替换失败时 fail closed/);
+  assert.match(planning, /用户明确确认前必须停下.*不得委派 Planning Writer 写 plan.*不得委派 Task Planner.*不得创建、修改或删除 plan\/tasks/s);
+  assert.match(planning, /写入、校验、摘要、模式绑定或全量替换失败时 fail closed/);
   assert.match(planning, /需求未变化.*校验现有 spec.*再次取得批准.*不重写/s);
-  assert.match(routing, /缺失、格式非法、路径或摘要不匹配时 fail closed/);
+  assert.match(routing, /确认前不得写 plan、生成 task 草案或修改 tasks/);
+  assert.match(routing, /缺失、格式非法、模式、路径或摘要不匹配时 fail closed/);
 });
 
 test('spec-first validation and task replacement contracts reject partial state', () => {
   const planning = readFileSync(resolve(templatesDir, 'planning.md'), 'utf8');
   const writer = readFileSync(resolve(templatesDir, 'planning-writer.md'), 'utf8');
   const taskPlanner = readFileSync(resolve(templatesDir, 'task-planner.md'), 'utf8');
+  const fileExplorer = readFileSync(resolve(templatesDir, 'file-explorer.md'), 'utf8');
   const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
 
   for (const source of [planning, writer, coding]) {
@@ -1377,6 +1383,11 @@ test('spec-first validation and task replacement contracts reject partial state'
   assert.match(taskPlanner, /不得局部保留旧任务/);
   assert.match(taskPlanner, /明确确认删除全部旧 tasks/);
   assert.match(taskPlanner, /删除不完整.*不得降级声明单任务模式/s);
+  assert.match(planning, /Planning 校验摘要.*`task_mode`/s);
+  assert.match(fileExplorer, /`task_mode` 精确为 `split` 或 `single`.*Planning 交接的已确认模式一致/s);
+  assert.match(writer, /写 plan 还必须收到用户已明确确认的 `task_mode: split\|single`/);
+  assert.match(taskPlanner, /草案或写入只接受 `task_mode: split`/);
+  assert.match(taskPlanner, /`task_mode: single`.*不得生成草案或 task 文件/s);
 });
 
 test('researcher stores Markdown reports in a narrow project research directory', () => {
@@ -1483,7 +1494,7 @@ test('planning prompt converges one decision at a time while planning writer own
   assert.match(body, /新信息或需求变化.*重新打开问询门禁/s);
   assert.match(body, /用户明确批准共享理解/);
   assert.match(body, /未选择不覆盖/);
-  assert.match(body, /只报告目录、spec\/plan 路径.*不输出完整正文/s);
+  assert.match(body, /只报告目录与 spec 路径.*不输出完整正文/s);
   assert.match(routing, /持续问询.*共享理解门禁.*Planning Writer、Task Planner 或 Git Operator/s);
   assert.match(prompt, /收到编码或实施请求时引导用户.*Coding/s);
   assert.match(prompt, /Coding/);
@@ -1499,7 +1510,9 @@ test('planning confirms plan splitting and commits only final planning artifacts
 
   assert.match(planning, /\.ai-work-flow\/plans\/<plan-id>\/spec\.md/);
   assert.match(planning, /source_spec_digest/);
-  assert.match(planning, /只报告目录、spec\/plan 路径.*提示用户打开查看.*不输出完整正文.*“拆分”或“不拆分”/s);
+  assert.match(planning, /只报告目录与 spec 路径.*提示用户打开查看.*不输出完整正文.*“拆分”或“不拆分”/s);
+  assert.ok(planning.indexOf('**任务模式选择**') < planning.indexOf('**计划写入与绑定**'));
+  assert.match(planning, /收到明确任务模式后.*只写同目录 `plan\.md`.*`task_mode: split\|single`/s);
   assert.match(planning, /单任务模式.*“删除全部旧 tasks”.*移除 `tasks\/` 目录.*目录不存在/s);
   assert.match(planning, /outcome.*blocked_by.*acceptance/s);
   assert.match(planning, /合并、拆细、调整依赖或验收/);
@@ -1514,12 +1527,15 @@ test('planning confirms plan splitting and commits only final planning artifacts
   assert.match(planningWriter, /预先指定的精确目标/);
   assert.match(planningWriter, /写 spec 时不创建或修改 plan\/tasks.*写 plan 时不创建或修改 spec\/tasks/s);
   assert.match(planningWriter, /ready-for-implementation/);
+  assert.match(planningWriter, /plan 缺少明确任务模式.*必须阻塞/s);
   assert.match(taskPlanner, /spec\.md.*plan\.md.*File Explorer.*代码地图/s);
   assert.match(compiledTaskPlanner, /只维护当前 plan 的 `tasks\/NN-\*\.md`/);
   assert.match(taskPlanner, /草案阶段.*不得创建、修改或删除任何 task 文件/s);
   assert.match(taskPlanner, /写入阶段.*完整任务草案.*用户已明确确认.*颗粒度/s);
   assert.match(taskPlanner, /校验每项 `source_plan_digest`.*待写内容与已确认草案完全一致/s);
   assert.match(taskPlanner, /删除阶段.*删除目标 `tasks\/` 下全部 task 文件并移除 `tasks\/` 目录本身.*目录仍存在.*阻塞/s);
+  assert.match(taskPlanner, /草案阶段.*`task_mode: split`/s);
+  assert.match(taskPlanner, /删除阶段.*`task_mode: single`/s);
   assert.match(gitOperator, /不拆分时 `tasks\/` 目录必须不存在/);
   assert.match(taskPlanner, /默认采用较粗颗粒度并优先减少 task 数量/);
 });
