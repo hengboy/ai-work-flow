@@ -24,10 +24,19 @@ function assertVerifyInput(input) {
   }
 }
 
+function assertPrepareInput(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("prepare requires a JSON object");
+  if (input.spec_status === "absent") {
+    const forbidden = ["spec_path", "plan_path", "task_path"].filter((field) => Object.hasOwn(input, field));
+    if (forbidden.length > 0) throw new Error(`prepare spec_status absent must not include ${forbidden.join(", ")}`);
+  }
+}
+
 try {
   const { command, repository } = parseArgs(process.argv.slice(2));
   const input = await stdinJson();
   if (command === "verify") assertVerifyInput(input);
+  else assertPrepareInput(input);
   const manifest = command === "prepare"
     ? await prepareDirectoryReviewManifest(repository, input)
     : await verifyDirectoryReviewManifest(repository, input.manifest, input);

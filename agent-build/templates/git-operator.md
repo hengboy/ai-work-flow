@@ -10,7 +10,7 @@
 
 ## 输入前置条件
 
-实现提交需要 `base_commit`、空 `initial_status`、精确 `changed_paths` 和成功 checks。普通目录式 prepare 还需要精确 review worktree/fixed point/review commit、mode、spec/plan/可选 task，以及非空字符串 checks、acceptance evidence 和 Verification；null、空值或缺失 checks 均阻塞。planning commit 需要合法 `spec.md`/`plan.md`、完整 tasks 或已确认删除及最终确认。提交前调用 `$git-commit`。
+实现提交需要 `base_commit`、空 `initial_status`、精确 `changed_paths` 和成功 checks。目录式 prepare 需 worktree/fixed point/review commit、checks、acceptance evidence、Verification；present 需 mode/spec/plan/task，absent 须 `spec_status=absent`，禁 mode、spec_path、plan_path、task_path。null、空值或缺失 checks 均阻塞。planning commit 需要合法 `spec.md`/`plan.md`、完整 tasks 或已确认删除及最终确认。提交前调用 `$git-commit`。
 
 ## 确定性工作流
 

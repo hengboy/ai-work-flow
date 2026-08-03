@@ -495,6 +495,7 @@ test('generated implementation and review roles preserve their scoped contracts'
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const coding = generatedBody(paths, platform, 'coding', extension);
     const reviewer = generatedBody(paths, platform, 'code-reviewer', extension);
+    assert.match(coding, /spec_status=absent[\s\S]*不含 mode[\s\S]*spec\/plan\/task 路径/, `${platform}/coding`);
     for (const assertion of implementationAssertions) assert.match(coding, assertion, `${platform}/coding`);
     for (const assertion of reviewAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
   }
@@ -1789,6 +1790,7 @@ test('structured dual-axis review controls the final integration gate', () => {
   assert.match(compiled.get('git-operator'), /review-manifest-cli\.mjs.*prepare --repository <review-worktree>/s);
   assert.match(compiled.get('git-operator'), /null、空值或缺失 checks 均阻塞/);
   assert.match(compiled.get('git-operator'), /不得执行 `review-manifest-cli\.mjs verify`/);
+  assert.match(compiled.get('coding'), /spec_status=absent[\s\S]*不含 mode[\s\S]*spec\/plan\/task 路径/);
   assert.doesNotMatch(compiled.get('file-explorer'), /ReviewManifest|review-manifest-cli|review_manifest|manifest_digest|bundle_digest/);
   assert.doesNotMatch(compiled.get('file-explorer'), /null、空字符串、空对象或缺失 checks/);
 });
@@ -1892,7 +1894,8 @@ test('dual-axis review binds standards and complete spec context bundles without
   assert.match(routing, /两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest\/digest，以及同一委派中的相同 spec bundle/);
   assert.match(routing, /Standards 轴使用冻结 revision 的仓库 Standards、`CONTEXT\.md` 等来源，`spec\.md` 不是 Standards 来源/);
   assert.match(bodies['code-reviewer'], /完整 spec context\/bundle/);
-  assert.match(bodies['code-reviewer'], /两个叶子收到相同 manifest\/digest、端点、shards、来源，并在同一委派中收到相同额外 bundle/);
+  assert.match(bodies['code-reviewer'], /`absent` 只委派 Standards，不构造 Spec/);
+  assert.match(bodies['code-reviewer'], /present 两叶子共享 manifest\/digest、端点、shards、来源及 bundle/);
   assert.match(bodies['review-standards'], /冻结的 Standards\/`CONTEXT\.md` 来源/);
   assert.match(bodies['review-standards'], /`spec\.md` 不得作为 Standards 来源/);
   assert.match(bodies['review-spec'], /review-manifest-cli\.mjs verify.*机器复验/s);
@@ -1911,7 +1914,7 @@ test('dual-axis review binds standards and complete spec context bundles without
     for (const assertion of sharedBundleAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
     for (const assertion of sharedManifestAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
     for (const assertion of recoveryAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
-    assert.match(reviewer, /同一委派中收到相同额外 bundle/, `${platform}/code-reviewer`);
+    assert.match(reviewer, /present 两叶子共享 manifest\/digest、端点、shards、来源及 bundle/, `${platform}/code-reviewer`);
     assert.match(standards, /`spec\.md` 不得作为 Standards 来源/, `${platform}/review-standards`);
     assert.match(spec, /完整 spec context\/bundle/, `${platform}/review-spec`);
     for (const assertion of sharedManifestAssertions) assert.match(spec, assertion, `${platform}/review-spec`);

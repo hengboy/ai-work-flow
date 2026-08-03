@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { prepareDirectoryReviewManifest, verifyDirectoryReviewManifest } from "../../../execution-runtime/lib/directory-review-manifest.mjs";
-import { assertReviewManifest, createReviewManifest, reviewBundleDigest, reviewManifestDigest } from "../../../execution-runtime/lib/review-manifest.mjs";
+import { assertReviewManifest, createReviewManifest, createReviewShardAssignments, reviewBundleDigest, reviewManifestDigest } from "../../../execution-runtime/lib/review-manifest.mjs";
 
 const run = promisify(execFile);
 const cli = resolve(import.meta.dirname, "..", "..", "..", "execution-runtime", "review-manifest-cli.mjs");
@@ -18,7 +18,7 @@ async function git(cwd, ...args) {
   return (await run("git", args, { cwd, encoding: "utf8" })).stdout.trim();
 }
 
-async function fixture({ validPlan = true, copy = false, objectFormat, mode = "single" } = {}) {
+async function fixture({ validPlan = true, copy = false, objectFormat, mode = "single", specStatus = "present" } = {}) {
   const root = await mkdtemp(join(tmpdir(), "directory-review-manifest-"));
   const initArgs = ["init", "-b", "main"];
   if (objectFormat) initArgs.push(`--object-format=${objectFormat}`);
@@ -26,7 +26,6 @@ async function fixture({ validPlan = true, copy = false, objectFormat, mode = "s
   await git(root, "config", "user.email", "test@example.com");
   await git(root, "config", "user.name", "Test User");
   const planDirectory = join(root, ".ai-work-flow", "plans", "example");
-  await mkdir(planDirectory, { recursive: true });
   const specPath = ".ai-work-flow/plans/example/spec.md";
   const planPath = ".ai-work-flow/plans/example/plan.md";
   const taskPath = ".ai-work-flow/plans/example/tasks/01-review.md";
@@ -42,17 +41,20 @@ async function fixture({ validPlan = true, copy = false, objectFormat, mode = "s
   ].join("\n");
   const planDigest = createHash("sha256").update(plan).digest("hex");
   await writeFile(join(root, "CONTEXT.md"), "# Standards\n");
-  await writeFile(join(root, specPath), spec);
-  await writeFile(join(root, planPath), plan);
-  if (mode === "task") {
-    await mkdir(join(root, ".ai-work-flow", "plans", "example", "tasks"), { recursive: true });
-    await writeFile(join(root, taskPath), [
-      "# 01 - Review",
-      "",
-      "- source_plan: `../plan.md`",
-      `- source_plan_digest: \`${planDigest}\``,
-      "",
-    ].join("\n"));
+  if (specStatus === "present") {
+    await mkdir(planDirectory, { recursive: true });
+    await writeFile(join(root, specPath), spec);
+    await writeFile(join(root, planPath), plan);
+    if (mode === "task") {
+      await mkdir(join(root, ".ai-work-flow", "plans", "example", "tasks"), { recursive: true });
+      await writeFile(join(root, taskPath), [
+        "# 01 - Review",
+        "",
+        "- source_plan: `../plan.md`",
+        `- source_plan_digest: \`${planDigest}\``,
+        "",
+      ].join("\n"));
+    }
   }
   await writeFile(join(root, "old-name.txt"), "review me\n");
   if (copy) await writeFile(join(root, "copy-source.txt"), "copy me\n");
@@ -73,10 +75,13 @@ async function fixture({ validPlan = true, copy = false, objectFormat, mode = "s
     input: {
       fixed_point: fixedPoint,
       review_commit: reviewCommit,
-      mode,
-      spec_path: specPath,
-      plan_path: planPath,
-      ...(mode === "task" ? { task_path: taskPath } : {}),
+      spec_status: specStatus,
+      ...(specStatus === "present" ? {
+        mode,
+        spec_path: specPath,
+        plan_path: planPath,
+        ...(mode === "task" ? { task_path: taskPath } : {}),
+      } : {}),
       checks: ["node --test"],
       acceptance_evidence: [{ criterion: "rename", evidence: "new-name.txt exists" }],
       verification: [{ command: "node --test", result: "passed" }],
@@ -139,6 +144,40 @@ test("prepares and verifies an aggregate spec bundle bound to committed spec and
   ]);
   assert.deepEqual(manifest.spec_source, manifest.directory_bundle.sources[0]);
   await verifyDirectoryReviewManifest(root, manifest, input);
+});
+
+test("prepares and verifies an explicit absent spec bundle without planning paths", async () => {
+  const { root, input } = await fixture({ specStatus: "absent" });
+  for (const field of ["spec_path", "plan_path", "task_path"]) assert.equal(Object.hasOwn(input, field), false, field);
+
+  const manifest = await prepareDirectoryReviewManifest(root, input);
+
+  assert.equal(manifest.spec_status, "absent");
+  assert.equal(manifest.spec_source, null);
+  assert.equal(manifest.directory_bundle.mode, "absent");
+  assert.deepEqual(manifest.directory_bundle.sources, []);
+  assert.equal(manifest.directory_bundle.bundle_digest, reviewBundleDigest(manifest.directory_bundle));
+  assert.deepEqual(createReviewShardAssignments(manifest), {
+    standards: {
+      manifest,
+      manifest_digest: manifest.manifest_digest,
+      shard_ids: manifest.shards.map((shard) => shard.id),
+    },
+  });
+
+  const verified = await verifyDirectoryReviewManifest(root, manifest, {
+    ...input,
+    acceptance_evidence: [{ evidence: "new-name.txt exists", criterion: "rename" }],
+  });
+  assert.deepEqual(verified, manifest);
+
+  for (const field of ["spec_path", "plan_path", "task_path"]) {
+    await assert.rejects(
+      prepareDirectoryReviewManifest(root, { ...input, [field]: "not-allowed.md" }),
+      /spec_status absent must not include/,
+      field,
+    );
+  }
 });
 
 test("detects a copy from an unchanged committed source", async () => {
@@ -306,4 +345,32 @@ test("exposes an executable prepare and verify CLI for ordinary Coding", async (
   });
   assert.notEqual(rejected.status, 0);
   assert.match(rejected.stderr, /bundle facts/);
+});
+
+test("exposes an executable absent prepare and endpoint-bound verify CLI", async () => {
+  const { root, input } = await fixture({ specStatus: "absent" });
+  const prepared = spawnSync(process.execPath, [cli, "prepare", "--repository", root], {
+    input: JSON.stringify(input), encoding: "utf8",
+  });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const manifest = JSON.parse(prepared.stdout);
+  assert.equal(manifest.spec_status, "absent");
+  assert.deepEqual(manifest.directory_bundle.sources, []);
+
+  const verified = spawnSync(process.execPath, [cli, "verify", "--repository", root], {
+    input: JSON.stringify({ manifest, ...input }), encoding: "utf8",
+  });
+  assert.equal(verified.status, 0, verified.stderr);
+
+  const driftedEndpoints = spawnSync(process.execPath, [cli, "verify", "--repository", root], {
+    input: JSON.stringify({ manifest, ...input, fixed_point: input.review_commit }), encoding: "utf8",
+  });
+  assert.notEqual(driftedEndpoints.status, 0);
+  assert.match(driftedEndpoints.stderr, /externally supplied review endpoints/);
+
+  const rejectedPaths = spawnSync(process.execPath, [cli, "prepare", "--repository", root], {
+    input: JSON.stringify({ ...input, spec_path: "not-allowed.md" }), encoding: "utf8",
+  });
+  assert.notEqual(rejectedPaths.status, 0);
+  assert.match(rejectedPaths.stderr, /spec_status absent must not include spec_path/);
 });

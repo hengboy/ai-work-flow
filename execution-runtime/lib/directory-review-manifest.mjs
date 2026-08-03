@@ -98,6 +98,16 @@ function hasExactStringFields(value, fields) {
     fields.every((field) => isNonEmptyString(value[field]));
 }
 
+function directorySpecStatus(input) {
+  const status = input.spec_status ?? "present";
+  if (!["present", "absent"].includes(status)) throw new Error("Directory review spec_status must be present or absent");
+  if (status === "absent") {
+    const forbidden = ["spec_path", "plan_path", "task_path", "mode"].filter((field) => Object.hasOwn(input, field));
+    if (forbidden.length > 0) throw new Error(`Directory review spec_status absent must not include ${forbidden.join(", ")}`);
+  }
+  return status;
+}
+
 function assertFacts(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Directory review input must be an object");
   if (!Array.isArray(input.acceptance_evidence) || input.acceptance_evidence.length === 0 ||
@@ -111,6 +121,7 @@ function assertFacts(input) {
   if (!Array.isArray(input.checks) || input.checks.length === 0 || input.checks.some((check) => !isNonEmptyString(check))) {
     throw new Error("Directory review checks must contain non-empty strings");
   }
+  return directorySpecStatus(input);
 }
 
 async function assertReviewContext(cwd, fixedPoint, reviewCommit) {
@@ -161,10 +172,10 @@ async function standardsSource(cwd, reviewCommit, input) {
   return [{ path: STANDARDS_PATH, revision: reviewCommit }];
 }
 
-function buildDirectoryBundle(input, sources) {
+function buildDirectoryBundle(input, sources, specStatus) {
   const bundle = {
     type: "directory",
-    mode: input.mode,
+    mode: specStatus === "absent" ? "absent" : input.mode,
     sources,
     acceptance_evidence_digest: contentDigest(input.acceptance_evidence),
     verification_digest: contentDigest(input.verification),
@@ -174,15 +185,15 @@ function buildDirectoryBundle(input, sources) {
 }
 
 async function buildDirectoryReviewFacts(cwd, input) {
-  assertFacts(input);
+  const specStatus = assertFacts(input);
   await assertReviewContext(cwd, input.fixed_point, input.review_commit);
-  const sources = await directorySources(cwd, input.review_commit, input);
+  const sources = specStatus === "absent" ? [] : await directorySources(cwd, input.review_commit, input);
   const standards_source = await standardsSource(cwd, input.review_commit, input);
   const changed_paths = await committedPathChanges(cwd, input.fixed_point, input.review_commit);
   if (changed_paths.length === 0) throw new Error("Directory review range must contain changed paths");
   await git(cwd, ["diff", "--check", `${input.fixed_point}...${input.review_commit}`]);
   const diff_command = ["git", "diff", "--no-ext-diff", `${input.fixed_point}...${input.review_commit}`];
-  const directory_bundle = buildDirectoryBundle(input, sources);
+  const directory_bundle = buildDirectoryBundle(input, sources, specStatus);
   return {
     fixed_point: input.fixed_point,
     review_commit: input.review_commit,
@@ -190,8 +201,8 @@ async function buildDirectoryReviewFacts(cwd, input) {
     changed_paths,
     checks: [...input.checks, `git diff --check ${input.fixed_point}...${input.review_commit}`],
     diff_command,
-    spec_status: "present",
-    spec_source: sources[0],
+    spec_status: specStatus,
+    spec_source: specStatus === "absent" ? null : sources[0],
     standards_source,
     directory_bundle,
     shards: changed_paths.map((change, index) => ({
