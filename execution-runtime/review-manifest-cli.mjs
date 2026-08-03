@@ -11,6 +11,7 @@ async function stdinJson() {
 }
 
 function parseArgs(argv) {
+  if (argv.length === 1 && ["--help", "-h"].includes(argv[0])) return { help: true };
   const [command, flag, repository, ...rest] = argv;
   if (!["prepare", "verify"].includes(command) || flag !== "--repository" || !repository || rest.length > 0) {
     throw new Error("Usage: review-manifest-cli.mjs <prepare|verify> --repository <review-worktree>");
@@ -27,13 +28,24 @@ function assertVerifyInput(input) {
 function assertPrepareInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("prepare requires a JSON object");
   if (input.spec_status === "absent") {
-    const forbidden = ["spec_path", "plan_path", "task_path"].filter((field) => Object.hasOwn(input, field));
+    const forbidden = ["mode", "spec_path", "plan_path", "task_path"].filter((field) => Object.hasOwn(input, field));
     if (forbidden.length > 0) throw new Error(`prepare spec_status absent must not include ${forbidden.join(", ")}`);
   }
 }
 
 try {
-  const { command, repository } = parseArgs(process.argv.slice(2));
+  const { command, repository, help } = parseArgs(process.argv.slice(2));
+  if (help) {
+    process.stdout.write([
+      "Usage: review-manifest-cli.mjs <prepare|verify> --repository <review-worktree>",
+      "prepare stdin: fixed_point, review_commit, checks, acceptance_evidence, verification",
+      "present bundle: spec_status=present (or omitted), spec_path, plan_path, and task_path only for mode=task",
+      "absent bundle: spec_status=absent, with no mode, spec_path, plan_path, or task_path; output mode is single",
+      "verify stdin: the unchanged directory review prepare envelope",
+      "",
+    ].join("\n"));
+    process.exit(0);
+  }
   const input = await stdinJson();
   if (command === "verify") assertVerifyInput(input);
   else assertPrepareInput(input);

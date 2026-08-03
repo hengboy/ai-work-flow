@@ -41,7 +41,7 @@
 
 普通目录式流程由 Git Operator 在 commit/sync 成功后执行全局 `review-manifest-cli.mjs prepare`。prepare stdout 是当前格式 envelope，包含 `review_manifest`、`verify_input` 及其 `manifest_digest`、`bundle_digest`；`verify_input` 原样保留 review endpoints、`checks`、`acceptance_evidence`、`verification` 和 present 模式所需的 mode/spec/plan/task 输入，`spec_status=absent` 时不含 mode/spec/plan/task 路径；原始值形状为 checks: ["<check>"]、acceptance_evidence: [{criterion,evidence}]、verification: [{command,result}]。Coding 验证其 `review_manifest`、`manifest_digest`、`bundle_digest` 与 Git 事实，并严格校验 envelope，只把同一 envelope 原样交给 Code Reviewer 的 `review-manifest-cli.mjs verify`，不得推导、删除或重建输入；CLI、字段或 bundle 不一致均 blocked。Coding 不访问工作区、Shell/Git，不委派 File Explorer prepare，也不自行 prepare、verify/编排审查。
 
-普通目录式流程的首次完整双轴审查若有 blocking findings，只修用户批准的 IDs。修复验证、新 review commit 的后继关系/HEAD 和同步通过后，不执行第二次评审，自动继续 task 汇入或最终整合与清理。Canonical Skill 是独立协议：`complete-review-fix` 后自动同步并执行最终评审，若再次出现 blocking findings 再请求新的具体 IDs。两套流程不得互换状态或格式。
+普通目录式流程的首次完整双轴审查若有 blocking findings，只修用户批准的 IDs。修复验证、新 review commit 的后继关系/HEAD 和同步通过后，不执行第二次评审，自动继续 task 汇入或最终整合与清理。
 
 ## 暂停条件
 

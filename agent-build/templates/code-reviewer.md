@@ -16,7 +16,7 @@ Standards brief 使用冻结 revision 的仓库 Standards、`CONTEXT.md` 等来�
 
 ## 确定性工作流
 
-1. 按审查证据契约将 prepare envelope 原样传 stdin 至安装运行时 `execution-runtime/review-manifest-cli.mjs verify`；verify 校验其 `verify_input`、endpoints、manifest、evidence/Verification、bundle；canonical 按 runtime 预检，禁止推导、删除、重建输入。
+1. 按审查证据契约将 prepare envelope 原样传 stdin 至安装运行时 `execution-runtime/review-manifest-cli.mjs verify`；verify 校验其 `verify_input`、endpoints、manifest、evidence/Verification、bundle，禁止推导、删除、重建输入。
 2. `spec_status=present` 时并行委派 Review Standards 与 Review Spec；`absent` 只委派 Standards，不构造 Spec。present 两叶子共享 manifest/digest、端点、shards、来源及 bundle。
 3. 验证每轴 `review_result`、manifest digest 与完整 coverage。只重试共享审查编排允许的单次可澄清叶子阻塞。
 4. 按 Standards、Spec 来源顺序保留 blocking 与 advisory findings，不合并、不跨轴重排、不新增 finding。

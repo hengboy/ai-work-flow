@@ -361,8 +361,8 @@ export function loadAgentAssets(configRoot = resolve(import.meta.dirname, '..', 
   for (const marker of ['产品决策', '共享理解批准', 'plan-id 同名冲突', '拆分模式', '删除旧 tasks', 'planning commit', '实施授权', 'blocking finding IDs', 'stash 授权', '冲突语义', '不可恢复故障']) {
     if (!coding.includes(marker)) fail(`Compiled Coding prompt is missing manual gate: ${marker}.`);
   }
-  if (!coding.includes('普通目录式流程') || !coding.includes('不执行第二次评审') || !coding.includes('complete-review-fix') || !coding.includes('最终评审')) {
-    fail('Compiled Coding prompt does not distinguish ordinary and canonical review-fix successors.');
+  if (!coding.includes('普通目录式流程') || !coding.includes('不执行第二次评审') || !coding.includes('最终整合与清理')) {
+    fail('Compiled Coding prompt is missing the directory review-fix successor.');
   }
   return {
     configRoot: config,

@@ -2,7 +2,7 @@
 
 ## Summary
 
-采用分阶段兼容策略，继续支持现有 `version: 1` 配置。实施顺序为：安全修补 → Environment 原子激活 → Policy 与风险路由 → Spec Execution 生产入口 → 结构化交接。
+采用分阶段兼容策略，继续支持现有 `version: 1` 配置。实施顺序为：安全修补 → Environment 原子激活 → Policy 与风险路由 → 结构化交接。
 
 成功标准：
 
@@ -10,7 +10,7 @@
 - 环境切换失败或进程中断后，不会留下 marker 与 agents 不一致的混合状态。
 - 三个平台明确报告哪些权限是强制执行、哪些仅靠指令。
 - 简单任务走短路径，高风险任务保留确认门禁。
-- Spec 能通过真实 CLI 状态机完成初始化、委派、评审、整合和恢复。
+- 子代理交接能通过统一 JSON envelope 验证并由主代理转写。
 
 ## Implementation Changes
 
@@ -47,15 +47,8 @@
 - 本地开发地址的无头 E2E、截图可自动运行；可见浏览器、登录态和外部站点继续要求明确授权。
 - 评审发现全部交给用户选择，不增加自动修复循环；发生修复后允许对新差异重新评审。
 
-### 阶段 D：Spec Execution 与结构化结果
+### 阶段 D：结构化结果
 
-- 将执行 runtime 安装到共享 AI Work Flow 目录，平台 Skills 只引用这一份受管 runtime。
-- 新增状态机 CLI：`prepare`、`claim`、`record-ticket`、`record-review`、`review-decision`、`integrate`、`status`。
-- `prepare` 只初始化或恢复；`claim` 在委派前原子记录 `in_progress`；结果命令从 stdin 接收 JSON，拒绝文本拼接参数。
-- Orchestrator 负责原生 spawn/collect；串行委派 Full Stack Coder 调用状态机 CLI、实施 Ticket、记录 Completion result。
-- 新 execution plan 始终使用 delegated 模式；旧 `orchestrator` 计划仍可恢复，但通过同一 claim/record 流程执行，不再要求 `directExecutor`。
-- Review Checkpoint 增加向后兼容的 `awaiting_user` 状态和用户决策记录；选择修复后重新进入评审，不自动循环。
-- 现有文本 Completion 协议保留一个兼容周期并输出弃用警告；新的 canonical interface 为 schema 校验的 JSON。
 - 增加通用 Handoff result envelope：`role_id`、`status`、`summary`、`artifacts`、`checks`、可选 `error` 和类型化 payload；人类回复由该结果渲染。
 - 更新 `CONTEXT.md`、README、Skill 文档和项目导航索引，记录 Policy decision、Environment activation、Handoff result 等术语。
 
@@ -63,8 +56,7 @@
 
 - 配置版本保持 `1`；完整默认配置与稀疏 Environment overlay 同时受支持。
 - `env use` 从“只切 marker”变为事务化激活；`env status` 和 `env create --minimal` 为新增命令。
-- 状态机 CLI 每次 stdout 只输出一个 JSON 结果，stderr 输出诊断；无效状态、schema 失败或完整性失败使用非零退出码。
-- Handoff/Completion schema 均使用 `additionalProperties: false`；`blocked` 必须包含 error，`done` 禁止 error。
+- Handoff schema 使用 `additionalProperties: false`；`blocked` 必须包含 error，`done` 禁止 error。
 - 所有 persisted path 使用仓库相对路径；所有 Environment path 必须是 environments 目录的直接子文件。
 
 ## Test Plan
@@ -75,13 +67,12 @@
 - 对事务的每个写入步骤注入失败，验证即时回滚和重启恢复。
 - 对三平台生成结果做 capability matrix、默认入口、用户内容保留和幂等快照测试。
 - 对四档风险路由、索引过期回退、浏览器门禁、写入并发和 Git 授权做行为测试。
-- 在临时 Git 仓库完成 Execution CLI 的 prepare → claim → record → review → decision → integrate 端到端测试。
-- 覆盖执行中断、重复 claim、错误 Ticket ID、无效 commit、blocked 结果、人工修复后复审和旧 Checkpoint 恢复。
+- 覆盖 handoff 状态、字段约束、无效 commit、blocked 结果和人工修复后复审。
 
 ## Assumptions
 
 - 不引入配置 v2，也不自动重写用户现有 Environment 文件。
-- 根 CLI 保持 Node ESM；除现有 AJV runtime 外不增加生产依赖。
+- 根 CLI 保持 Node ESM，不增加生产依赖。
 - “原子激活”通过事务日志、原子 rename 和可恢复回滚实现，不宣称跨文件系统的单指令原子性。
 - Orchestrator 是项目任务的默认入口，不是不可绕过的强制入口。
 - 最终评审发现始终由用户决定是否修复。

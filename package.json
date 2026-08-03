@@ -3,7 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "pretest": "npm run check:runtime --prefix skills/run-matt-spec-to-completion",
     "test": "node --test"
   },
   "devDependencies": {

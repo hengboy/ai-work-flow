@@ -38,7 +38,7 @@
 
 包含：新增 `bug-fixer` 源角色资产、将其加入 `coding` 委派、三平台模型配置、模板中的职责和治理规则、必要的共享 routing 承载、README 与 feature navigation 同步，以及 agent workflow 的相关自动化断言和生成验证。
 
-不包含：checkpoint、execution plan 或 execution runtime 的状态机改造；除非实施测试证明既有状态机无法承载已确定的流程，届时停止并另行确认范围。
+不包含：与 Bug Fixer 角色、配置、路由和生成验证无关的执行机制改造。
 
 ## Implementation Decisions
 
@@ -79,7 +79,7 @@
 1. 修改 `test/agent-workflow.test.mjs`，将 `bug-fixer` 纳入 catalog、模板一致性、routing sections、生成结果、平台模型字段、委派图、实施契约和文档/index 事实断言。
 2. 添加 finding 治理断言：无当前评审结果具体获批 ID 时不得修复；只允许修复获批 ID；不得委派 `code-reviewer` 或执行 Git mutation；finding 修复提交必须后继于 `review_commit` 且等于当前 feature/task HEAD；同步后复审必须由用户明确选择且覆盖新 committed range；旧 finding 不自动触发复审；新 blocking finding 再次等待。
 3. 使用项目现有临时目录或测试生成机制生成 Codex 与 OpenCode 配置，断言生成输出含 Luna Max 字段，并清理临时产物，不向 `~/.codex`、`~/.claude`、`~/.config/opencode` 写入或提交生成物。
-4. 不新增 `skills/run-matt-spec-to-completion/test/*.test.mjs` 测试，除非实施中实际修改 execution runtime 状态机；若出现该需求，停止当前实施并请求新的范围确认。
+4. 不修改与 Bug Fixer 角色无关的共享 ReviewManifest 测试；若出现该需求，停止当前实施并请求新的范围确认。
 
 ### 阶段 5：验证和交付准备
 
@@ -92,7 +92,7 @@
 
 受管理角色目录和各平台代理配置新增 `bug-fixer`，这是 agent-build 配置接口的加法扩展：上层 `coding` 可在已定义条件下将任务委派给该角色，生成的 Codex、OpenCode 与 Claude 角色配置可识别该名称及其模型设置。
 
-不修改产品业务 API、CLI 参数或 schema；不修改 checkpoint format、execution plan 格式、Completion result schema 或 execution runtime 状态转换接口。现有 `full-stack-coder`、`code-reviewer` 和其他角色的公开配置名称与行为保持兼容。
+不修改产品业务 API、CLI 参数或 schema。现有 `full-stack-coder`、`code-reviewer` 和其他角色的公开配置名称与行为保持兼容。
 
 ## Data Flow and Failure Modes
 
@@ -116,7 +116,7 @@
 - 断言 `coding` 的任务分流：常规实现维持既有路径，可复现 bug 和明确获批 finding 进入 `bug-fixer`，未授权 finding 不进入修复。
 - 断言 finding/复审治理的完整行为：只修获批 ID、提交关系正确、复审由用户明确选择、复审范围是新完整 committed range、旧 finding 不自动复审、新 blocking finding 再次等待。
 - 通过临时目标运行 Codex/OpenCode 生成验证，检查生成文本含预期 Luna Max 字段；不使用真实用户主目录作为验证目标。
-- 执行 `node agent-build/install.mjs validate`、`node --test test/agent-workflow.test.mjs` 和 `npm test`。除非实际改动 execution runtime 状态机，否则不扩展 `skills/run-matt-spec-to-completion/test/*.test.mjs`。
+- 执行 `node agent-build/install.mjs validate`、`node --test test/agent-workflow.test.mjs` 和 `npm test`。除非实际改动共享 ReviewManifest runtime，否则不扩展对应测试。
 
 ## Rollout and Compatibility
 
@@ -126,7 +126,7 @@
 
 ## Out of Scope
 
-- 修改 checkpoint format、execution plan/runtime 状态机，除非测试发现既有复用存在缺口且已获得新的范围确认。
+- 修改与新增 Bug Fixer 无关的执行机制，除非测试发现既有复用存在缺口且已获得新的范围确认。
 - 自动修复全部评审问题、修复未获授权的 finding，或自动触发复审和重复复审循环。
 - 修改现有 reviewer 角色、`full-stack-coder` 的既有职责，或除 `bug-fixer` 外任何角色的 Luna/模型配置。
 - 提升 `MAX_AGENT_DEPTH`、引入新 policy，或对 `policies.json` 做常规改动。

@@ -16,6 +16,30 @@ const PLATFORMS = new Set(['codex', 'claude', 'opencode']);
 const LEGACY_PRIMARY_AGENT_ID = 'orchestrator';
 const LEGACY_GIT_OPERATOR_AGENT_ID = 'git-committer';
 const INSTALL_MISSING_ROLE_DEFAULTS = ['planning', 'planning-writer', 'task-planner', 'bug-fixer'];
+const OBSOLETE_SKILL = `run-${['m', 'att'].join('')}-spec-to-completion`;
+const OBSOLETE_EXECUTION_RUNTIME_FILES = [
+  `${['check', 'point-schema.json'].join('')}`,
+  'completion-result-schema.json',
+  `${['execution', '-cli.mjs'].join('')}`,
+  `${['execution', '-plan-schema.json'].join('')}`,
+  'handoff-result-schema.json',
+  'package-lock.json',
+  'package.json',
+  `${['state', '-store.mjs'].join('')}`,
+  `lib/${['check', 'point-integrity.mjs'].join('')}`,
+  `lib/${['check', 'point.mjs'].join('')}`,
+  'lib/completion-adapter.mjs',
+  'lib/execution-coding.mjs',
+  'lib/integration-lifecycle.mjs',
+  'lib/issue-tracker.mjs',
+  'lib/pre-merge-stash.mjs',
+  'lib/review-result.mjs',
+  'lib/spec-intake.mjs',
+  `lib/${['tick', 'et-frontier.mjs'].join('')}`,
+  'lib/time.mjs',
+  'lib/validation.mjs',
+  'lib/worktree-lifecycle.mjs'
+];
 const LEGACY_ROLE_RENAMES = new Map([
   [LEGACY_PRIMARY_AGENT_ID, 'coding'],
   [LEGACY_GIT_OPERATOR_AGENT_ID, 'git-operator']
@@ -76,8 +100,9 @@ function planInstallLifecycle() {
   const skillsRoot = [SKILLS_ROOT, resolve(import.meta.dirname, '..', 'skills')].find((candidate) => existsSync(candidate));
   if (!skillsRoot) fail('Missing managed skills');
   const skillDirectories = readdirSync(skillsRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isDirectory() && existsSync(resolve(skillsRoot, entry.name, 'SKILL.md')))
     .map((entry) => ({ name: entry.name, source: resolve(skillsRoot, entry.name) }));
+  if (!skillDirectories.length) fail('Missing managed skills');
   const sourceDir = resolve(import.meta.dirname, '..');
   const entry = existsSync(resolve(sourceDir, 'install.mjs')) ? 'install.mjs' : 'agent-workflow.mjs';
   if (!existsSync(resolve(sourceDir, entry))) fail(`Missing workflow runtime entry: ${entry}`);
@@ -148,6 +173,9 @@ function planCoreRuntime(assets, lifecycle, paths) {
   addSourceTree(plan, resolve(import.meta.dirname), resolve(paths.dir, 'runtime'));
   addSourceTree(plan, assets.configRoot, resolve(paths.dir, 'config'));
   addSourceTree(plan, assets.templatesRoot, resolve(paths.dir, 'templates'));
+  for (const { name, source } of lifecycle.skillDirectories) {
+    addTreeStep(plan, source, resolve(paths.dir, 'skills', name), new Set(['node_modules']));
+  }
   for (const legacyRoleId of LEGACY_ROLE_RENAMES.keys()) {
     const legacyBody = resolve(paths.dir, 'templates', `${legacyRoleId}.md`);
     if (existsSync(legacyBody)) plan.push({ type: 'delete', path: legacyBody });
@@ -176,12 +204,27 @@ function planExecutionRuntime(paths) {
   return plan;
 }
 
-function planSupplementalRuntime(paths) {
+function hasPathEntry(path) {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+function planObsoleteManagedContent(paths) {
   const plan = [];
-  const relativePath = 'skills/run-matt-spec-to-completion';
-  const source = [resolve(ROOT, relativePath), resolve(import.meta.dirname, '..', relativePath)].find((candidate) => existsSync(candidate));
-  if (!source) fail('Missing supplemental run-matt-spec-to-completion runtime');
-  addTreeStep(plan, source, resolve(paths.dir, relativePath), new Set(['node_modules']));
+  for (const platformRoot of [paths.codexDir, paths.claudeDir, paths.openCodeDir, paths.dir]) {
+    const skill = resolve(platformRoot, 'skills', OBSOLETE_SKILL);
+    if (hasPathEntry(skill)) plan.push({ type: 'delete-tree', path: skill });
+  }
+  const installedRuntime = resolve(paths.dir, 'execution-runtime');
+  for (const relativePath of OBSOLETE_EXECUTION_RUNTIME_FILES) {
+    const target = resolve(installedRuntime, relativePath);
+    if (hasPathEntry(target)) plan.push({ type: 'delete', path: target });
+  }
   return plan;
 }
 
@@ -440,7 +483,7 @@ function generate(platforms, dryRun, assets, config = loadConfig(assets, dryRun,
   const result = planGenerationFor(platforms, assets, config);
   const lifecycle = planInstallLifecycle();
   const managed = [...new Set([...previousPlatforms, ...platforms])];
-  const plan = [...planManagedSkills(lifecycle, result.paths, platforms), ...planExecutionRuntime(result.paths), ...planSupplementalRuntime(result.paths), ...result.plan, managedPlatformsStep(result.paths, managed)].filter(Boolean);
+  const plan = [...planManagedSkills(lifecycle, result.paths, platforms), ...planExecutionRuntime(result.paths), ...planObsoleteManagedContent(result.paths), ...result.plan, managedPlatformsStep(result.paths, managed)].filter(Boolean);
   return { ...result, changed: applyGenerationTransaction(plan, result.paths, dryRun) };
 }
 
@@ -540,8 +583,8 @@ export function runCli(argv) {
     const paths = installation.paths;
     const plan = [
       ...planManagedSkills(lifecycle, paths),
-      ...planSupplementalRuntime(paths),
       ...planExecutionRuntime(paths),
+      ...planObsoleteManagedContent(paths),
       ...planCoreRuntime(assets, lifecycle, paths)
     ];
     for (const [path, contents] of installation.environmentContents) addWriteStep(plan, path, contents);

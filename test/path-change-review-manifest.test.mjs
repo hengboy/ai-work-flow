@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { parsePorcelainV2, pathChangesEqual } from "../../../execution-runtime/lib/paths.mjs";
-import { commitWithPathChangeReport } from "../../../execution-runtime/lib/git.mjs";
-import { assertReviewCoverage, assertReviewManifest, createReviewManifest, createReviewShardAssignments } from "../../../execution-runtime/lib/review-manifest.mjs";
+import { parsePorcelainV2, pathChangesEqual } from "../execution-runtime/lib/paths.mjs";
+import { commitWithPathChangeReport } from "../execution-runtime/lib/git.mjs";
+import { assertReviewCoverage, assertReviewManifest, createReviewManifest, createReviewShardAssignments } from "../execution-runtime/lib/review-manifest.mjs";
 
 test("parses porcelain v2 NUL records without splitting special or rename/copy paths", () => {
   const changes = parsePorcelainV2(Buffer.from(
@@ -40,7 +40,7 @@ test("uses one immutable review manifest for every required review axis and comp
     checks: ["git diff --check"],
     diff_command: ["git", "diff", "--no-ext-diff", `${fixedPoint}...${reviewCommit}`],
     spec_status: "present",
-    spec_source: { path: ".scratch/example/spec.md", revision: "c".repeat(64) },
+    spec_source: { path: ".ai-work-flow/plans/example/spec.md", revision: "c".repeat(64) },
     standards_source: [{ path: "CONTEXT.md", revision: reviewCommit }],
     shards: [
       { id: "a", paths: ["a file"], diff_command: ["git", "diff", "--no-ext-diff", `${fixedPoint}...${reviewCommit}`, "--", "a file"] },
