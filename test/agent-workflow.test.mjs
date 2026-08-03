@@ -603,6 +603,13 @@ test('runtime provenance installs atomically, detects drift and unknown legacy i
   assert.equal(readFileSync(provenancePath, 'utf8'), sourceProvenance);
 
   const installedCli = resolve(runtimeRoot, 'review-manifest-cli.mjs');
+  mkdirSync(resolve(runtimeRoot, 'node_modules/cache'), { recursive: true });
+  writeFileSync(resolve(runtimeRoot, 'node_modules/cache/package.json'), '{"name":"runtime-cache"}\n');
+  const dependencyOnly = spawnSync(process.execPath, [installedCli, '--help'], {
+    input: '', encoding: 'utf8', env: env(paths)
+  });
+  assert.equal(dependencyOnly.status, 0, dependencyOnly.stderr);
+
   const runtimeFile = resolve(runtimeRoot, 'lib/git.mjs');
   writeFileSync(runtimeFile, `${readFileSync(runtimeFile, 'utf8')}\n// drift\n`);
   const drifted = spawnSync(process.execPath, [installedCli, 'prepare', '--repository', paths.project], {

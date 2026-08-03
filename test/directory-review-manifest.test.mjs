@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -534,4 +534,27 @@ test("exposes an executable absent prepare and endpoint-bound verify CLI", async
   });
   assert.notEqual(rejectedPaths.status, 0);
   assert.match(rejectedPaths.stderr, /spec_status absent must not include spec_path/);
+});
+
+test("ignores runtime node_modules while detecting managed drift and unknown runtime files", async () => {
+  const sourceRuntime = resolve(import.meta.dirname, "..", "execution-runtime");
+  const copyRuntime = async () => {
+    const parent = await mkdtemp(join(tmpdir(), "runtime-provenance-"));
+    const runtime = join(parent, "execution-runtime");
+    await cp(sourceRuntime, runtime, { recursive: true });
+    return runtime;
+  };
+
+  const validRuntime = await copyRuntime();
+  await mkdir(join(validRuntime, "node_modules", "cache"), { recursive: true });
+  await writeFile(join(validRuntime, "node_modules", "cache", "package.json"), "{\"name\":\"runtime-cache\"}\n");
+  assert.doesNotThrow(() => loadAndAssertRuntimeProvenance(validRuntime));
+
+  const tamperedRuntime = await copyRuntime();
+  await writeFile(join(tamperedRuntime, "lib", "git.mjs"), "// managed drift\n");
+  assert.throws(() => loadAndAssertRuntimeProvenance(tamperedRuntime), /runtime files.*installed provenance/i);
+
+  const unknownRuntime = await copyRuntime();
+  await writeFile(join(unknownRuntime, "unknown.mjs"), "export default true;\n");
+  assert.throws(() => loadAndAssertRuntimeProvenance(unknownRuntime), /runtime files.*installed provenance/i);
 });

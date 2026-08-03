@@ -5,6 +5,7 @@ import { posix, resolve } from "node:path";
 export const RUNTIME_PROVENANCE_FILE = "runtime-provenance.json";
 export const RUNTIME_PROVENANCE_IDENTITY = "ai-work-flow/execution-runtime";
 export const RUNTIME_PROVENANCE_VERSION = 1;
+export const RUNTIME_PROVENANCE_EXCLUDED_DIRECTORIES = Object.freeze(["node_modules"]);
 
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const PROVENANCE_FIELDS = ["protocol_version", "type", "source", "managed_files", "files_digest", "provenance_digest"];
@@ -36,7 +37,10 @@ function runtimeFiles(root, prefix = "") {
     const relativePath = prefix ? posix.join(prefix, entry.name) : entry.name;
     const stat = lstatSync(path);
     if (stat.isSymbolicLink()) throw new Error(`Execution runtime contains a symbolic link: ${relativePath}`);
-    if (stat.isDirectory()) files.push(...runtimeFiles(path, relativePath));
+    if (stat.isDirectory()) {
+      if (RUNTIME_PROVENANCE_EXCLUDED_DIRECTORIES.includes(entry.name)) continue;
+      files.push(...runtimeFiles(path, relativePath));
+    }
     else if (stat.isFile()) files.push({ path: relativePath, digest: digest(readFileSync(path)) });
     else throw new Error(`Execution runtime contains an unsupported entry: ${relativePath}`);
   }

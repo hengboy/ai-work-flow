@@ -10,6 +10,13 @@ import { fail, isPlainObject, readJson, write } from './shared.mjs';
 import { applyGenerationPlan, capabilityMatrix, controlMatrix, generationStatus, planGeneration } from './platform-adapter.mjs';
 import { applyTransaction, recoverTransaction } from './transaction.mjs';
 
+const runtimeProvenanceModulePath = [
+  resolve(import.meta.dirname, '..', '..', 'execution-runtime', 'lib', 'runtime-provenance.mjs'),
+  resolve(import.meta.dirname, '..', 'execution-runtime', 'lib', 'runtime-provenance.mjs')
+].find((candidate) => existsSync(candidate));
+if (!runtimeProvenanceModulePath) throw new Error('Missing execution runtime provenance module');
+const { loadAndAssertRuntimeProvenance, RUNTIME_PROVENANCE_EXCLUDED_DIRECTORIES } = await import(runtimeProvenanceModulePath);
+
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const SKILLS_ROOT = resolve(ROOT, 'skills');
 const PLATFORMS = new Set(['codex', 'claude', 'opencode']);
@@ -40,8 +47,6 @@ const OBSOLETE_EXECUTION_RUNTIME_FILES = [
   'lib/validation.mjs',
   'lib/worktree-lifecycle.mjs'
 ];
-const RUNTIME_PROVENANCE_FILE = 'runtime-provenance.json';
-const RUNTIME_PROVENANCE_IDENTITY = 'ai-work-flow/execution-runtime';
 const LEGACY_ROLE_RENAMES = new Map([
   [LEGACY_PRIMARY_AGENT_ID, 'coding'],
   [LEGACY_GIT_OPERATOR_AGENT_ID, 'git-operator']
@@ -143,39 +148,12 @@ function sourceTreeEntries(source, prefix = '', excludedNames = new Set()) {
   return entries;
 }
 
-function canonicalize(value) {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
-  }
-  return value;
-}
-
-function sha256(value) {
-  return createHash('sha256').update(Buffer.isBuffer(value) ? value : JSON.stringify(canonicalize(value))).digest('hex');
-}
-
 function assertSourceRuntimeProvenance(source) {
-  const path = resolve(source, RUNTIME_PROVENANCE_FILE);
-  let provenance;
   try {
-    const entry = lstatSync(path);
-    if (entry.isSymbolicLink() || !entry.isFile()) fail(`Execution runtime provenance must be a regular file: ${path}`);
-    provenance = JSON.parse(readFileSync(path, 'utf8'));
+    return loadAndAssertRuntimeProvenance(source).provenance;
   } catch (error) {
-    fail(`Execution runtime provenance is missing or unreadable. Regenerate it before install/generate: ${error.message}`);
+    fail(`Execution runtime source provenance is stale or invalid. Regenerate it before install/generate: ${error.message}`);
   }
-  const files = sourceTreeEntries(source, '', new Set(['node_modules', RUNTIME_PROVENANCE_FILE]))
-    .map((entry) => ({ path: entry.path, digest: sha256(Buffer.from(entry.contents)) }));
-  const filesDigest = sha256(files);
-  const { provenance_digest: _digest, ...unsigned } = provenance ?? {};
-  if (provenance?.protocol_version !== 1 || provenance?.type !== 'execution-runtime-provenance' ||
-    provenance?.source?.identity !== RUNTIME_PROVENANCE_IDENTITY || provenance.source.revision !== filesDigest ||
-    JSON.stringify(provenance.managed_files) !== JSON.stringify(files) || provenance.files_digest !== filesDigest ||
-    provenance.provenance_digest !== sha256(unsigned)) {
-    fail('Execution runtime source provenance is stale or invalid. Regenerate it before install/generate.');
-  }
-  return provenance;
 }
 
 function treeMatches(destination, entries, excludedNames = new Set()) {
@@ -238,7 +216,7 @@ function planExecutionRuntime(paths) {
   const source = [resolve(ROOT, 'execution-runtime'), resolve(import.meta.dirname, '..', 'execution-runtime')].find((candidate) => existsSync(candidate));
   if (!source) fail('Missing execution runtime');
   assertSourceRuntimeProvenance(source);
-  addSourceTree(plan, source, resolve(paths.dir, 'execution-runtime'), new Set(['node_modules']));
+  addSourceTree(plan, source, resolve(paths.dir, 'execution-runtime'), new Set(RUNTIME_PROVENANCE_EXCLUDED_DIRECTORIES));
   return plan;
 }
 
