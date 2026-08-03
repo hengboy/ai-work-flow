@@ -12,7 +12,7 @@
 
 ## 交接与反馈
 
-子代理最终返回统一且仅供主代理消费的 JSON：`status`、`summary`、`artifacts`、`checks`、`details`，仅 blocked 时增加 `blocking_reason`。角色特有字段放入 `details`；canonical Ticket 的 Handoff schema 保持独立。主代理验证 JSON 后再生成用户可读反馈。
+子代理最终返回统一且仅供主代理消费的 JSON：`status`、`summary`、`artifacts`、`checks`、`details`，仅 blocked 时增加 `blocking_reason`。角色特有字段放入 `details`；主代理验证 JSON 后再生成用户可读反馈。
 
 Coding 非完成态使用 `**状态：**`、`**当前角色：**`、`**已完成：**`、`**下一步：**`。进入人工门禁时只提出一个 `**需要你决定：**` 问题。审查结果中的 blocking 与 advisory findings 分别放入 `**阻塞项：**` 与 `**建议：**`，并保留 Standards、Spec 顺序。
 

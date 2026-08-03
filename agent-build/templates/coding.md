@@ -41,7 +41,7 @@
 
 普通目录式流程进入 `ready_to_review` 后，Coding 必须在调度 Code Reviewer 前委派 File Explorer 执行安装运行时 `node "${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/execution-runtime/review-manifest-cli.mjs" prepare --repository <review-worktree>`。stdin 必须包含 fixed point、review commit、`mode: single|task|aggregate`、spec/plan/可选 task 路径，以及非空 `checks: ["<check>"]`、`acceptance_evidence: [{"criterion":"<criterion>","evidence":"<evidence>"}]`、`verification: [{"command":"<command>","result":"<result>"}]`；元素字段均为非空字符串。Coding 验证 File Explorer 交接中的完整 ReviewManifest，只把 manifest 和同一 bundle 交给 Code Reviewer；CLI 失败、输出缺失、`blocking_reason` 复数或 manifest/bundle 不一致均 blocked。Coding 不直接访问工作区、Shell 或 Git，也不委派 Git Operator 准备、验证或编排审查。
 
-普通目录式流程的首次完整双轴审查若有 blocking findings，只修用户批准的 IDs。修复验证、新 review commit 的后继关系/HEAD 和同步通过后，不执行第二次评审，自动继续 task 汇入或最终整合与清理。Canonical Skill 是独立协议：`complete-review-fix` 后自动同步并执行最终评审，若再次出现 blocking findings 再请求新的具体 IDs。两套流程不得互换状态或格式。
+普通目录式流程的首次完整双轴审查若有 blocking findings，只修用户批准的 IDs。修复验证、新 review commit 的后继关系/HEAD 和同步通过后，不执行第二次评审，自动继续 task 汇入或最终整合与清理。
 
 ## 暂停条件
 

@@ -15,7 +15,7 @@
 
 ## Solution
 
-在 `.ai-work-flow/plans/<plan-id>/` 引入固定的 `spec.md` 与 `plan.md` 配对工件，且与 `.scratch/<feature>/spec.md + issues/` execution 流程完全隔离。
+在 `.ai-work-flow/plans/<plan-id>/` 引入固定的 `spec.md` 与 `plan.md` 配对工件，作为目录式规划与实施的唯一工件格式。
 
 将规格定义为 Markdown 模板契约而非新增 planning runtime 或 CLI schema：`spec.md` 固定包含 `Spec Metadata`、`Problem Statement`、`Goals and Success Criteria`、`Users and User Stories`、`Functional Requirements`、`Non-Functional Requirements`、`Scope`、`Interfaces and Data`、`Failure Modes`、`Acceptance Criteria`、`Compatibility and Migration`、`Out of Scope`、`Assumptions`、`Open Questions`。保存前 `Open Questions` 必须为 `N/A`，且规格只描述 what 和验收边界，不得包含文件改动、实施步骤或技术方案。
 
@@ -30,7 +30,6 @@ Planning 主代理维护显式状态机：问询与共享理解确认后，首�
 - 新计划产生后，旧任务立即失效，未经用户确认的新任务草案不得被 Coding 使用。
 - 用户明确选择拆分后，任务以新 plan digest 全量替换；明确选择不拆分后，全部旧任务文件被删除并进入单任务模式。
 - 缺少有效 `spec.md` 的旧平铺计划和目录式 plan-only 工件均被拒绝进入 Coding，且不迁移、不反向生成规格。
-- 现有 `.scratch` Spec/Ticket runtime、其格式与测试行为不发生变化。
 
 ## User Stories
 
@@ -68,11 +67,11 @@ Planning 主代理维护显式状态机：问询与共享理解确认后，首�
 
 第三阶段：调整角色、路由和权限配置。修改 `agent-build/config/roles.json`、`policies.json`、`routing.md`、`default-config.json`，使规划角色能够按阶段访问所需路径，同时限制 Writer 单次写入目标；更新 Git Operator 的可提交路径集合和 Coding 的拒绝门禁。对于 OpenCode 等可表达路径白名单的平台，生成 `.ai-work-flow/plans/<plan-id>/spec.md`、`plan.md` 或确认后的 `tasks/*.md` 的最窄权限；无法按单文件或阶段表达的 adapter 输出显式 `instruction-only` 能力说明。
 
-第四阶段：更新生成和安装链路。修改 `agent-build/runtime/platform-adapter.mjs`、`asset-catalog.mjs` 与 `workflow.mjs`，确保各平台安装资产包含一致的新模板、权限与能力声明，并让资产目录完整性校验覆盖新增/更新的 planning 工件。不得改变 `.scratch` execution runtime 的资产、状态转换或恢复语义。
+第四阶段：更新生成和安装链路。修改 `agent-build/runtime/platform-adapter.mjs`、`asset-catalog.mjs` 与 `workflow.mjs`，确保各平台安装资产包含一致的新模板、权限与能力声明，并让资产目录完整性校验覆盖新增/更新的 planning 工件。
 
 第五阶段：扩展 `test/agent-workflow.test.mjs` 的 Node 契约测试，覆盖模板文本、路由、权限生成、adapter 输出、资产目录与安装结果的端到端静态契约。使用根 `npm test` 运行 Node test runner 验证；测试不得依赖浏览器自动化。
 
-第六阶段：更新 `README.md` 与 `.ai-work-flow/index/feature-navigation.md`，说明新目录式 spec-first 流程、确认点、摘要绑定、拆分语义、平台能力边界和 breaking change。明确旧规划工件不迁移、不兼容、不能被 Coding 消费；明确 `.scratch` 的 Spec/Ticket runtime 不受本改动影响。
+第六阶段：更新 `README.md` 与 `.ai-work-flow/index/feature-navigation.md`，说明新目录式 spec-first 流程、确认点、摘要绑定、拆分语义、平台能力边界和 breaking change。明确旧规划工件不迁移、不兼容、不能被 Coding 消费。
 
 ## Public Interfaces
 
@@ -110,7 +109,6 @@ Planning 主代理维护显式状态机：问询与共享理解确认后，首�
 - 不拆分：验证计划后必须询问选项，用户选择并确认删除后才删除全部旧 tasks 并进入单任务模式。
 - 提交范围：验证 Git Operator 只接受当前目录中 spec、plan、完整 tasks 集合或 tasks 删除，拒绝源码、无关文件和未确认提交；沿用 checkbox 规则。
 - 平台权限：验证 adapter 在可强制平台生成最窄写权限，在无法强制的平台输出 `instruction-only`，不把提示词约束误标为 `enforced`。
-- `.scratch` 回归：验证 `.scratch` Spec/Ticket runtime 的相关模板、配置、测试入口和既有行为未被 planning 变更触及。
 
 ## Rollout and Compatibility
 
@@ -118,14 +116,13 @@ Planning 主代理维护显式状态机：问询与共享理解确认后，首�
 
 不迁移旧 `.ai-work-flow/plans/<plan-id>.md` 平铺计划，也不迁移缺少有效 `spec.md` 的目录式 plan-only 工件。它们保留为不可消费的历史文件，不能用于 Coding，不能从其中反推或生成规格。
 
-回滚仅回滚代码与生成安装资产到先前版本；不得将已经生成的新 `spec.md`/`plan.md`/tasks 当作旧格式降级消费。`.scratch` execution 的工件、兼容性与恢复路径不属于本次 rollout 的变更对象。
+回滚仅回滚代码与生成安装资产到先前版本；不得将已经生成的新 `spec.md`/`plan.md`/tasks 当作旧格式降级消费。
 
 ## Out of Scope
 
 - 新增 planning CLI、planning runtime 或持久化状态转换入口。
 - 迁移、转换或兼容消费旧规划工件。
 - 从现有 plan 反推、推测或自动生成 spec。
-- 修改 `.scratch` Spec/Ticket runtime、其 checkpoint/recovery 逻辑或 execution 流程。
 - 计划完成后自动进入 Coding，或绕过用户对拆分、删除、任务颗粒度和提交的明确确认。
 - 将 instruction-only 的提示词限制伪装为所有平台均可运行时强制的安全边界。
 
@@ -138,4 +135,4 @@ Planning 主代理维护显式状态机：问询与共享理解确认后，首�
 
 ## Further Notes
 
-实施时应以流程状态和工件不变量组织改动，而不是将逐文件清单作为设计主体：模板定义行为，配置和 adapter 传递可执行权限，资产生成确保平台一致性，Node 契约测试防止这些层发生漂移。所有用户可见文档应清楚区分 planning 的新 `spec.md` 与 `.scratch` execution 的既有 spec，以避免路径和职责混淆。
+实施时应以流程状态和工件不变量组织改动，而不是将逐文件清单作为设计主体：模板定义行为，配置和 adapter 传递可执行权限，资产生成确保平台一致性，Node 契约测试防止这些层发生漂移。

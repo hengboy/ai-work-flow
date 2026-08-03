@@ -8,11 +8,11 @@ import { spawnSync } from "node:child_process";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { prepareDirectoryReviewManifest, verifyDirectoryReviewManifest } from "../../../execution-runtime/lib/directory-review-manifest.mjs";
-import { assertReviewManifest, createReviewManifest, reviewBundleDigest, reviewManifestDigest } from "../../../execution-runtime/lib/review-manifest.mjs";
+import { prepareDirectoryReviewManifest, verifyDirectoryReviewManifest } from "../execution-runtime/lib/directory-review-manifest.mjs";
+import { assertReviewManifest, createReviewManifest, reviewBundleDigest, reviewManifestDigest } from "../execution-runtime/lib/review-manifest.mjs";
 
 const run = promisify(execFile);
-const cli = resolve(import.meta.dirname, "..", "..", "..", "execution-runtime", "review-manifest-cli.mjs");
+const cli = resolve(import.meta.dirname, "..", "execution-runtime", "review-manifest-cli.mjs");
 
 async function git(cwd, ...args) {
   return (await run("git", args, { cwd, encoding: "utf8" })).stdout.trim();

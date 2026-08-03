@@ -11,6 +11,7 @@ async function stdinJson() {
 }
 
 function parseArgs(argv) {
+  if (argv.length === 1 && ["--help", "-h"].includes(argv[0])) return { help: true };
   const [command, flag, repository, ...rest] = argv;
   if (!["prepare", "verify"].includes(command) || flag !== "--repository" || !repository || rest.length > 0) {
     throw new Error("Usage: review-manifest-cli.mjs <prepare|verify> --repository <review-worktree>");
@@ -25,7 +26,11 @@ function assertVerifyInput(input) {
 }
 
 try {
-  const { command, repository } = parseArgs(process.argv.slice(2));
+  const { command, repository, help } = parseArgs(process.argv.slice(2));
+  if (help) {
+    process.stdout.write("Usage: review-manifest-cli.mjs <prepare|verify> --repository <review-worktree>\n");
+    process.exit(0);
+  }
   const input = await stdinJson();
   if (command === "verify") assertVerifyInput(input);
   const manifest = command === "prepare"

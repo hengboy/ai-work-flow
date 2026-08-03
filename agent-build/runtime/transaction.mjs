@@ -99,10 +99,10 @@ function validateSteps(steps, roots) {
   if (!Array.isArray(steps) || !steps.length) fail('Transaction must contain at least one step.');
   const targets = new Set();
   return steps.map((step, index) => {
-    if (!step || typeof step !== 'object' || !['write', 'delete', 'tree'].includes(step.type)) fail(`Invalid transaction step at index ${index}.`);
+    if (!step || typeof step !== 'object' || !['write', 'delete', 'tree', 'delete-tree'].includes(step.type)) fail(`Invalid transaction step at index ${index}.`);
     if (step.type === 'write' && typeof step.contents !== 'string') fail(`Transaction write step ${index} must have string contents.`);
     const path = assertTrustedPath(step.path, roots);
-    assertStepPathIfPresent(path, step.type, 'Transaction target');
+    assertStepPathIfPresent(path, step.type === 'delete-tree' ? 'tree' : step.type, 'Transaction target');
     if (targets.has(path)) fail(`Transaction contains duplicate target: ${path}`);
     targets.add(path);
     if (step.type !== 'tree') return { type: step.type, path, contents: step.contents };
@@ -128,15 +128,15 @@ function validateJournal(value, roots) {
   if (!Array.isArray(value.steps) || !value.steps.length) fail('Transaction journal must contain a complete plan.');
   const targets = new Set();
   const steps = value.steps.map((step, index) => {
-    if (!step || typeof step !== 'object' || Object.keys(step).some((key) => !['type', 'path', 'backup', 'existed'].includes(key)) || !['write', 'delete', 'tree'].includes(step.type) || typeof step.existed !== 'boolean') fail(`Transaction journal step ${index} is invalid.`);
+    if (!step || typeof step !== 'object' || Object.keys(step).some((key) => !['type', 'path', 'backup', 'existed'].includes(key)) || !['write', 'delete', 'tree', 'delete-tree'].includes(step.type) || typeof step.existed !== 'boolean') fail(`Transaction journal step ${index} is invalid.`);
     const path = assertTrustedPath(step.path, roots);
-    assertStepPathIfPresent(path, step.type, 'Transaction target');
+    assertStepPathIfPresent(path, step.type === 'delete-tree' ? 'tree' : step.type, 'Transaction target');
     if (targets.has(path)) fail(`Transaction journal contains duplicate target: ${path}`);
     targets.add(path);
     const backup = backupPath(path, value.id, index);
     if (step.backup !== backup) fail(`Transaction journal step ${index} has an invalid backup path.`);
     assertTrustedPath(backup, roots);
-    assertStepPathIfPresent(backup, step.type, 'Transaction backup');
+    assertStepPathIfPresent(backup, step.type === 'delete-tree' ? 'tree' : step.type, 'Transaction backup');
     return { ...step, path, backup };
   });
   return { ...value, steps };
@@ -177,7 +177,7 @@ function releaseLock(path) {
 }
 
 function removeStepPath(path, type) {
-  rmSync(path, { recursive: type === 'tree', force: true });
+  rmSync(path, { recursive: type === 'tree' || type === 'delete-tree', force: true });
 }
 
 function recoverJournal(transactionPath, roots) {
