@@ -70,7 +70,7 @@ const SPEC_FIRST_TEMPLATE_CONTRACTS = {
     'operation=write_plan'
   ],
   'task-planner': ['source_plan_digest', '完整字节', '全量替换', 'operation=draft', 'operation=write', 'operation=delete'],
-  coding: ['spec.md', 'source_spec_digest', '旧平铺计划', 'ready_to_prepare_review', 'operation=review_prepare'],
+  coding: ['spec.md', 'source_spec_digest', '旧平铺计划', 'ready_to_prepare_review', 'operation=review_prepare', '代理自身协议纠错'],
   'full-stack-coder': ['operation=implement'],
   'bug-fixer': ['operation=fix', 'mode=bug|finding'],
   'git-operator': [
@@ -91,6 +91,14 @@ const SPEC_FIRST_TEMPLATE_CONTRACTS = {
   'code-reviewer': ['operation=review_dispatch', 'operation=review_standards', 'operation=review_spec', 'acceptance_evidence', 'verification'],
   'review-standards': ['operation=review_standards'],
   'review-spec': ['operation=review_spec']
+};
+const PROTOCOL_RECOVERY_ROUTING_MARKERS = ['`protocol_recovery_attempt: 0|1`', '任意可恢复协议错误', '恢复前后逐项比较', '`bundle_digest`', '`provenance_digest`'];
+const PROTOCOL_RECOVERY_TEMPLATE_MARKERS = {
+  coding: ['`protocol_recovery_attempt: 0|1`', '任意可恢复协议错误', '恢复证据快照'],
+  'git-operator': ['`protocol_recovery_attempt: 0|1`', '任意可恢复协议错误', '恢复证据快照', '`bundle_digest`', '`provenance_digest`'],
+  'code-reviewer': ['`protocol_recovery_attempt: 0|1`', '任意可恢复协议错误', '恢复证据快照'],
+  'review-standards': ['`protocol_recovery_attempt: 0|1`', 'protocol_error=prepare_envelope_transfer'],
+  'review-spec': ['`protocol_recovery_attempt: 0|1`', 'protocol_error=prepare_envelope_transfer']
 };
 
 function unique(values) {
@@ -294,6 +302,9 @@ function validateAssetRelationships(catalog, controlDocument, policyDocument, de
 
   const routing = readFileSync(resolve(configRoot, 'routing.md'), 'utf8');
   const sections = parseRoutingSections(routing, errors);
+  for (const marker of PROTOCOL_RECOVERY_ROUTING_MARKERS) {
+    if (!routing.includes(marker)) errors.push(`Routing is missing protocol recovery contract marker: ${marker}.`);
+  }
   const referenced = new Set();
   for (const role of roles) for (const section of role.routing_sections ?? []) {
     if (typeof section !== 'string' || !sections.has(section)) errors.push(`Role ${role.id} references an unknown routing section: ${section}.`);
@@ -340,6 +351,9 @@ function validateAssetRelationships(catalog, controlDocument, policyDocument, de
     if (body.split(CONTROL_MARKER).length - 1 !== 1) errors.push(`Template ${name} must contain exactly one controls placeholder.`);
     for (const marker of SPEC_FIRST_TEMPLATE_CONTRACTS[roleId] ?? []) {
       if (!body.includes(marker)) errors.push(`Template ${name} is missing spec-first contract marker: ${marker}.`);
+    }
+    for (const marker of PROTOCOL_RECOVERY_TEMPLATE_MARKERS[roleId] ?? []) {
+      if (!body.includes(marker)) errors.push(`Template ${name} is missing protocol recovery contract marker: ${marker}.`);
     }
   }
   if (errors.length) fail(`Agent asset catalog is invalid:\n${errors.join('\n')}`);

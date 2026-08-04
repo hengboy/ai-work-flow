@@ -41,9 +41,9 @@
 - `operation=implement`：worktree/`base_commit`、目标/acceptance/代码地图/bundle/授权。
 - `operation=fix`：implement 公共字段、`mode=bug|finding`；bug 加复现/预期/实际，finding 加当前审查、blocking 分类、获批 IDs。
 - `operation=commit`：worktree/`base_commit`/空 `initial_status`/`changed_paths: PathChange[]`/`checks`/`acceptance_evidence`/`verification`/bundle/授权。
-- `operation=review_prepare`：worktree、`fixed_point`、`review_commit`、`changed_paths: PathChange[]`、`checks`、`acceptance_evidence`、`verification`、`spec_status`；present 加 `mode`、`spec_path`、`plan_path`、`task_path?`，absent 禁用这些字段。
+- `operation=review_prepare`：worktree、`fixed_point`、`review_commit`、`changed_paths: PathChange[]`、`checks`、`acceptance_evidence`、`verification`、`spec_status`、`protocol_recovery_attempt: 0|1`；present 加 `mode`、`spec_path`、`plan_path`、`task_path?`，absent 禁用这些字段。
 - `operation=integrate_cleanup`：主/feature/task worktree、fixed point、获准 review commit、coverage、授权。
-- `operation=review_dispatch`：原始 prepare envelope、批准标准/`acceptance_evidence`/`verification`；禁摘要、删改或重建。
+- `operation=review_dispatch`：原始 prepare envelope、批准标准/`acceptance_evidence`/`verification`、`protocol_recovery_attempt: 0|1`；禁摘要、删改或重建。
 
 用户授权当前阶段后，发现、委派、等待、验证、受控本地提交、同步、评审、整合和清理在人工门禁之间自动完成。不得询问是否继续、是否提交或是否评审，不得重复提交授权。
 
@@ -52,6 +52,8 @@
 拆分任务按 `blocked_by` frontier 推进。同一 frontier 仅在 `write_scope` 互斥时并发非 Git 实施，task worktree 从同一 feature HEAD 创建。Full Stack Coder 可修改验收所需源码、测试、配置、导航索引、lockfile 和自己的 checklist；不得修改父 plan、task 元数据或其他 task。`acceptance_evidence` 与 `verification` 必须逐项对应，Git Operator 将实现和 checkbox 放入同一 review commit。task 审查 bundle 包含 spec、plan、当前 task及两类证据；通过后按编号汇入并清理，再开放下一 frontier。全部 task 汇入后同步 main，对 feature 完整 committed range 做聚合审查。
 
 Git Operator 从 `operation=review_prepare` delegation payload 按安装 CLI known fields 投影实际 `verify_input`，prepare 后立即 verify。完整 envelope 与该对象原样交接；Coding 只核对自洽并原样交 Code Reviewer，不补齐、推导、摘要、删改、重建或验证 Git facts。结构、协议、provenance、source、digest、revision、shard、bundle 或语义错误即 blocked。Coding 不访问工作区/Shell/Git，不委派 File Explorer prepare，不自行 prepare、verify/审查。
+
+代理自身协议纠错绑定 routing 恢复证据快照。初次 attempt=0；首次遗漏将 `protocol_recovery_attempt` 从 `0` 变为 `1` 后原授权重试。Reviewer 首次接收或任一叶子首次/澄清重试报 `protocol_error=prepare_envelope_transfer` 时，停止 Reviewer、丢弃两轴结果，以同一快照重做 prepare 并全轴重启；禁复用、改范围/提交或询问。`protocol_recovery_attempt=1` 后任意可恢复协议错误 blocked、报告用户实际错误且不得再次自动 restart。任一不变量变化立即 fail-closed，范围或 `review_commit` 变化时不得自动纠正。
 
 普通目录式流程的首次完整双轴审查若有 blocking findings，只修用户批准的 IDs。修复验证、新 review commit 的后继关系/HEAD 和同步通过后，不执行第二次评审，自动继续 task 汇入或最终整合与清理。
 

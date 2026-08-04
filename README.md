@@ -84,7 +84,7 @@ Codex 的 `reasoning` 使用非空字符串；Claude Code 的 `effort` 只接受
 
 ### 项目接入
 
-首次在项目使用代码导航，或首次进入目录式 ReviewManifest 审查前，使用项目级 `$init-ai-work-flow` 联合初始化根 `MEMORY.md` 和 `.ai-work-flow/index/`。该 Skill 基于真实仓库资料补齐领域术语、仓库约束、职责、模块边界和功能入口；已有 `MEMORY.md` 时保留并只补充缺失章节。`MEMORY.md` 是 ReviewManifest 的提交绑定 standards source，必须提交，并在职责、边界或入口变化时与导航索引同轮维护。
+首次在项目使用代码导航，或首次进入目录式 ReviewManifest 审查前，使用项目级 `$init-ai-work-flow` 联合初始化根 `MEMORY.md` 和 `.ai-work-flow/index/`，并将两者的维护约束写入项目根 `CLAUDE.md` 与 `AGENTS.md`。该 Skill 基于真实仓库资料补齐领域术语、仓库约束、职责、模块边界和功能入口；已有文件时保留原内容，只补充缺失章节或约束。`MEMORY.md` 是 ReviewManifest 的提交绑定 standards source，必须提交，并在职责、边界或入口变化时与导航索引同轮维护。
 
 这不是 `node agent-build/install.mjs init` 的职责；该命令只初始化 AI Work Flow 的全局配置与路由，不写入当前项目的上下文或导航文件。
 
@@ -244,7 +244,7 @@ Planning 通过问询确认目标和关键决策，写入配对工件：
 | --- | --- | --- | --- |
 | `generate-ai-work-flow-agents` | `$generate-ai-work-flow-agents` | 已修改的环境配置，可选平台范围 | 校验并重新生成指定平台 agents |
 | `switch-ai-work-flow-env` | `$switch-ai-work-flow-env` | 已存在的环境名称 | 事务式切换环境并重新生成受管理 agents |
-| `init-ai-work-flow` | `$init-ai-work-flow` | 当前项目的真实结构与稳定资料 | 联合初始化根 `MEMORY.md` 和 `.ai-work-flow/index/` |
+| `init-ai-work-flow` | `$init-ai-work-flow` | 当前项目的真实结构与稳定资料 | 初始化 `MEMORY.md`、导航索引及项目指令维护约束 |
 | `project-code-navigation` | `$project-code-navigation` | 当前项目代码结构 | 维护 `.ai-work-flow/index/` 导航索引 |
 | `git-commit` | `$git-commit` | Full Stack Coder 的结构化交接 | 创建仅本地、路径范围精确的实现提交 |
 

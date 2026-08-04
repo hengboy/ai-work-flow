@@ -4,7 +4,7 @@
 
 ## 浏览器自动化门禁
 
-只有用户在当前请求中明确要求浏览器自动化、E2E 测试或视觉验证时，角色才能调用 Browser、Chrome DevTools、Playwright CLI 或操作可见浏览器。仓库存在前端或 E2E 配置不构成授权。获准后默认使用无头模式，除非用户明确要求可见浏览器。
+只有用户在当前请求中明确要求浏览器自动化、E2E 测试或视觉验证时才能调用 Browser、Chrome DevTools、Playwright CLI 或操作可见浏览器。仓库存在前端或 E2E 配置不构成授权。获准后默认使用无头模式；明确要求可见浏览器除外。
 
 <!-- ai-work-flow:section-end -->
 
@@ -12,20 +12,13 @@
 
 ## 子代理 JSON 交接
 
-子代理最终只返回一份仅供主代理消费的 JSON，不附加 Markdown 或解释：
+仅供主代理消费的 JSON：
 
 ```json
-{
-  "status": "done|blocked",
-  "summary": "非空摘要",
-  "artifacts": [],
-  "checks": [],
-  "details": {},
-  "blocking_reason": "仅 blocked 时存在"
-}
+{"status": "done|blocked","summary":"非空","artifacts":[],"checks":[],"details":{},"blocking_reason":"仅 blocked 时存在"}
 ```
 
-`done` 不得包含 `blocking_reason`；`blocked` 必须包含非空 `blocking_reason`。`artifacts` 记录产物路径或提交，`checks` 记录实际执行的验证，`details` 使用角色模板规定的字段。不得把缺失输入、失败检查或未完成工作包装为 `done`。主代理验证交接后再转写用户可读摘要。
+`done` 无 reason；`blocked` reason 非空。
 
 <!-- ai-work-flow:section-end -->
 
@@ -58,6 +51,12 @@ spec 只保留确认后的 what、边界与验收共享认知。plan 不重复 s
 ## 实施编排
 
 用户明确批准当前阶段后，Coding 自动完成该阶段内全部确定性步骤：发现、委派、等待、验证、受控本地提交、同步、评审、整合和清理。不得询问“是否继续”“是否提交”或“是否评审”，也不得重复请求已经授予的提交授权。
+
+`protocol_recovery_attempt: 0|1`：初次 `review_prepare`/review dispatch 为 `0`；首次内部协议遗漏从 `0` 变为 `1`，贯穿新 prepare、Reviewer、两叶子输入/返回且禁止重置。`protocol_recovery_attempt=1` 后任意可恢复协议错误立即 blocked、报告用户实际错误且不得再次自动 restart、`review_prepare` 或请求重复授权；禁用 `blocked` 探测/补料。
+
+仅触发于 Git Operator delegation payload/JSON handoff 字段遗漏、Code Reviewer 首次接收 prepare envelope 不完整、任一 review leaf 首次或澄清重试未完整收到原始 envelope。后两类报 `protocol_error=prepare_envelope_transfer` 并停止 Reviewer、丢弃叶子；只有 envelope 原样转交错误触发同一干净 commit 重做 prepare 与全新双轴审查，禁复用、改范围/提交或询问许可。
+
+恢复证据快照：恢复前后逐项比较 `fixed_point`、`review_commit`、`worktree_clean`、`manifest_digest`、`bundle_digest`、`runtime_provenance`（含 `provenance_digest`）、用户批准范围、`acceptance_evidence`、`verification`；任一不变量变化或证据不可信立即 fail-closed。范围或 `review_commit` 变化时不得自动纠正；摘要/provenance/语义证据变化或授权不足也禁恢复。
 
 普通目录式流程为 **Git Operator prepare -> Full Stack Coder -> Git Operator commit/sync/prepare+verify -> Coding 验证原样交接 -> Code Reviewer independent verify -> Review Standards + Review Spec -> Git Operator integrate/cleanup**。单任务用 feature worktree；拆分按依赖 frontier，scope 互斥可并行非 Git 工作，Git 串行。`write_scope` 不是授权；实现限验收所需源码、测试、配置、索引、lockfile 和当前 checkbox，不回写已批准元数据。Git Operator 仅在 commit/sync 成功后用安装运行时 prepare+verify，不执行审查；Coding 验证后才委派 Code Reviewer。
 
@@ -107,7 +106,7 @@ git log <fixed-point>..<review-commit> --oneline
 
 两个端点必须可解析，fixed point 是 review commit 的祖先，diff 非空，审查 worktree 的 `HEAD` 等于 review commit 且工作树干净。输入 range、commit list 或 `changed_paths` 与 ReviewManifest 不一致时阻塞。禁止用无参数 `git diff`、`git diff --cached` 或工作树文件读取命令取证。每项 finding 引用 ReviewManifest shard ID 和 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>` hunk；上下文只使用 `git show <review-commit>:<path>`，不得从 committed diff 外新增 finding。
 
-ReviewManifest 机器冻结端点、commit list、真实 `changed_paths: PathChange[]`、review checks、diff、spec/standards source、稳定 shards 和 digest。envelope 绑定 manifest、原始 `verify_input`、两种 digest、runtime provenance、prepare verification，严验 known fields/type/mode/shard/command/bundle。manifest 机器绑定 `acceptance_evidence`/`verification` digest；`spec_status=present` 时绑定 `mode`、`spec_path`、`plan_path`、可选 `task_path`；`spec_status=absent` 时禁用这些字段且 single bundle sources 必须为空。Git Operator 以同一安装 CLI prepare 后立即用原始 stdout verify，再逐字节交 Coding 原样转交；Code Reviewer 独立 verify Git facts。全程禁摘要、删改/重建 envelope、切换仓库 CLI。目录式 present 单任务 bundle 为 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`；拆分 task 加当前 task、`acceptance_evidence` 与 `verification`；聚合绑定 spec+plan。不得退化为 instruction-only、单文件审查或静默遗漏上下文。
+ReviewManifest 机器冻结端点、commit list、真实 `changed_paths: PathChange[]`、review checks、diff、spec/standards source、稳定 shards 和 digest。envelope 绑定 manifest、原始 `verify_input`、两种 digest、runtime provenance、prepare verification。manifest 机器绑定 `acceptance_evidence`/`verification` digest；`spec_status=present` 时绑定 `mode`、`spec_path`、`plan_path`、可选 `task_path`；`spec_status=absent` 时禁用这些字段且 single bundle sources 必须为空。Git Operator 用安装 CLI prepare/verify 后逐字节交 Coding；Reviewer 独立 verify。present 单任务 bundle 为 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`，拆分 task 加当前 task、`acceptance_evidence` 与 `verification`，聚合绑定 spec+plan；不得退化为 instruction-only、单文件审查或静默遗漏上下文。
 
 runtime provenance 绑定 source identity/revision 与摘要，禁绝对路径。安装同事务写 provenance/runtime/agents。CLI fail closed；旧/缺失/篡改/协议/来源漂移须 install/generate，禁 fallback/静默兼容/自动修复；重复生成幂等。
 

@@ -32,7 +32,7 @@ const managedSkillDirectories = [
 ];
 const defaultSkillPrompts = new Map([
   ['generate-ai-work-flow-agents', '使用 `$generate-ai-work-flow-agents` 验证全局配置并生成代理。'],
-  ['init-ai-work-flow', '使用 `$init-ai-work-flow` 为当前项目联合初始化根 `MEMORY.md` 和 `.ai-work-flow/index/`。'],
+  ['init-ai-work-flow', '使用 `$init-ai-work-flow` 为当前项目联合初始化根 `MEMORY.md`、`.ai-work-flow/index/`，并将维护约束写入 `CLAUDE.md` 和 `AGENTS.md`。'],
   ['switch-ai-work-flow-env', '使用 `$switch-ai-work-flow-env` 切换到指定环境并重新生成代理。'],
   ['project-code-navigation', '使用 `$project-code-navigation` 为当前项目创建或更新 `.ai-work-flow/index/` 代码导航索引。'],
   ['git-commit', '使用 `$git-commit` 生成中文 Conventional Commits 提交信息并创建受控本地提交。']
@@ -55,6 +55,12 @@ function promptSection(source, heading) {
   const bodyStart = start + marker.length;
   const end = source.indexOf('\n## ', bodyStart);
   return source.slice(bodyStart, end < 0 ? source.length : end);
+}
+
+function paragraphContaining(source, marker, name) {
+  const matches = source.split(/\n\n/).filter((paragraph) => paragraph.includes(marker));
+  assert.equal(matches.length, 1, `${name} needs one paragraph containing ${marker}`);
+  return matches[0];
 }
 
 function operationLine(source, operation) {
@@ -437,8 +443,8 @@ test('first delegation payload contracts are complete and operation scoped', () 
     'planning-writer': ['`operation=write_spec`', '`operation=write_plan`', '`target`', '`spec_path`', '`source_spec_digest`', '字段缺失'],
     'full-stack-coder': ['`operation=implement`', '`base_commit`', 'acceptance', '代码地图', '实施授权', '`spec_path`', '`plan_path`'],
     'bug-fixer': ['`operation=fix`', '`mode=bug|finding`', '`base_commit`', '复现/预期/实际', '获批 IDs', '`spec_path`'],
-    'review-standards': ['`operation=review_standards`', '不可变公共 payload', '缺失即 blocked'],
-    'review-spec': ['`operation=review_spec`', '`spec_status=present`', '`acceptance_evidence`', '`verification`', '缺失即 blocked']
+    'review-standards': ['`operation=review_standards`', '不可变公共 payload', '核心身份、范围、授权', '普通 blocked'],
+    'review-spec': ['`operation=review_spec`', '`spec_status=present`', '`acceptance_evidence`', '`verification`', '核心身份、范围、授权', '普通 blocked']
   };
   for (const [role, fields] of Object.entries(receiverContracts)) {
     const input = promptSection(readFileSync(resolve(templatesDir, `${role}.md`), 'utf8'), '输入前置条件');
@@ -1301,6 +1307,12 @@ test('AI Work Flow initialization is planned for every platform and preserves pr
     assert.ok(skill.includes(heading), heading);
   }
   assert.match(skill, /不得覆盖或重排任何已有用户内容/);
+  assert.match(skill, /检查项目根 `CLAUDE\.md` 和 `AGENTS\.md`/);
+  assert.match(skill, /重复执行不得重复追加或重排已有内容/);
+  assert.match(skill, /## AI Work Flow 维护约束/);
+  assert.match(skill, /职责或模块边界变化时.*同步维护根 `MEMORY\.md`/s);
+  assert.match(skill, /文件入口、路由、API.*同步维护 `\.ai-work-flow\/index\/`/s);
+  assert.match(skill, /`CLAUDE\.md`、`AGENTS\.md` 各包含一份上述维护约束/);
   assert.match(skill, /ReviewManifest.*提交绑定.*standards source/s);
   assert.match(skill, /必须与索引一起提交/);
   assert.match(skill, /只在项目真实存在对应层时创建 `frontend-navigation\.md` 或 `backend-navigation\.md`/);
@@ -2087,9 +2099,9 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
   assert.match(compiledBodies.get('code-reviewer'), /仍阻塞即报告用户/);
   assert.doesNotMatch(bodies['code-reviewer'], /git rev-parse/);
   assert.doesNotMatch(bodies['code-reviewer'], /\$code-review|已安装时|未安装时|Matt/);
-  assert.match(bodies['review-standards'], /缺失\/不一致时 blocked/);
+  assert.match(bodies['review-standards'], /核心门禁.*失败时 blocked.*envelope 转交错误只走步骤 4/s);
   assert.match(bodies['review-standards'], /ReviewManifest shard ID/);
-  assert.match(bodies['review-spec'], /缺失\/不一致时 blocked/);
+  assert.match(bodies['review-spec'], /核心门禁.*失败时 blocked.*envelope 转交错误只走步骤 4/s);
   assert.match(bodies['review-spec'], /ReviewManifest shard ID/);
 
   const paths = environment();
@@ -2201,6 +2213,101 @@ test('routing is the sole source for retry and stop-lock governance', () => {
     assert.match(generated, /最多重试 2 次，共 3 次/, platform);
   }
   assert.doesNotMatch(source, /最多重试 2 次，共 3 次/);
+});
+
+test('review_prepare handoff errors retry once inside the existing user authorization', () => {
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
+  const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
+  const reviewer = readFileSync(resolve(templatesDir, 'code-reviewer.md'), 'utf8');
+  const operator = readFileSync(resolve(templatesDir, 'git-operator.md'), 'utf8');
+
+  assert.match(routing, /`protocol_recovery_attempt: 0\|1`.*初次 `review_prepare`\/review dispatch 为 `0`.*首次内部协议遗漏从 `0` 变为 `1`.*禁止重置/s);
+  assert.match(routing, /`protocol_recovery_attempt=1` 后任意可恢复协议错误立即 blocked、报告用户实际错误且不得再次自动 restart/);
+  for (const operation of ['review_prepare', 'review_dispatch']) {
+    assert.match(operationLine(coding, operation), /`protocol_recovery_attempt: 0\|1`/, `coding/${operation}: recovery attempt`);
+  }
+  assert.match(coding, /初次 attempt=0.*`protocol_recovery_attempt` 从 `0` 变为 `1`/s);
+  assert.match(operationLine(operator, 'review_prepare'), /`protocol_recovery_attempt: 0\|1`/);
+  assert.match(detailsLine(operator, 'review_prepare'), /`protocol_recovery_attempt`/);
+  assert.match(promptSection(reviewer, '输入前置条件'), /`operation=review_dispatch`.*`protocol_recovery_attempt: 0\|1`/s);
+  assert.match(promptSection(reviewer, '交接格式'), /回传 `protocol_recovery_attempt`/);
+  for (const [name, source] of [['routing', routing], ['coding', coding], ['git-operator', operator], ['code-reviewer', reviewer]]) {
+    const termination = paragraphContaining(source, 'protocol_recovery_attempt=1', `${name} recovery termination`);
+    assert.match(termination, /任意可恢复协议错误.*blocked.*报告用户实际错误.*不得再次自动 restart/s, `${name}: exhausted recovery budget stops every subtype`);
+    assert.doesNotMatch(termination, /第二次同类失败/, `${name}: recovery budget is not subtype-specific`);
+    assert.match(source, /范围或 `review_commit` 变化时不得自动纠正/, `${name}: changed range or commit fails closed`);
+    assert.doesNotMatch(source, /范围或 `review_commit` 变化时(?:仍|也)?可自动纠正/, `${name}: no changed-commit recovery`);
+  }
+});
+
+test('incomplete reviewer or leaf envelope restarts every review axis from immutable evidence', () => {
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
+  const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
+  const reviewer = readFileSync(resolve(templatesDir, 'code-reviewer.md'), 'utf8');
+  const operator = readFileSync(resolve(templatesDir, 'git-operator.md'), 'utf8');
+  const standards = readFileSync(resolve(templatesDir, 'review-standards.md'), 'utf8');
+  const spec = readFileSync(resolve(templatesDir, 'review-spec.md'), 'utf8');
+  const recoveryPolicy = promptSection(routing, '实施编排');
+
+  assert.match(recoveryPolicy, /Code Reviewer 首次接收 prepare envelope 不完整/);
+  assert.match(recoveryPolicy, /任一 review leaf 首次或澄清重试未完整收到原始 envelope/);
+  assert.match(recoveryPolicy, /只有 envelope 原样转交错误触发.*全新双轴审查/s);
+  for (const field of ['`fixed_point`', '`review_commit`', '`worktree_clean`', '`manifest_digest`', '`bundle_digest`', '`runtime_provenance`', '`provenance_digest`', '用户批准范围', '`acceptance_evidence`', '`verification`']) {
+    assert.ok(recoveryPolicy.includes(field), `routing recovery snapshot: ${field}`);
+  }
+  assert.doesNotMatch(recoveryPolicy, /`(?:review_manifest_digest|prepare_envelope_digest|envelope_digest)`/, 'routing uses only runtime envelope fields');
+  assert.match(detailsLine(operator, 'review_prepare'), /`manifest_digest`.*`bundle_digest`.*`runtime_provenance`/s, 'git-operator/review_prepare details return runtime recovery evidence');
+  assert.doesNotMatch(detailsLine(operator, 'review_prepare'), /`(?:review_manifest_digest|prepare_envelope_digest|envelope_digest)`/, 'git-operator details forbid invented digest fields');
+  assert.match(recoveryPolicy, /任一不变量变化或证据不可信立即 fail-closed/);
+
+  const codingWorkflow = promptSection(coding, '确定性工作流');
+  assert.match(codingWorkflow, /Reviewer 首次接收或任一叶子首次\/澄清重试报 `protocol_error=prepare_envelope_transfer`/);
+  assert.match(codingWorkflow, /停止 Reviewer、丢弃两轴结果.*全轴重启/s);
+  assert.match(codingWorkflow, /恢复证据快照.*任一不变量变化立即 fail-closed/s);
+  assert.match(promptSection(operator, '确定性工作流'), /恢复证据快照.*独立重读并比较.*生成新 envelope.*任一不变量变化立即 fail-closed/s);
+
+  const reviewerWorkflow = promptSection(reviewer, '确定性工作流');
+  assert.match(reviewerWorkflow, /Reviewer 首次接收或任一叶子首次\/澄清重试中.*仅当核心字段齐全.*原始 prepare envelope/s);
+  assert.match(reviewerWorkflow, /`protocol_error=prepare_envelope_transfer`.*停止并丢弃叶子交 Coding.*禁重建、继续或请求授权/s);
+  assert.match(reviewerWorkflow, /恢复证据快照.*变化即 fail-closed/s);
+
+  for (const [name, leaf, operation] of [['review-standards', standards, 'review_standards'], ['review-spec', spec, 'review_spec']]) {
+    assert.match(promptSection(leaf, '输入前置条件'), new RegExp(`operation=${operation}.*原始 prepare envelope.*protocol_recovery_attempt: 0\\|1`, 's'), `${name}: input attempt`);
+    assert.match(promptSection(leaf, '确定性工作流'), /仅当核心字段齐全.*原始 prepare envelope.*(?:原样转交字段缺失|截断).*原 attempt 回传 `protocol_error=prepare_envelope_transfer`.*不重建、不编排/s, `${name}: transfer error only`);
+    assert.match(promptSection(leaf, '交接格式'), /回传 `protocol_recovery_attempt`.*`details\.protocol_error`/s, `${name}: structured return`);
+  }
+  assert.doesNotMatch(`${standards}\n${spec}`, /重做 `review_prepare`|全轴重启|启动全新双轴审查/);
+  assert.doesNotMatch(recoveryPolicy, /(?:digest|provenance|acceptance_evidence|verification).*变化.*(?:仍|也)?可自动(?:纠正|恢复|重启)/s);
+});
+
+test('compiled recovery owners compare one complete canonical evidence snapshot', () => {
+  const compiled = loadAgentAssets().compiledBodies;
+  const fields = [
+    '`fixed_point`', '`review_commit`', '`worktree_clean`', '`manifest_digest`', '`bundle_digest`',
+    '`runtime_provenance`', '`provenance_digest`', '用户批准范围', '`acceptance_evidence`', '`verification`'
+  ];
+
+  for (const role of ['git-operator', 'code-reviewer']) {
+    const recovery = paragraphContaining(compiled.get(role), '恢复证据快照', `${role} compiled recovery gate`);
+    for (const field of fields) assert.ok(recovery.includes(field), `${role} recovery snapshot: ${field}`);
+    assert.doesNotMatch(recovery, /`(?:review_manifest_digest|prepare_envelope_digest|envelope_digest)`/, `${role}: no invented digest field`);
+  }
+});
+
+test('review envelope transfer errors run only after core input gates pass', () => {
+  const bodies = Object.fromEntries(['code-reviewer', 'review-standards', 'review-spec'].map((role) => [
+    role,
+    readFileSync(resolve(templatesDir, `${role}.md`), 'utf8')
+  ]));
+
+  for (const [role, body] of Object.entries(bodies)) {
+    const input = promptSection(body, '输入前置条件');
+    const workflow = promptSection(body, '确定性工作流');
+    assert.match(input, /核心身份、范围、授权、`protocol_recovery_attempt`.*缺失.*普通 blocked/s, `${role}: core gate`);
+    assert.match(workflow, /仅当核心字段齐全.*原始 prepare envelope.*(?:原样转交字段缺失|截断).*`protocol_error=prepare_envelope_transfer`/s, `${role}: transfer error branch`);
+    assert.doesNotMatch(input, /(?:任一输入|缺失或 prompt 不一致|；缺失)即 blocked/, `${role}: broad blocked gate must not shadow transfer errors`);
+    assert.doesNotMatch(body, /任一输入.*blocked|缺失或 prompt 不一致即 blocked/s, `${role}: no broad blocked override outside the input section`);
+  }
 });
 
 test('platform generation enforces the declared workspace access where supported', () => {
@@ -3197,6 +3304,30 @@ test('catalog rejects missing spec-first contract markers before generation', ()
     assert.throws(
       () => loadAgentAssets(assets.config, assets.templates),
       new RegExp(`Template ${roleId}\\.md is missing spec-first contract marker`)
+    );
+  }
+});
+
+test('catalog rejects missing protocol recovery counters and evidence invariants', () => {
+  const cases = [
+    ['routing', 'config', 'routing.md', ['`protocol_recovery_attempt: 0|1`', '任意可恢复协议错误', '恢复前后逐项比较', '`bundle_digest`', '`provenance_digest`']],
+    ['coding', 'templates', 'coding.md', ['`protocol_recovery_attempt: 0|1`', '任意可恢复协议错误', '恢复证据快照']],
+    ['git-operator', 'templates', 'git-operator.md', ['`protocol_recovery_attempt: 0|1`', '任意可恢复协议错误', '恢复证据快照', '`bundle_digest`', '`provenance_digest`']],
+    ['code-reviewer', 'templates', 'code-reviewer.md', ['`protocol_recovery_attempt: 0|1`', '任意可恢复协议错误', '恢复证据快照']],
+    ['review-standards', 'templates', 'review-standards.md', ['`protocol_recovery_attempt: 0|1`', 'protocol_error=prepare_envelope_transfer']],
+    ['review-spec', 'templates', 'review-spec.md', ['`protocol_recovery_attempt: 0|1`', 'protocol_error=prepare_envelope_transfer']]
+  ];
+
+  for (const [name, owner, file, markers] of cases) for (const marker of markers) {
+    const assets = copiedAssets();
+    const path = resolve(assets[owner], file);
+    const source = readFileSync(path, 'utf8');
+    assert.ok(source.includes(marker), `${name}: missing recovery fixture marker ${marker}`);
+    writeFileSync(path, source.replaceAll(marker, 'removed-contract-marker'));
+    assert.throws(
+      () => loadAgentAssets(assets.config, assets.templates),
+      /missing protocol recovery contract marker/,
+      `${name}: ${marker}`
     );
   }
 });

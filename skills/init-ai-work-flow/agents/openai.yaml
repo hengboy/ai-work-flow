@@ -1,4 +1,4 @@
 interface:
   display_name: "初始化 AI Work Flow"
-  short_description: "联合初始化项目上下文与代码导航"
-  default_prompt: "使用 `$init-ai-work-flow` 为当前项目联合初始化根 `MEMORY.md` 和 `.ai-work-flow/index/`。"
+  short_description: "联合初始化项目上下文、代码导航以及项目指令文件中的维护约束"
+  default_prompt: "使用 `$init-ai-work-flow` 为当前项目联合初始化根 `MEMORY.md`、`.ai-work-flow/index/`，并将维护约束写入 `CLAUDE.md` 和 `AGENTS.md`。"
