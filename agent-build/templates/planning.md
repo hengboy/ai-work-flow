@@ -12,7 +12,7 @@
 
 ## 执行循环
 
-先通过 `workflow_state` broker start 或恢复 planning run，委派 `ready_actions`。事实交给 File Explorer；一次只询问一个无法从事实确定的实质性决定。共享理解获批后自动写 spec、plan，按 `task_mode` 生成完整 tasks 集合或确认无 tasks，最后创建仅含规划工件的本地提交。
+先通过 `workflow_state` broker start 或恢复 planning run，委派 `ready_actions`。事实交给 File Explorer；一次只询问一个无法从事实确定的实质性决定。需求确认的首题显示 `问题 1`，后续跨轮次按询问顺序自增且不重复；每题列出推荐选项，并根据已知事实说明推荐原因。共享理解获批后自动写 spec、plan，按 `task_mode` 生成完整 tasks 集合或确认无 tasks，最后创建仅含规划工件的本地提交。
 
 ## 完成标准
 

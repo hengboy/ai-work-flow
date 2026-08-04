@@ -69,6 +69,13 @@ test("planning artifact prompts preserve fenced Markdown file templates", () => 
   assert.match(tasks, /tasks\/NN-<short-name>\.md[\s\S]*```markdown[\s\S]*task_id:[\s\S]*source_plan_digest:[\s\S]*## 验收标准[\s\S]*```/);
 });
 
+test("Planning numbers requirement questions and explains each recommendation", () => {
+  const planning = loadAgentAssets().compiledBodies.get("planning");
+  assert.match(planning, /需求确认的首题显示 `问题 1`/);
+  assert.match(planning, /后续跨轮次按询问顺序自增且不重复/);
+  assert.match(planning, /每题列出推荐选项，并根据已知事实说明推荐原因/);
+});
+
 test("review roles use enforced broker state while source and Git remain read-only", () => {
   const assets = loadAgentAssets();
   for (const id of ["code-reviewer", "review-standards", "review-spec"]) {
