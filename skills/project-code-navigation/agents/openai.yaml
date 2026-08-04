@@ -1,4 +1,4 @@
 interface:
   display_name: "项目代码导航"
-  short_description: "定位并维护项目代码入口索引"
-  default_prompt: "使用 `$project-code-navigation` 为当前项目创建或更新 `.ai-work-flow/index/` 代码导航索引。"
+  short_description: "使用现有索引只读定位入口，或随已授权实现维护导航索引"
+  default_prompt: "使用 $project-code-navigation 精确定位目标代码，必要时随实现维护索引。"

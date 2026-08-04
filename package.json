@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "validate:skills": "node agent-build/generate-skill-metadata.mjs"
   },
   "devDependencies": {
     "@iarna/toml": "^2.2.5",

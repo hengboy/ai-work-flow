@@ -1,31 +1,37 @@
-# 受管提示词排版规范
+# 受管提示词格式
 
-## 适用范围
+## Agent 接口
 
-本规范适用于仓库管理的 Skill、角色 Agent 正文和路由规则。平台生成器应原样保留这些 Markdown 指令内容。
+每个角色模板严格使用以下七个二级标题，顺序固定且各出现一次：
 
-## 文档结构
+1. `角色结果`
+2. `能力与控制`
+3. `允许的 Actions 与输入`
+4. `执行循环`
+5. `完成标准`
+6. `决策条件`
+7. `结果回执`
 
-- 每份直接提示词使用一个 `#` 主标题。角色模板依次使用 `## 职责结果`、`## 不可违反约束`、`## 输入前置条件`、`## 确定性工作流`、`## 暂停条件` 和 `## 交接格式`；模板正文需要固定 artifact 模板时可在工作流中插入额外 `##`。`不可违反约束` 保留唯一 `<!-- ai-work-flow:controls -->` 占位，编译器按角色声明顺序注入控制文本和隐藏 control ID 摘要。Skill 使用与自身流程匹配的语义标题。
-- 标题、段落和列表之间保留空行；执行步骤使用有序列表。
-- `**加粗**` 仅用于角色名、关键状态和标签，例如 `**状态：**`、`**结论：**`、`**阻塞：**`。
+模板显式保留加粗角色名，并只写角色独有判断。`能力与控制` 由 roles、controls 和 policies 注入；`Actions 与输入` 由 workflow contract 和 owner 关系注入；`结果回执` 由 contract 的 `ActionReceipt` 结构注入。`routing.md` 仅参与 digest 和治理说明，不复制进角色 prompt。Planning Writer 与 Task Planner 可在“执行循环”内用带 `markdown` info string 的 fenced code block 维护 `spec.md`、`plan.md` 和 task 文件的统一模板。
 
-## 交接与反馈
+编译器必须验证：每个 contract action 恰有一个 owner；owner 的角色声明该 action；能力、工具和 control 一致；所有 action/结果字段有结构覆盖。禁止用中文短语、表格行或历史 marker 判断状态机完整性。
 
-子代理最终返回统一且仅供主代理消费的 JSON：`status`、`summary`、`artifacts`、`checks`、`details`，仅 blocked 时增加 `blocking_reason`。角色特有字段放入 `details`；主代理验证 JSON 后再生成用户可读反馈。
+单个编译 prompt 不超过 8,000 字符，13 个总量不超过 45,000 字符。Coding、Code Reviewer 和 Git Operator 不携带完整 schema、重试算法或 ReviewPacket 正文。
 
-Coding 非完成态使用 `**状态：**`、`**当前角色：**`、`**已完成：**`、`**下一步：**`。进入人工门禁时只提出一个 `**需要你决定：**` 问题。审查结果中的 blocking 与 advisory findings 分别放入 `**阻塞项：**` 与 `**建议：**`，并保留 Standards、Spec 顺序。
+## Skill 接口
 
-目录式 plan/task 完成最终整合与清理且没有 blocking finding 时，Coding 明确告知“已经全部完成”，并依次使用 `**实施结果：**`、`**完成内容：**`、`**验证结果：**`、`**变更范围：**`、`**遗留事项：**`；遗留事项没有内容时写“无”。
+每份 `SKILL.md` 的 YAML frontmatter 只含 `name` 和 `description`。description 是触发条件唯一来源；正文不重复触发词，固定使用：
 
-| 类型 | 输出契约 |
-| --- | --- |
-| Coding | 状态摘要、单一决定问题或五段式完成态 |
-| Planning | 连续编号的单一问题或规划工件与 commit 交接 |
-| 子代理 | 统一 JSON envelope；角色字段进入 `details` |
-| 审查角色 | `details.review_result` 保留 verdict、findings、digest 和 coverage |
-| 生成、切换与执行 Skill | 结果、更新或状态、注意或阻塞 |
+1. `结果目标`
+2. `必要前置条件`
+3. `步骤`
+4. `条件分支`
+5. `最终验收`
 
-## 受管标记
+每步使用祈使表达并以机器或人工可检查的完成标准结束。分支细节只放一级 `references/`；可重复、易错或解析型逻辑放 `scripts/`。正文不复制 Agent 的状态、Git、重试或交接协议，只引用 runtime action 和结果。
 
-嵌入用户 `AGENTS.md` 或 `CLAUDE.md` 的受管标记仅是 Markdown 片段，不得注入新的一级标题。
+单个 Skill 正文不超过 4,000 字符，五个总量不超过 12,000 字符。`skills.json` 确定 display name、25–64 字符短描述和 default prompt；`openai.yaml` 的所有字符串加引号，default prompt 显式包含 `$skill-name`。
+
+## 交接
+
+聊天只传 `WorkflowSnapshot`、`ActionReceipt`、`ArtifactRef` 或 `ReviewPacketRef`。完整审查上下文、验收证据、检查输出和叶子结果写本地 artifact。响应截断或 JSON 损坏时从 runtime 读取 canonical receipt，不重做 action。

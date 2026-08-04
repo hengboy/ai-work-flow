@@ -1,33 +1,27 @@
 ---
 name: switch-ai-work-flow-env
-description: 切换 AI Work Flow 环境预设并重新生成代理。当用户要求切换环境、切换预设、或提到"切换到 xxx 环境"时使用。
+description: 切换到一个已存在的 AI Work Flow 环境预设，并事务式生成该环境对应的受管理 Agents。
 ---
 
-# 切换 AI Work Flow 环境
+# 结果目标
 
-## 目标
+原子切换环境标记、配置和受管理 Agents；失败时保留切换前状态。
 
-切换 AI Work Flow 环境预设，并重新生成目标平台的 agents。
+# 必要前置条件
 
-## 前置条件与约束
+- 调用者提供精确环境名称。
+- 当前没有身份不明的生成事务日志。
 
-默认环境为 `~/.config/ai-work-flow/environments/default.json`；其他环境预设按 `role -> platform -> field` 与默认环境合并，OpenCode `options` 整体替换。设置 `XDG_CONFIG_HOME` 时，使用 `$XDG_CONFIG_HOME/ai-work-flow/` 目录。本技能绝不在当前项目写入 `.ai-work-flow`、`.codex`、`.claude`、`.opencode`、`AGENTS.md` 或 `CLAUDE.md`。
+# 步骤
 
-## 执行步骤
+1. 直接运行 `node agent-build/install.mjs env use <name>`。命令内部验证目标环境并在同一事务中生成；完成标准：退出码为 0 且报告已切换环境。
+2. 运行 `node agent-build/install.mjs env status`。完成标准：当前环境名称正确，受管理平台状态与该预设一致。
 
-1. 定位 `~/.config/ai-work-flow/agent-workflow.mjs`；设置 `XDG_CONFIG_HOME` 时，使用 `$XDG_CONFIG_HOME/ai-work-flow/agent-workflow.mjs`。
-2. 运行 `node "<该脚本路径>" env` 查看可用环境列表，确认目标环境存在。
-3. 运行 `node "<该脚本路径>" env use <环境名>` 切换到目标环境；切换到默认配置时使用 `env use default`。
-4. `env use` 已事务化验证并生成受管 agents；不得在其后重复 `validate` 或 `generate`。
-5. 报告切换结果和更新的代理文件，并提醒用户新会话才会读取生成后的代理。
+# 条件分支
 
-目标存在且预检成功后自动完成事务式切换、生成和结果校验，不再询问是否继续切换。
+- 环境不存在或配置非法：停止并报告原始错误，不预先 list、validate 或 generate。
+- 事务恢复被阻塞：保留日志现场，不手工改写 `.environment`。
 
-## 回复格式
+# 最终验收
 
-正常回答按需使用以下标签；无内容的标签省略。
-
-- **结果：** 说明目标环境和切换结果。
-- **更新：** 列出重新生成的 agents 和目标平台。
-- **注意：** 说明新会话才会读取生成后的 agents。
-- **阻塞：** 说明环境不存在、配置无效或无法继续的原因。
+环境标记与生成结果来自同一成功事务；没有重复生成。

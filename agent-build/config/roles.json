@@ -1,158 +1,148 @@
 {
-  "version": 2,
   "roles": [
     {
       "id": "coding",
       "name": "Coding",
-      "description": "负责路由工作、等待受委派结果并汇总结论。",
+      "description": "读取工作流快照并持续调度 ready action，直到终态或单一决策。",
       "kind": "primary",
       "default_primary": true,
       "policy": "coding",
       "controls": ["no-direct-workspace-operations", "coding-orchestration-only"],
-      "delegates": [
-        "file-explorer",
-        "researcher",
-        "document-maintainer",
-        "planning-writer",
-        "full-stack-coder",
-        "bug-fixer",
-        "git-operator",
-        "code-reviewer"
-      ],
+      "delegates": ["file-explorer", "researcher", "document-maintainer", "planning-writer", "full-stack-coder", "bug-fixer", "git-operator", "code-reviewer"],
       "tools": [],
-      "routing_sections": ["browser-governance", "retry-governance", "planning-governance", "orchestration-governance", "change-handoff-governance", "git-lifecycle-governance", "review-orchestration-governance"]
+      "actions": ["support.orchestrate"]
     },
     {
       "id": "planning",
       "name": "Planning",
-      "description": "通过持续问询建立共享理解，并按 spec-first 状态机生成可实施计划。",
+      "description": "查清事实和实质性产品决定，自动完成规划流程但不实施。",
       "kind": "primary",
       "policy": "planning",
       "controls": ["no-direct-workspace-operations", "planning-no-implementation"],
       "delegates": ["file-explorer", "planning-writer", "task-planner", "git-operator"],
       "tools": ["Task"],
-      "routing_sections": ["browser-governance", "retry-governance", "planning-governance"]
+      "actions": ["planning.complete"]
     },
     {
       "id": "file-explorer",
       "name": "File Explorer",
-      "description": "负责全仓库枚举、搜索和代码地图。",
+      "description": "索引优先执行只读发现，并可读取 workflow status。",
       "kind": "subagent",
       "policy": "discover",
       "controls": ["read-only-discovery"],
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash", "Skill"],
-      "routing_sections": ["browser-governance", "handoff-governance"]
+      "actions": ["planning.discover", "navigation.locate_or_maintain"]
     },
     {
       "id": "researcher",
       "name": "Researcher",
-      "description": "负责研究外部官方资料并将带引用的 Markdown 报告存入项目研究目录。",
+      "description": "使用官方来源研究并完成一份带引用报告。",
       "kind": "subagent",
       "policy": "research",
       "controls": ["official-research-only", "research-report-path-only", "single-research-report-only"],
       "delegates": [],
       "tools": ["WebSearch", "WebFetch", "Write"],
-      "routing_sections": ["browser-governance", "handoff-governance"]
+      "actions": ["support.research"]
     },
     {
       "id": "document-maintainer",
       "name": "Document Maintainer",
-      "description": "负责维护项目普通文档。",
+      "description": "精确维护指定普通文档并验证事实。",
       "kind": "subagent",
       "policy": "write-docs",
       "controls": ["ordinary-docs-only", "no-git-mutation"],
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
-      "routing_sections": ["browser-governance", "handoff-governance"]
+      "actions": ["support.update_docs"]
     },
     {
       "id": "planning-writer",
       "name": "Planning Writer",
-      "description": "单次只负责完整写入一个目录式规格或实施计划。",
+      "description": "单次写入并验证一个 spec 或 plan。",
       "kind": "subagent",
       "policy": "write-plans",
       "controls": ["single-planning-artifact-only", "no-git-mutation"],
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
-      "routing_sections": ["browser-governance", "handoff-governance", "planning-governance"]
+      "actions": ["planning.write_spec", "planning.write_plan"]
     },
     {
       "id": "task-planner",
       "name": "Task Planner",
-      "description": "负责把已确认计划拆分为可跟踪的实施任务。",
+      "description": "按已确定模式生成或删除完整 task 集合。",
       "kind": "subagent",
       "policy": "write-tasks",
       "controls": ["task-artifacts-only"],
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
-      "routing_sections": ["browser-governance", "handoff-governance", "planning-governance"]
+      "actions": ["planning.write_tasks"]
     },
     {
       "id": "full-stack-coder",
       "name": "Full Stack Coder",
-      "description": "负责实现源码、测试、必要配置和修复。",
+      "description": "在指定 worktree 完成最小实现、验证和导航维护。",
       "kind": "subagent",
       "policy": "write-code",
       "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "no-git-mutation"],
       "delegates": ["file-explorer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Task"],
-      "routing_sections": ["browser-governance", "retry-governance", "handoff-governance", "change-handoff-governance"]
+      "actions": ["coding.implement", "project.initialize"]
     },
     {
       "id": "bug-fixer",
       "name": "Bug Fixer",
-      "description": "负责修复可复现 bug 和用户明确批准的阻塞 finding。",
+      "description": "修复可复现 bug 或当前审查轮的 blocking finding。",
       "kind": "subagent",
       "policy": "write-code",
       "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "authorized-bug-or-finding-only", "no-git-mutation"],
       "delegates": ["file-explorer", "git-operator", "researcher", "document-maintainer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Task"],
-      "routing_sections": ["browser-governance", "retry-governance", "handoff-governance", "change-handoff-governance"]
+      "actions": ["coding.fix_1", "coding.fix_2"]
     },
     {
       "id": "git-operator",
       "name": "Git Operator",
-      "description": "负责受控执行 Git 工作流，并在 commit/sync 成功后准备 ReviewManifest。",
+      "description": "执行唯一 Git mutation、Git 事实验证和安全清理。",
       "kind": "subagent",
       "policy": "commit",
       "controls": ["safe-local-git-only"],
       "delegates": [],
       "tools": ["Read", "Bash", "Skill"],
-      "routing_sections": ["browser-governance", "planning-governance", "handoff-governance", "change-handoff-governance", "git-lifecycle-governance"]
+      "actions": ["planning.commit", "coding.prepare", "coding.commit", "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2", "coding.integrate", "coding.resync_1", "coding.prepare_resync_review_1", "coding.integrate_1", "coding.resync_2", "coding.prepare_resync_review_2", "coding.integrate_2", "coding.cleanup", "agents.generate", "env.use"]
     },
     {
       "id": "code-reviewer",
       "name": "Code Reviewer",
-      "description": "仅由 Coding 调用的双轴审查编排角色，负责在差异稳定后调度标准审查和规范审查。",
+      "description": "验证 ReviewPacketRef，编排并聚合完整双轴审查。",
       "kind": "subagent",
       "policy": "review",
-      "controls": ["review-read-only", "fixed-review-range-only", "review-orchestration-only"],
+      "controls": ["review-read-only", "workflow-state-only", "fixed-review-range-only", "review-orchestration-only"],
       "delegates": ["review-standards", "review-spec"],
       "tools": ["Read", "Glob", "Grep", "Bash", "Task"],
-      "routing_sections": ["browser-governance", "retry-governance", "handoff-governance", "review-evidence-governance", "review-orchestration-governance"]
+      "actions": ["coding.review", "coding.rereview_1", "coding.rereview_2", "coding.resync_review_1", "coding.resync_review_2"]
     },
     {
       "id": "review-standards",
       "name": "Review Standards",
-      "description": "仅由 Code Reviewer 调用的终端角色，负责依据仓库标准审查稳定差异。",
+      "description": "依据冻结标准和 committed review slices 审查。",
       "kind": "reviewer",
       "policy": "review",
-      "controls": ["review-read-only", "fixed-review-range-only", "review-leaf-no-delegation"],
+      "controls": ["review-read-only", "workflow-state-only", "fixed-review-range-only", "review-leaf-no-delegation"],
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash"],
-      "routing_sections": ["browser-governance", "handoff-governance", "review-evidence-governance"]
+      "actions": ["support.review_standards"]
     },
     {
       "id": "review-spec",
       "name": "Review Spec",
-      "description": "仅由 Code Reviewer 调用的终端角色，负责依据已批准的规范审查稳定差异。",
+      "description": "依据冻结规格、验收证据和 committed review slices 审查。",
       "kind": "reviewer",
       "policy": "review",
-      "controls": ["review-read-only", "fixed-review-range-only", "review-leaf-no-delegation"],
+      "controls": ["review-read-only", "workflow-state-only", "fixed-review-range-only", "review-leaf-no-delegation"],
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash"],
-      "routing_sections": ["browser-governance", "handoff-governance", "review-evidence-governance"]
+      "actions": ["support.review_spec"]
     }
   ]
 }

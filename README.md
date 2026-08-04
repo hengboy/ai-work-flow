@@ -1,17 +1,10 @@
 # AI Work Flow
 
-为 Codex、Claude Code 和 OpenCode 提供统一的专职代理工作流：**Coding** 是默认入口，负责路由、等待和汇总；**Planning** 是可选入口，负责问询并生成完整计划。
+AI Work Flow 为 Codex、Claude Code 和 OpenCode 提供共享的 Planning、Coding、13 个专职 Agents、5 个 Skills 和可恢复执行 runtime。流程状态由机器契约维护，提示词只消费 snapshot 和 artifact refs。
 
-## 快速开始
+## 安装
 
-### 前置条件
-
-- Node.js
-- Git
-- Codex、Claude Code 或 OpenCode 至少一个客户端，且已完成配置
-- 当前用户对对应全局配置目录具有读写权限
-
-首次使用建议先预览写入路径，再安装、校验：
+前置条件为 Node.js、Git，以及至少一个已配置客户端。
 
 ```sh
 npm ci
@@ -20,259 +13,76 @@ node agent-build/install.mjs
 node agent-build/install.mjs validate
 ```
 
-`--dry-run` 只显示计划写入内容，不写文件；`validate` 只校验角色资产和配置，不写文件。默认生成全部平台的 agents 和平台配置，也可以限定生成平台：
+完整安装事务式同步配置、Skills、execution runtime 和目标平台 Agents。`--platform codex,claude,opencode` 可限制 Agent 平台；共享 runtime 与 Skills 始终安装。`init` 只初始化全局环境配置和路由，不修改当前项目。
 
-```sh
-node agent-build/install.mjs --platform codex
-node agent-build/install.mjs --platform claude,opencode
-```
-
-完整安装中的 `--platform` 只限制 agents 和平台配置的生成范围；共享 Skills 和 runtime 仍会安装到 Codex、Claude Code 和 OpenCode 的全局目录。只想初始化环境配置和路由时使用 `init`。
-
-## 日常操作
-
-| 操作 | 命令 | 作用 |
-| --- | --- | --- |
-| 完整安装 | `node agent-build/install.mjs` | 同步 Skills、运行时、配置和 agents |
-| 初始化 | `node agent-build/install.mjs init` | 只初始化配置和路由，不安装 Skills/runtime，也不生成 agents |
-| 生成 | `node agent-build/install.mjs generate [--platform ...]` | 根据当前配置生成 agents |
-| 校验 | `node agent-build/install.mjs validate` | 校验角色资产和当前配置 |
-| 帮助 | `node agent-build/install.mjs --help` | 显示完整命令格式 |
-| 环境列表 | `node agent-build/install.mjs env` | 列出环境及当前选择；`env list` 是兼容别名 |
-| 创建环境 | `node agent-build/install.mjs env create <name>` | 从当前解析配置创建完整环境副本 |
-| 使用环境 | `node agent-build/install.mjs env use <name>` | 校验并事务式生成后切换环境 |
-| 删除环境 | `node agent-build/install.mjs env delete <name>` | 删除非默认环境 |
-| 环境状态 | `node agent-build/install.mjs env status` | 显示环境、平台和生成状态 |
-
-### 配置模型
-
-默认环境文件为：
-
-```text
-${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/environments/default.json
-```
-
-非默认环境使用同目录下的 `<name>.json`，由 `.environment` 标记选择；环境配置按角色、平台和字段覆盖默认值，未提供字段继续继承。OpenCode 的 `options` 例外：一旦覆盖就整体替换。默认环境必须保留全部受管理角色及三平台完整配置，非默认环境可以只记录差异。完整安装会补齐完全缺失的 Planning、Planning Writer、Task Planner 或 Bug Fixer；已有但残缺的角色配置仍会失败。旧默认环境完全缺失 Bug Fixer 时，`validate` 和 `generate` 还可只在内存中使用该角色的默认配置且不改写环境文件，下一次完整安装再持久化补齐。修改环境文件后，通过 `$generate-ai-work-flow-agents` 校验并重新生成，或直接依次运行 `validate` 和 `generate`；新会话才会读取更新后的 agents。环境切换应使用 `env use <name>`，不要手工改写 `.environment`。
-
-平台配置按角色组织，例如：
-
-```json
-{
-  "version": 1,
-  "roles": {
-    "coding": {
-      "codex": { "model": "gpt-5.6", "reasoning": "medium" },
-      "claude": { "model": "sonnet", "effort": "medium" },
-      "opencode": { "model": "provider/model", "variant": "default", "options": {} }
-    }
-  }
-}
-```
-
-Codex 的 `reasoning` 使用非空字符串；Claude Code 的 `effort` 只接受 `low`、`medium` 或 `high`；OpenCode 的 `model` 可以为 `null`，表示继承主会话模型。
-
-生成位置及全局配置副作用：
-
-- Codex：`~/.codex/agents/*.toml`；更新 `~/.codex/config.toml` 的代理深度下限，并维护 `~/.codex/AGENTS.md` 中的受管理片段
-- Claude Code：`~/.claude/agents/*.md`；维护 `~/.claude/CLAUDE.md` 中的受管理片段
-- OpenCode：`$XDG_CONFIG_HOME/opencode/agents/*.md`，未设置时为 `~/.config/opencode/agents/*.md`；更新同目录根部的 `opencode.json`，设置默认主代理和代理深度下限
-- 共享运行时和配置：`$XDG_CONFIG_HOME/ai-work-flow/`，未设置时为 `~/.config/ai-work-flow/`
-
-安装器和生成器保留受管理片段之外的用户内容，以及其他名称的全局 agents、Skills 和工具配置。角色表和 Skills 表中列出的同名目标属于受管理内容：同名 agent 会更新，同名 Skill 目录会按仓库版本整体同步，升级时也会清理明确支持的旧受管理路径。升级前应先运行 `--dry-run` 检查目标路径。
-
-`env status` 会报告每个平台/角色的 `in-sync`、`drifted` 或 `shadowed` 状态。项目级或用户级同名 agent 可能遮蔽全局生成结果；生成成功不代表新会话一定使用该全局 agent，应先处理状态输出中的 `reasons`。
-
-### 项目接入
-
-首次在项目使用代码导航，或首次进入目录式 ReviewManifest 审查前，使用项目级 `$init-ai-work-flow` 联合初始化根 `MEMORY.md` 和 `.ai-work-flow/index/`，并将两者的维护约束写入项目根 `CLAUDE.md` 与 `AGENTS.md`。该 Skill 基于真实仓库资料补齐领域术语、仓库约束、职责、模块边界和功能入口；已有文件时保留原内容，只补充缺失章节或约束。`MEMORY.md` 是 ReviewManifest 的提交绑定 standards source，必须提交，并在职责、边界或入口变化时与导航索引同轮维护。
-
-这不是 `node agent-build/install.mjs init` 的职责；该命令只初始化 AI Work Flow 的全局配置与路由，不写入当前项目的上下文或导航文件。
-
-## 工作流
-
-项目使用目录式 **Planning Spec/Plan/Task** 协议，由 Planning、Coding 和 Git Operator 按代理指令协调。规划工件位于 `.ai-work-flow/plans/`；普通目录式执行没有状态机 CLI，评审范围由共享 ReviewManifest CLI 冻结和复验。
-
-### 使用流程
-
-```text
-Planning 持续问询并通过共享理解门禁 -> 写入/校验 spec.md -> 计算原始字节 SHA-256 -> 写入绑定的 plan.md -> 选择拆分或不拆分 -> 创建 planning commit -> 新会话由 Coding 实施
-```
-
-1. 在 **Planning** 主代理中说明目标。Planning 先让 File Explorer 查明仓库事实，再一次只问一个决定，沿影响结果的设计分支持续追问并按依赖顺序解决。只有关键分支、验收场景、范围边界、假设和未决问题全部收敛，且用户明确批准复述的共享理解后，Planning Writer 才完整写入 `.ai-work-flow/plans/<plan-id>/spec.md`。门禁通过前不会生成后续规划工件；新信息或需求变化会重新打开问询。已有且需求未变化的 spec 会先校验、总结并再次确认，不会静默重写。
-2. spec 写后必须满足固定中文章节、`status: approved` 和 `开放问题: N/A`，并只描述需求与验收边界。File Explorer 对保存后的原始完整字节计算 SHA-256；随后 Planning Writer 写入 `plan.md`，通过 `source_spec` 和 `source_spec_digest` 绑定该规格。任一写入、校验或摘要失败都会短路后续阶段。
-3. plan 校验成功后明确选择“拆分”或“不拆分”。拆分时先确认完整任务草案的颗粒度，再按当前 plan 原始完整字节摘要全量替换 `tasks/NN-short-name.md`；不拆分时需明确确认删除全部旧 tasks。计划一旦重写，旧 tasks 立即不可执行。
-4. 确认最终工件后，由 Planning 委派 Git Operator 创建只包含当前目录 spec、plan 和完整 tasks 集合或 tasks 删除的本地 planning commit。Planning 到此结束，不实施代码。
-5. 打开新会话并使用默认的 **Coding** 主代理，明确要求实施 `.ai-work-flow/plans/<plan-id>/plan.md`。Coding 会复核 spec/plan 原始字节摘要绑定、planning commit 和任务模式，再进入单任务或拆分实施流程。
-
-### 手工 Git worktree 参考
-
-本节命令只供人工维护仓库时参考，不属于 Coding 或 Git Operator 的自动执行协议。自动执行时不要手工提交、rebase、push、切换或清理其受管分支/worktree；应由 Git Operator 完成并验证 Git mutation。
-
-人工流程中，每项功能使用独立分支和独立 worktree，主工作树只负责更新 `main`、整合和清理。以下命令在主工作树根目录开始执行，并在同一个终端会话中完成；`git status --short` 必须无输出：
-
-```sh
-git status --short
-git switch main
-git pull --ff-only
-
-feature=my-feature
-branch="feature/$feature"
-worktree="$PWD/.worktrees/$feature"
-
-exclude_file="$(git rev-parse --git-path info/exclude)"
-grep -qxF '/.worktrees/' "$exclude_file" || printf '\n/.worktrees/\n' >> "$exclude_file"
-git worktree add -b "$branch" "$worktree" main
-cd "$worktree"
-```
-
-在新 worktree 中安装依赖、开发、验证并提交。不要在主工作树修改该功能，也不要让多个 worktree 检出同一分支：
-
-```sh
-npm ci
-npm test
-git status --short
-git add <paths>
-git commit -m "<type>: <summary>"
-```
-
-提交前同步最新 `main` 并再次验证：
-
-```sh
-git fetch origin
-git rebase origin/main
-npm test
-git status --short
-```
-
-需要通过 PR 协作时，推送功能分支：
-
-```sh
-git push -u origin "$branch"
-```
-
-仅在本地整合时，返回主工作树并执行快进合并；如果 `main` 已前进，回到功能 worktree 重新 rebase 和验证，不使用强制合并：
-
-```sh
-cd -
-git switch main
-git pull --ff-only
-git merge --ff-only "$branch"
-npm test
-```
-
-功能已整合或 PR 已合并后，在主工作树清理 worktree 和本地分支。不要直接删除 `.worktrees/<feature>` 目录：
-
-```sh
-git worktree remove "$worktree"
-git branch -d "$branch"
-git worktree prune
-```
-
-#### Task 执行层级
-
-目录式计划包含 `tasks/*.md` 时，worktree 按以下 Git 基线与汇入关系组织：
-
-```text
-main worktree [main]
-  -> feature worktree [feature branch]
-       -> Task 01 worktree [task branch, base = feature HEAD]
-       -> Task 02 worktree [task branch, base = 同一 frontier 的 feature HEAD]
-       <- 通过评审的 Task commit 按编号汇入 feature branch
-       -> 下一 frontier 的 Task worktree [base = 更新后的 feature HEAD]
-  <- 聚合评审通过后，以 --ff-only 汇入 main
-```
-
-该图表达提交基线和汇入方向，不规定物理目录嵌套。feature worktree 与 task worktree 都是同一仓库的隔离工作树，具体 task worktree 路径由 Coding 和 Git Operator 分配并验证。
-
-1. **Feature 层**：一次计划实施只有一个 feature branch/worktree，负责聚合所有 Task、解决汇入冲突、执行最终验证和聚合评审。
-2. **Frontier 层**：依赖已满足的 Task 构成当前 frontier。`write_scope` 是预计主要修改范围，只用于判断初始并发，不是穷举清单或写入授权边界；声明 scope 互斥的 Task 可以并发实施，同一 frontier 的 task branch 均从开始时相同的 feature HEAD 创建。
-3. **Task 层**：每个 Task 使用独立 task branch/worktree，可以修改完成自身验收所必需的源码、测试、配置、导航索引和自己的 checklist。实施发现 `write_scope` 遗漏文件时直接记录实际变更，不修改已批准的 plan 或 task 元数据；实现提交和双轴评审都固定在该 Task 的 base 与 review commit 之间。
-4. **汇入层**：Task 通过评审后，由 Git Operator 按编号串行汇入 feature branch，再清理对应 task worktree/branch。当前 frontier 全部汇入后，才从新的 feature HEAD 开放下一 frontier。
-5. **最终整合层**：全部 Task 汇入后，feature branch 同步最新 `main` 并接受一次聚合评审；门禁通过后才在主工作树执行 `git merge --ff-only`。
-
-没有 `tasks/` 的单任务计划只创建 feature worktree，不额外创建 task worktree。
-
-AI Work Flow 自动执行时使用稳定唯一的 `worktree_id`。已有 `.worktrees/<worktree_id>` 只有在仓库、分支和任务基点完全匹配时才会恢复，否则流程会停止并报告冲突。
-
-### 角色协作
-
-Coding 将任务路由给 File Explorer、Researcher、Document Maintainer、Planning Writer、Full Stack Coder、Bug Fixer、Git Operator 和 Code Reviewer；Planning 可调用 File Explorer、Planning Writer、Task Planner 和 Git Operator。Bug Fixer 只处理可复现 bug 和用户明确批准的当前 blocking finding IDs，并可调用 File Explorer、Git Operator、Researcher 与 Document Maintainer。Code Reviewer 再调用 Review Standards 与 Review Spec。Git 操作由 Git Operator 串行执行。
-
-### Planning 产物
-
-Planning 通过问询确认目标和关键决策，写入配对工件：
-
-```text
-.ai-work-flow/plans/<plan-id>/spec.md
-.ai-work-flow/plans/<plan-id>/plan.md
-```
-
-`spec.md` 是唯一需求事实来源，固定为 `approved`；`plan.md` 固定为 `ready-for-implementation`，并绑定 spec 原始完整字节的 SHA-256。确认计划后可继续拆分为 `tasks/NN-short-name.md`，每个 task 绑定当前 plan 原始完整字节摘要。没有 `tasks/` 是单任务模式；存在且全部合法的任务文件是拆分模式；空目录、摘要失效或部分替换都会阻塞实施。Planning 只生成规划工件，不实施代码。
-
-这是 breaking change。旧 `.ai-work-flow/plans/<plan-id>.md` 平铺计划和缺少有效 `spec.md` 的 plan-only 目录不会迁移、兼容或反向生成规格，Coding 必须拒绝消费；历史文件可保留，但不能进入正常实施。
-
-### 普通实施
-
-确认方案后，流程按 **Git Operator prepare -> Full Stack Coder -> Git Operator commit/sync/prepare ReviewManifest envelope -> Coding 验证并原样交接 -> Code Reviewer verify -> Review Standards + Review Spec -> Git Operator integrate/cleanup** 执行。实现和评审在同一个隔离 worktree 中进行；实现完成并通过验证后创建仅本地 review commit，Code Reviewer 只审查已提交的固定范围。
-
-拆分计划按 `blocked_by` 形成依赖前沿。每个 task 独立实现、提交和双轴评审，Git Operator 按编号顺序汇入 feature；全部 task 完成后进行一次聚合评审。评审覆盖完整、无阻塞 finding 且 `main` 未前进时自动使用 `git merge --ff-only` 整合；存在阻塞 finding 时进入下一段所述的用户决策门禁。
-
-评审出现阻塞 finding 时，只修复用户确认的 finding IDs。修复提交必须晚于原 `review_commit` 且等于当前 feature 或 task HEAD；重新同步并验证前置条件后，普通目录式流程自动汇入 task 或执行最终整合与清理，不执行第二次评审，也不再询问是否继续。
-
-## 角色与 Skills
-
-### 角色
-
-| 角色 | 职责边界 |
+| 操作 | 命令 |
 | --- | --- |
-| Coding | 按唯一状态表路由、等待、验证交接并自动推进人工门禁之间的步骤 |
-| Planning | 问询、确认并按 spec-first 状态机生成规格与计划，不实施代码 |
-| File Explorer | 读取导航索引并在必要时聚焦发现入口与直接依赖 |
-| Researcher | 只读取外部官方来源，并写入 `.ai-work-flow/research/<topic>.md` |
-| Document Maintainer | 只维护 README、docs 等普通文档 |
-| Planning Writer | 单次完整写入一个目录式 spec 或 plan |
-| Task Planner | 将已确认计划拆分为可跟踪任务 |
-| Full Stack Coder | 实现源码、测试、必要配置，并随实现维护代码导航索引 |
-| Bug Fixer | 受限修复可复现 bug 或获批 blocking finding；Codex `gpt-5.6-luna`/`max`，OpenCode `baibai/gpt-5.6-luna`/`max`，Claude `sonnet`/`high` |
-| Git Operator | 受控执行 Git 工作流 |
-| Code Reviewer | 编排 Standards + Spec 双轴评审 |
-| Review Standards / Review Spec | 分别执行标准与规范评审 |
+| 完整安装 | `node agent-build/install.mjs` |
+| 重新生成 | `node agent-build/install.mjs generate [--platform ...]` |
+| 只读校验 | `node agent-build/install.mjs validate` |
+| 环境列表 | `node agent-build/install.mjs env` |
+| 切换环境 | `node agent-build/install.mjs env use <name>` |
+| 环境状态 | `node agent-build/install.mjs env status` |
 
-### Skills
+默认环境位于 `${XDG_CONFIG_HOME:-$HOME/.config}/ai-work-flow/environments/default.json`。切换环境必须使用 `env use`，该命令在同一事务中验证、生成和更新环境标记。生成保留受管理片段之外的用户内容；`env status` 报告 `in-sync`、`drifted` 和 `shadowed`。
 
-| Skill | 入口 | 输入 | 结果 |
-| --- | --- | --- | --- |
-| `generate-ai-work-flow-agents` | `$generate-ai-work-flow-agents` | 已修改的环境配置，可选平台范围 | 校验并重新生成指定平台 agents |
-| `switch-ai-work-flow-env` | `$switch-ai-work-flow-env` | 已存在的环境名称 | 事务式切换环境并重新生成受管理 agents |
-| `init-ai-work-flow` | `$init-ai-work-flow` | 当前项目的真实结构与稳定资料 | 初始化 `MEMORY.md`、导航索引及项目指令维护约束 |
-| `project-code-navigation` | `$project-code-navigation` | 当前项目代码结构 | 维护 `.ai-work-flow/index/` 导航索引 |
-| `git-commit` | `$git-commit` | Full Stack Coder 的结构化交接 | 创建仅本地、路径范围精确的实现提交 |
+## 工作流契约
 
-## 平台能力边界
+[`execution-runtime/workflow-contract.json`](execution-runtime/workflow-contract.json) 唯一声明 workflow、phase、action owner、合法转换、预算、决策代码和公共结构。运行记录保存在 Git common dir：
 
-角色模板中的权限和职责是工作流契约，但三平台不能统一强制所有边界。`agent-build/config/controls.json` 定义稳定控制 ID、单条约束和可映射的 Policy 要求，`roles.json` 按角色声明控制项。安装、生成和 `env status` 保留每个平台/角色的 `CAPABILITY` matrix，并在其后输出 `CONTROL` matrix；`WARNING CONTROL` 汇总所有未达到 `enforced` 的控制项。级别含义如下：
+```text
+.git/ai-work-flow/runs/<run_id>/
+  run.json
+  actions/<action_id>/attempt-N/{claim,receipt}.json
+  artifacts/<artifact_id>.json
+  decisions/revision-N.json
+```
 
-| 级别 | 含义 |
-| --- | --- |
-| `enforced` | 生成器能通过该平台的权限或沙箱配置强制 |
-| `instruction-only` | 只能依赖 agent 指令遵守，平台没有等价强制能力 |
-| `unsupported` | 当前平台 adapter 无法表达或证明该约束 |
+记录不进入项目提交，并由同一仓库的所有 worktree 和新会话共享。原子写入使用同目录临时文件、fsync 和 rename；每个 run 使用原子目录锁。活动锁返回 busy，只有 owner PID 已确认不存在的锁才会恢复。
 
-关键差异：Codex 只对允许读取/写入的文件系统模式提供部分沙箱强制；Claude Code 的文件系统边界是 `instruction-only`；OpenCode 能强制文件系统、是否允许委派，以及 Researcher 的报告路径类别，但不能按一次委派动态限制 Writer 只能写 spec 或 plan，也通常不能限制具体委派目标。控制项包含多个 capability 时采用最弱级别，顺序为 `unsupported < instruction-only < enforced`；没有平台能力映射的语义控制固定为 `instruction-only`。阶段顺序、单目标写入和用户确认仍是 `instruction-only`。三平台的 shell、Git 和委派目标多为 `instruction-only`，network/browser 约束均为 `unsupported`。因此这些角色边界不能视为统一安全沙箱，运行高风险任务前应检查 `env status` 的 capability 与 control 警告。
+统一 CLI：
 
-## 安全与一致性
+```sh
+node execution-runtime/workflow-cli.mjs start --repository <repo> --kind <workflow-kind> --plan-digest <sha256> [--task-mode <single|split>]
+node execution-runtime/workflow-cli.mjs status --repository <repo> --run-id <run_id> [--action-id <action_id>]
+node execution-runtime/workflow-cli.mjs claim --repository <repo> --run-id <run_id> --action-id <action_id> --claimant <session> --owner-pid <pid>
+node execution-runtime/workflow-cli.mjs finish --repository <repo> < receipt.json
+node execution-runtime/workflow-cli.mjs recover --repository <repo> --run-id <run_id> --action-id <action_id>
+node execution-runtime/workflow-cli.mjs decide --repository <repo> --run-id <run_id> < decision.json
+```
 
-- 安装、环境切换和生成使用事务计划；普通异常会立即回滚。进程中断可能暂留 transaction journal 和部分状态，下一次非 dry-run 安装、生成或环境切换会先验证并恢复；非法或身份不明的 journal 会保留现场并阻塞。
-- 评审只针对固定 `fixed-point` 与 `review-commit` 的 committed diff；两个评审轴共享同一 ReviewManifest、digest、提交范围和分片清单。
-- 阻塞 finding 只能通过用户确认的 finding IDs 进入修复；修复必须产生晚于已评审提交的新提交。
-- 整合前要求 feature worktree 干净、提交端点精确匹配且 `main` 未前进；主工作树中的未知改动默认阻塞，整合使用 `git merge --ff-only`。
-- 升级安装只迁移明确支持的缺失角色和旧角色 ID；已有角色字段残缺时停止，不静默修复。
-- 浏览器自动化、E2E 测试或视觉验证只有在当前请求明确要求且平台提供相应工具时才允许；既有测试配置不构成授权。交接读取只能使用用户或上游交接的精确路径及其直接依赖。
-- 子代理使用统一的 `{status,summary,artifacts,checks,details,blocking_reason?}` JSON handoff。
+`start` 对同一计划摘要和任务模式幂等。`claim` 对已完成 action 返回 canonical receipt，对活动 action 返回已有 claim。`finish` 必须增加 revision、改变 phase 或消耗持久化预算，否则停止为 `WORKFLOW_STALLED`。损坏或截断的响应通过 `status --action-id` 恢复，不重新执行 action。
 
-## 开发验证
+公共对象为 `WorkflowSnapshot`、`ActionReceipt`、`ArtifactRef` 和 `ReviewPacketRef`。完整审查上下文、验收证据和叶子结果只保存在本地 artifact；Agent 交接只传不超过 1 KiB 的 ref。
+
+## 自动流程
+
+Planning 按以下 action 自动推进：事实发现、必要产品决定、spec、plan、single/split tasks、规划提交、完成。Planning 不实施源码。
+
+Coding 在一次实施授权后自动推进：prepare、实现、本地提交、ReviewPacket、双轴审查、blocking finding 修复、完整复审、main 同步、fast-forward 整合和安全清理。修复与完整复审最多两轮；同一 finding 重现时立即产生一个用户决定。main 漂移最多自动 resync 两次，每次冻结新提交并重新审查。
+
+Git mutation 仅由 Git Operator 串行执行。自动授权不包含 push、stash、reset、clean、amend、tag、PR 或远端修改。完成记录默认保留，只有显式 prune 才清理。
+
+## Agents 与 Skills
+
+`roles.json`、controls、policies 和 workflow contract 共同生成角色能力、action 输入和结果结构。13 个角色模板固定使用七段接口：角色结果、能力与控制、允许的 Actions 与输入、执行循环、完成标准、决策条件、结果回执。`routing.md` 只保留人类可读治理，不复制进 prompt。
+
+`skills.json` 是五个 Skills 的元数据来源。每份 `SKILL.md` 只保留结果、前置、步骤、分支和验收；分支细节位于一级 `references/`，可重复校验位于 `scripts/`。`agents/openai.yaml` 可通过以下命令确定性生成并校验：
+
+```sh
+npm run validate:skills
+```
+
+项目首次接入使用 `$init-ai-work-flow` 创建或补齐根 `MEMORY.md` 与 `.ai-work-flow/index/`。只读定位使用 `$project-code-navigation`；入口、路由、API、文件职责或模块边界变化时由实现角色同轮维护索引和必要的 MEMORY 内容。
+
+## 验证
 
 ```sh
 npm test
+npm run validate:skills
 node agent-build/install.mjs validate
+node agent-build/install.mjs env status
+git diff --check
 ```
+
+平台能力报告区分 `enforced`、`instruction-only` 和 `unsupported`。审查角色通过 workflow CLI 写运行元数据的边界在当前三平台均标为 `instruction-only`；源码和 Git 权限仍保持只读请求。

@@ -2,33 +2,39 @@
 
 ## 领域术语
 
-- **Managed content**：平台生成模块明确负责生成和更新的内容。
-- **User content**：用户自行维护且平台生成模块不得改写的内容，即使其位于同一平台文件中。
-- **Asset catalog**：生成所需角色资产的一致性目录；目录不完整或不一致时，生成必须在任何平台写入前停止。
-- **ReviewManifest**：普通目录式 Coding 审查使用的不可变清单，冻结提交端点、PathChange、来源、分片、检查与摘要。
-- **Capability level**：平台能力矩阵的真实级别；只有平台实际强制的约束标为 `enforced`，其余明确标为 `instruction-only` 或 `unsupported`。
-- **Transaction log**：环境生成和切换的持久化恢复输入；恢复前必须按受信根、target、backup、类型和符号链接策略完整验证。非法或身份不明的日志保留现场并停止，不作为可执行指令。
+- **Workflow contract**：workflow、phase、action、owner、转换、预算、决策代码和公共结构的唯一机器事实来源。
+- **WorkflowSnapshot**：当前 run 的稳定快照，包含 revision、phase、ready actions、active claims、budgets 和可选 decision request。
+- **ActionReceipt**：action attempt 的 canonical 结果；重复 finish 或跨会话恢复必须使用同一 receipt。
+- **ArtifactRef**：本地完整证据的稳定摘要引用；`ReviewPacketRef` 是审查上下文引用。
+- **Runtime identity**：execution runtime 受管理文件及 contract 的安装完整性身份。
+- **Managed content / User content**：生成器负责更新的内容 / 生成器不得改写的用户内容。
+- **Capability level**：平台约束的 `enforced`、`instruction-only` 或 `unsupported` 真实等级。
 
 ## 仓库约束
 
-- 本仓库使用 Node.js ESM；测试入口为 `npm test`，代理资产还需通过 `node agent-build/install.mjs validate` 校验。
-- `skills/` 下含 `SKILL.md` 的目录由完整安装自动分发至 Codex、Claude Code 和 OpenCode；`agent-build install.mjs init` 只初始化全局配置与路由。
-- 受管理内容可由生成流程更新；受管理片段之外的用户内容必须保留。项目级 `MEMORY.md` 不使用 managed marker。
-- 根 `MEMORY.md` 是目录式 ReviewManifest 的提交绑定 standards source，必须与相关实现和导航索引一同提交并持续维护。
+- 仓库使用 Node.js ESM；测试入口为 `npm test`，资产校验入口为 `node agent-build/install.mjs validate` 和 `npm run validate:skills`。
+- run、claim、receipt、decision 和 artifacts 只写 Git common dir 的 `.git/ai-work-flow/`，不得进入项目提交。
+- 自动 Git 授权仅含本地 commit、worktree、fast-forward 整合和安全清理；不含 push、stash、reset、clean、amend、tag、PR 或远端修改。
+- `skills/` 中的五个受管理 Skill 分发到三平台；受管理片段之外的用户内容必须保留。
+- 根 `MEMORY.md` 是 committed standards source；职责、边界或入口变化时与导航索引同轮维护。
 
 ## 职责
 
-- `agent-build/` 负责全局配置、角色资产、Skills 和平台代理的安装、生成与校验。
-- `execution-runtime/` 负责 ReviewManifest、Git 路径事实和 runtime provenance 的共享执行逻辑。
-- `skills/` 提供三平台共享的用户入口；项目上下文与代码导航初始化、后续导航维护由不同 Skill 分工。
-- `test/` 使用 Node 测试运行器验证资产契约、安装事务、三平台生成和 ReviewManifest 行为。
+- `execution-runtime/` 负责 workflow contract、状态转换、原子 run store、统一 CLI、ReviewPacket 和 runtime identity。
+- `agent-build/config/` 负责 roles、controls、policies、Skills 元数据和人类可读 routing 治理。
+- `agent-build/runtime/` 负责结构校验、七段 prompt 编译、三平台生成和事务式安装。
+- `agent-build/templates/` 只保留 13 个角色独有的判断与完成规则。
+- `skills/` 提供五个用户入口及一级 references/scripts。
+- `test/` 通过公共接口验证状态机、幂等恢复、ReviewPacket、prompt/Skill 生成和三平台渲染。
 
 ## 模块边界
 
 | 模块 | 边界 |
 | --- | --- |
-| `agent-build/config/`、`agent-build/templates/` | 定义角色、控制、策略、路由和角色正文，不承载项目级上下文。 |
-| `agent-build/runtime/` | 读取仓库资产并规划全局写入；不负责创建项目根 `MEMORY.md` 或项目导航索引。 |
-| `execution-runtime/` | 提供提交绑定的审查清单与路径验证，不生成项目业务资料。 |
-| `skills/init-ai-work-flow/` | 联合初始化项目根 `MEMORY.md` 与 `.ai-work-flow/index/`。 |
-| `skills/project-code-navigation/` | 使用和持续维护既有项目导航，保持 File Explorer 只读定位与 Full Stack Coder 随实现维护的边界。 |
+| `execution-runtime/workflow-contract.json` | 唯一流程声明；提示词和测试不得复制状态表。 |
+| `execution-runtime/lib/workflow-store.mjs` | Git common dir 原子持久化、claim/finish/recover/decision；不执行实现工作。 |
+| `execution-runtime/lib/review-packet.mjs` | 冻结 committed review context 并返回 ref；聊天不承载完整上下文。 |
+| `agent-build/runtime/asset-catalog.mjs` | 从 contract/roles/controls/policies 编译并校验七段 prompts。 |
+| `agent-build/runtime/skill-catalog.mjs` | 从 `skills.json` 校验五个 Skills 和确定性 OpenAI 元数据。 |
+| `skills/init-ai-work-flow/` | 联合初始化项目 MEMORY、导航和维护约束。 |
+| `skills/project-code-navigation/` | File Explorer 只读定位；Full Stack Coder 仅随已授权实现维护索引。 |

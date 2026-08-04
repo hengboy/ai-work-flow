@@ -10,12 +10,12 @@ import { fail, isPlainObject, readJson, write } from './shared.mjs';
 import { applyGenerationPlan, capabilityMatrix, controlMatrix, generationStatus, planGeneration } from './platform-adapter.mjs';
 import { applyTransaction, recoverTransaction } from './transaction.mjs';
 
-const runtimeProvenanceModulePath = [
-  resolve(import.meta.dirname, '..', '..', 'execution-runtime', 'lib', 'runtime-provenance.mjs'),
-  resolve(import.meta.dirname, '..', 'execution-runtime', 'lib', 'runtime-provenance.mjs')
+const runtimeIdentityModulePath = [
+  resolve(import.meta.dirname, '..', '..', 'execution-runtime', 'lib', 'runtime-identity.mjs'),
+  resolve(import.meta.dirname, '..', 'execution-runtime', 'lib', 'runtime-identity.mjs')
 ].find((candidate) => existsSync(candidate));
-if (!runtimeProvenanceModulePath) throw new Error('Missing execution runtime provenance module');
-const { loadAndAssertRuntimeProvenance, RUNTIME_PROVENANCE_EXCLUDED_DIRECTORIES } = await import(runtimeProvenanceModulePath);
+if (!runtimeIdentityModulePath) throw new Error('Missing execution runtime identity module');
+const { loadAndAssertRuntimeIdentity, RUNTIME_IDENTITY_EXCLUDED_DIRECTORIES } = await import(runtimeIdentityModulePath);
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const SKILLS_ROOT = resolve(ROOT, 'skills');
@@ -28,6 +28,8 @@ const OBSOLETE_SKILLS = [
   'init-project-code-navigation'
 ];
 const OBSOLETE_EXECUTION_RUNTIME_FILES = [
+  'review-manifest-cli.mjs',
+  'runtime-provenance.json',
   `${['check', 'point-schema.json'].join('')}`,
   'completion-result-schema.json',
   `${['execution', '-cli.mjs'].join('')}`,
@@ -39,11 +41,14 @@ const OBSOLETE_EXECUTION_RUNTIME_FILES = [
   `lib/${['check', 'point-integrity.mjs'].join('')}`,
   `lib/${['check', 'point.mjs'].join('')}`,
   'lib/completion-adapter.mjs',
+  'lib/directory-review-manifest.mjs',
   'lib/execution-coding.mjs',
   'lib/integration-lifecycle.mjs',
   'lib/issue-tracker.mjs',
   'lib/pre-merge-stash.mjs',
+  'lib/review-manifest.mjs',
   'lib/review-result.mjs',
+  'lib/runtime-provenance.mjs',
   'lib/spec-intake.mjs',
   `lib/${['tick', 'et-frontier.mjs'].join('')}`,
   'lib/time.mjs',
@@ -151,11 +156,11 @@ function sourceTreeEntries(source, prefix = '', excludedNames = new Set()) {
   return entries;
 }
 
-function assertSourceRuntimeProvenance(source) {
+function assertSourceRuntimeIdentity(source) {
   try {
-    return loadAndAssertRuntimeProvenance(source).provenance;
+    return loadAndAssertRuntimeIdentity(source).identity;
   } catch (error) {
-    fail(`Execution runtime source provenance is stale or invalid. Regenerate it before install/generate: ${error.message}`);
+    fail(`Execution runtime source identity is stale or invalid. Regenerate it before install/generate: ${error.message}`);
   }
 }
 
@@ -218,8 +223,8 @@ function planExecutionRuntime(paths) {
   const plan = [];
   const source = [resolve(ROOT, 'execution-runtime'), resolve(import.meta.dirname, '..', 'execution-runtime')].find((candidate) => existsSync(candidate));
   if (!source) fail('Missing execution runtime');
-  assertSourceRuntimeProvenance(source);
-  addSourceTree(plan, source, resolve(paths.dir, 'execution-runtime'), new Set(RUNTIME_PROVENANCE_EXCLUDED_DIRECTORIES));
+  assertSourceRuntimeIdentity(source);
+  addSourceTree(plan, source, resolve(paths.dir, 'execution-runtime'), new Set(RUNTIME_IDENTITY_EXCLUDED_DIRECTORIES));
   return plan;
 }
 

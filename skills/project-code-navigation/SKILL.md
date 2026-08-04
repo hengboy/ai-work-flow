@@ -1,54 +1,28 @@
 ---
 name: project-code-navigation
-description: 在当前项目创建、更新或使用 AI Work Flow 代码导航索引。处理业务功能、页面、路由、API、Controller、Service、任务入口或模块边界，或需要先定位准确文件再修改代码时使用。
+description: 使用项目索引只读定位业务入口，或在已授权实现导致入口、文件或职责变化时维护导航索引。
 ---
 
-# 项目代码导航
+# 结果目标
 
-## 目标
+以最小读取范围提供准确入口，或让导航与本轮实现后的真实结构一致。
 
-使用当前项目 `.ai-work-flow/index/` 中的导航索引定位代码入口。索引缺失、过期或无法覆盖用户请求时，基于真实代码创建或更新它。
+# 必要前置条件
 
-## 使用索引
+- 首先选择一个分支：只读定位，或随实现维护。
+- 根 `MEMORY.md` 或索引缺失时先使用 `$init-ai-work-flow`。
 
-这是**只读定位模式**，仅由 File Explorer 执行。所有文件检索必须交由 File Explorer 执行，其他角色只消费其精确交接：
+# 步骤
 
-1. 先读取 `.ai-work-flow/index/feature-navigation.md`，再按目标功能只读取相关的 `frontend-navigation.md` 或 `backend-navigation.md`。
-2. 索引命中用户术语时，直接打开表中记录的入口文件；不得执行全局文件检索，也不得搜索无关路径。
-3. 只有索引缺失、没有目标功能或记录路径无法定位时，才使用聚焦搜索。
-4. 定位后只交接入口与完成请求所需的直接 import、caller 或 schema 依赖；源码修改由 **Full Stack Coder** 执行，不要为已经定位的功能扩大搜索范围。
+1. 按所选分支读取一级 reference：`references/read-only-location.md` 或 `references/implementation-maintenance.md`。完成标准：不混用角色权限。
+2. 执行 reference 的定位或维护步骤。完成标准：入口、直接依赖和模块边界均由真实文件验证。
+3. 维护分支运行 `node skills/project-code-navigation/scripts/validate-navigation.mjs <project-root>`。完成标准：所有索引路径有效且职责变化已同步。
 
-## 初始化与维护
+# 条件分支
 
-这是**随实现维护模式**，由 Full Stack Coder 在获准实现范围内执行；只读发现不得因为索引过期直接修改文件：
+- 索引命中：禁止扩大为全仓库搜索。
+- 索引缺失、无目标功能或路径失效：执行聚焦搜索并在维护授权存在时修复索引。
 
-1. 项目根 `MEMORY.md` 或 `.ai-work-flow/index/feature-navigation.md` 缺失时，先转入 `$init-ai-work-flow` 联合初始化；不要只创建索引。
-2. 读取项目指令和稳定资料：`MEMORY.md`、`AGENTS.md`、`CLAUDE.md`、README、构建文件及已知入口。
-3. 判断项目形态：前端、后端、全栈、monorepo、库或 worker。
-4. 基于真实代码确认路由、应用入口、Controller、Service、API client、任务入口和模块边界；不得猜测路径。
-5. 在 `.ai-work-flow/index/` 写入或更新 `feature-navigation.md`；仅在对应层存在时写入 `frontend-navigation.md` 和 `backend-navigation.md`。
-6. 每个索引文件使用简短表格，记录业务关键词、入口路径和必要的模块边界。索引路径必须相对项目根目录。
-7. 新增文件，或文件移动、重命名、拆分、合并、删除、主职责变化时，必须在同一轮改动中更新对应索引；职责或模块边界变化还必须同步维护根 `MEMORY.md`。
-8. 用户可见功能入口、路由或 API 变化时，必须同步更新对应索引；新功能缺少导航索引视为未完成。
-9. 验证表中每个非计划路径真实存在；无法确认的路径省略或标为 `待确认`。
+# 最终验收
 
-## 索引格式
-
-`feature-navigation.md` 使用与项目形态匹配的列。例如全栈项目：
-
-```markdown
-| 功能/关键词 | 前端入口 | 后端或服务入口 | 备注 |
-|---|---|---|---|
-| 登录、认证 | `apps/web/src/pages/Login.tsx` | `services/auth/src/routes.ts` | 会话 API |
-```
-
-前端索引记录应用入口、路由、页面和功能模块；后端索引记录服务启动、API 边界、业务编排和持久化或外部接口。没有对应层时，不创建该文件。
-
-## 回复格式
-
-正常回答按需使用以下标签；无内容的标签省略。
-
-- **结果：** 说明使用、创建或更新的索引。
-- **更新：** 列出索引文件和已确认的入口。
-- **验证：** 说明已验证的路径或检查。
-- **阻塞：** 说明无法定位或无法确认的原因。
+只读分支未写文件；维护分支只改必要索引/MEMORY，验证脚本通过。

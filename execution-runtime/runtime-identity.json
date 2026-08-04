@@ -1,0 +1,19 @@
+{
+  "type": "execution-runtime-identity",
+  "source": {
+    "identity": "ai-work-flow/execution-runtime",
+    "revision": "cf3f168577207cfd35138dd1ab6de513be34204c844dff3ccec69576130bbbee"
+  },
+  "managed_files": [
+    { "path": "lib/git.mjs", "digest": "df02abc962b04ca0f49fb9c97c1db66607fafc57200ba53fa86bb8142b0e6e9b" },
+    { "path": "lib/paths.mjs", "digest": "dbbdd4ca01aad02051200932e7a78450dc7ebae358ce966e4d6689917fde2a65" },
+    { "path": "lib/review-packet.mjs", "digest": "3c5dfb0826dc9d226be42ba2d923993c282de7c55b23d2be3a3959ffaeb9cc76" },
+    { "path": "lib/runtime-identity.mjs", "digest": "d803e568c9e53bb8ca605da3672e37d0da7dc246bd8044b5adbe3dd39548e73d" },
+    { "path": "lib/workflow-contract.mjs", "digest": "c9f35bebce0c9cf49950541f42013e6044e161d2cb1cd570a174363dc9eefa23" },
+    { "path": "lib/workflow-store.mjs", "digest": "bd48e23a6b8c4c92155931df4bfe1aba7c7cbc72d1221e044070c381d2f6d1fd" },
+    { "path": "workflow-cli.mjs", "digest": "17455b567c2df2ad39c3f8870c58a331be5cd17fc8ed201aa7f2caae9ca917ce" },
+    { "path": "workflow-contract.json", "digest": "71a431f7087c7ab8d8d41b2ae763a1835d92487f6ddb7e4ab45aaf4803fb1650" }
+  ],
+  "files_digest": "cf3f168577207cfd35138dd1ab6de513be34204c844dff3ccec69576130bbbee",
+  "identity_digest": "c76263686220ab369b0d8faebba9667c24590d6df8abe858ad2375d898d69486"
+}

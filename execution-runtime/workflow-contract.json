@@ -1,0 +1,129 @@
+{
+  "digest": "f114f5c27f0a116c136ed02740da4054ad02860badfb7202df974368a2e28ee8",
+  "snapshot_schema": {
+    "required": ["run_id", "kind", "revision", "phase", "ready_actions", "active_claims", "budgets"],
+    "decision_request_optional": true
+  },
+  "receipt_schema": {
+    "required": ["run_id", "action_id", "attempt", "result", "summary", "artifacts", "checks"],
+    "results": ["completed", "retryable_failure", "needs_decision", "failed"]
+  },
+  "artifact_ref_schema": {
+    "required": ["kind", "id", "sha256", "bytes"],
+    "review_packet_kind": "review_packet",
+    "max_inline_bytes": 1024
+  },
+  "budgets": {
+    "transient_retries": 2,
+    "recoveries": 1,
+    "main_resyncs": 2,
+    "review_fix_rounds": 2
+  },
+  "decision_codes": [
+    "PRODUCT_DECISION_REQUIRED",
+    "REPEATED_REVIEW_FINDING",
+    "REVIEW_FIX_BUDGET_EXHAUSTED",
+    "MAIN_RESYNC_BUDGET_EXHAUSTED",
+    "WORKFLOW_STALLED",
+    "UNRECOVERABLE_FAILURE"
+  ],
+  "workflows": {
+    "planning": {
+      "initial_phase": "started",
+      "terminal_phases": ["complete", "failed", "awaiting_decision"],
+      "phase_actions": {
+        "started": ["planning.discover"],
+        "facts_ready": ["planning.write_spec"],
+        "spec_ready": ["planning.write_plan"],
+        "plan_ready": ["planning.write_tasks"],
+        "tasks_ready": ["planning.commit"],
+        "planning_committed": ["planning.complete"]
+      }
+    },
+    "coding": {
+      "initial_phase": "started",
+      "terminal_phases": ["complete", "failed", "awaiting_decision"],
+      "phase_actions": {
+        "started": ["coding.prepare"],
+        "prepared": ["coding.implement"],
+        "implemented": ["coding.commit"],
+        "committed": ["coding.prepare_review"],
+        "review_ready": ["coding.review"],
+        "fix_required_1": ["coding.fix_1"],
+        "fixed_1": ["coding.prepare_rereview_1"],
+        "rereview_ready_1": ["coding.rereview_1"],
+        "fix_required_2": ["coding.fix_2"],
+        "fixed_2": ["coding.prepare_rereview_2"],
+        "rereview_ready_2": ["coding.rereview_2"],
+        "review_passed": ["coding.integrate"],
+        "resync_required_1": ["coding.resync_1"],
+        "resynced_1": ["coding.prepare_resync_review_1"],
+        "resync_review_ready_1": ["coding.resync_review_1"],
+        "review_passed_1": ["coding.integrate_1"],
+        "resync_required_2": ["coding.resync_2"],
+        "resynced_2": ["coding.prepare_resync_review_2"],
+        "resync_review_ready_2": ["coding.resync_review_2"],
+        "review_passed_2": ["coding.integrate_2"],
+        "integrated": ["coding.cleanup"]
+      }
+    },
+    "agent_generation": {
+      "initial_phase": "started",
+      "terminal_phases": ["complete", "failed", "awaiting_decision"],
+      "phase_actions": { "started": ["agents.generate"] }
+    },
+    "environment_switch": {
+      "initial_phase": "started",
+      "terminal_phases": ["complete", "failed", "awaiting_decision"],
+      "phase_actions": { "started": ["env.use"] }
+    },
+    "project_initialization": {
+      "initial_phase": "started",
+      "terminal_phases": ["complete", "failed", "awaiting_decision"],
+      "phase_actions": { "started": ["project.initialize"] }
+    },
+    "navigation": {
+      "initial_phase": "started",
+      "terminal_phases": ["complete", "failed", "awaiting_decision"],
+      "phase_actions": { "started": ["navigation.locate_or_maintain"] }
+    }
+  },
+  "actions": {
+    "planning.discover": { "owner": "file-explorer", "workflow": "planning", "from": "started", "completed_to": "facts_ready" },
+    "planning.write_spec": { "owner": "planning-writer", "workflow": "planning", "from": "facts_ready", "completed_to": "spec_ready" },
+    "planning.write_plan": { "owner": "planning-writer", "workflow": "planning", "from": "spec_ready", "completed_to": "plan_ready" },
+    "planning.write_tasks": { "owner": "task-planner", "workflow": "planning", "from": "plan_ready", "completed_to": "tasks_ready" },
+    "planning.commit": { "owner": "git-operator", "workflow": "planning", "from": "tasks_ready", "completed_to": "planning_committed" },
+    "planning.complete": { "owner": "planning", "workflow": "planning", "from": "planning_committed", "completed_to": "complete" },
+    "coding.prepare": { "owner": "git-operator", "workflow": "coding", "from": "started", "completed_to": "prepared" },
+    "coding.implement": { "owner": "full-stack-coder", "workflow": "coding", "from": "prepared", "completed_to": "implemented" },
+    "coding.commit": { "owner": "git-operator", "workflow": "coding", "from": "implemented", "completed_to": "committed" },
+    "coding.prepare_review": { "owner": "git-operator", "workflow": "coding", "from": "committed", "completed_to": "review_ready" },
+    "coding.review": { "owner": "code-reviewer", "workflow": "coding", "from": "review_ready", "completed_to": "review_passed", "retryable_to": "fix_required_1" },
+    "coding.fix_1": { "owner": "bug-fixer", "workflow": "coding", "from": "fix_required_1", "completed_to": "fixed_1", "budget": "review_fix_rounds" },
+    "coding.prepare_rereview_1": { "owner": "git-operator", "workflow": "coding", "from": "fixed_1", "completed_to": "rereview_ready_1" },
+    "coding.rereview_1": { "owner": "code-reviewer", "workflow": "coding", "from": "rereview_ready_1", "completed_to": "review_passed", "retryable_to": "fix_required_2" },
+    "coding.fix_2": { "owner": "bug-fixer", "workflow": "coding", "from": "fix_required_2", "completed_to": "fixed_2", "budget": "review_fix_rounds" },
+    "coding.prepare_rereview_2": { "owner": "git-operator", "workflow": "coding", "from": "fixed_2", "completed_to": "rereview_ready_2" },
+    "coding.rereview_2": { "owner": "code-reviewer", "workflow": "coding", "from": "rereview_ready_2", "completed_to": "review_passed", "retryable_to": "awaiting_decision", "decision_code": "REVIEW_FIX_BUDGET_EXHAUSTED" },
+    "coding.integrate": { "owner": "git-operator", "workflow": "coding", "from": "review_passed", "completed_to": "integrated", "retryable_to": "resync_required_1", "budget": "main_resyncs" },
+    "coding.resync_1": { "owner": "git-operator", "workflow": "coding", "from": "resync_required_1", "completed_to": "resynced_1", "budget": "main_resyncs" },
+    "coding.prepare_resync_review_1": { "owner": "git-operator", "workflow": "coding", "from": "resynced_1", "completed_to": "resync_review_ready_1" },
+    "coding.resync_review_1": { "owner": "code-reviewer", "workflow": "coding", "from": "resync_review_ready_1", "completed_to": "review_passed_1", "retryable_to": "awaiting_decision", "decision_code": "REPEATED_REVIEW_FINDING" },
+    "coding.integrate_1": { "owner": "git-operator", "workflow": "coding", "from": "review_passed_1", "completed_to": "integrated", "retryable_to": "resync_required_2", "budget": "main_resyncs" },
+    "coding.resync_2": { "owner": "git-operator", "workflow": "coding", "from": "resync_required_2", "completed_to": "resynced_2", "budget": "main_resyncs" },
+    "coding.prepare_resync_review_2": { "owner": "git-operator", "workflow": "coding", "from": "resynced_2", "completed_to": "resync_review_ready_2" },
+    "coding.resync_review_2": { "owner": "code-reviewer", "workflow": "coding", "from": "resync_review_ready_2", "completed_to": "review_passed_2", "retryable_to": "awaiting_decision", "decision_code": "REPEATED_REVIEW_FINDING" },
+    "coding.integrate_2": { "owner": "git-operator", "workflow": "coding", "from": "review_passed_2", "completed_to": "integrated", "retryable_to": "awaiting_decision", "decision_code": "MAIN_RESYNC_BUDGET_EXHAUSTED" },
+    "coding.cleanup": { "owner": "git-operator", "workflow": "coding", "from": "integrated", "completed_to": "complete" },
+    "agents.generate": { "owner": "git-operator", "workflow": "agent_generation", "from": "started", "completed_to": "complete" },
+    "env.use": { "owner": "git-operator", "workflow": "environment_switch", "from": "started", "completed_to": "complete" },
+    "project.initialize": { "owner": "full-stack-coder", "workflow": "project_initialization", "from": "started", "completed_to": "complete" },
+    "navigation.locate_or_maintain": { "owner": "file-explorer", "workflow": "navigation", "from": "started", "completed_to": "complete" },
+    "support.research": { "owner": "researcher", "workflow": "support" },
+    "support.update_docs": { "owner": "document-maintainer", "workflow": "support" },
+    "support.review_standards": { "owner": "review-standards", "workflow": "support" },
+    "support.review_spec": { "owner": "review-spec", "workflow": "support" },
+    "support.orchestrate": { "owner": "coding", "workflow": "support" }
+  }
+}
