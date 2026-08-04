@@ -10,7 +10,10 @@ import { updateManagedMarker } from './managed-content.mjs';
 const LEGACY_PRIMARY_AGENT_ID = 'orchestrator';
 const LEGACY_GIT_OPERATOR_AGENT_ID = 'git-committer';
 const LEGACY_CODE_REVIEWER_AGENT = 'AGENT.md';
-const OPENCODE_PERMISSION_KEYS = ['read', 'edit', 'glob', 'grep', 'bash', 'task', 'skill', 'webfetch', 'websearch', 'question', 'external_directory'];
+const WORKFLOW_MCP_ID = 'ai-work-flow';
+const WORKFLOW_TOOL = 'workflow_state';
+const OPENCODE_WORKFLOW_TOOL = `${WORKFLOW_MCP_ID}_${WORKFLOW_TOOL}`;
+const OPENCODE_PERMISSION_KEYS = ['read', 'edit', 'glob', 'grep', 'bash', 'task', 'skill', 'webfetch', 'websearch', 'question', 'external_directory', OPENCODE_WORKFLOW_TOOL];
 const OPENCODE_TOOL_KEYS = {
   Read: 'read',
   Edit: 'edit',
@@ -25,6 +28,10 @@ const OPENCODE_TOOL_KEYS = {
   Question: 'question',
   ExternalDirectory: 'external_directory'
 };
+
+function brokerPath(paths) {
+  return resolve(paths.dir, 'execution-runtime', 'workflow-broker.mjs');
+}
 
 // --- Shared functions ---
 
@@ -53,7 +60,6 @@ function tomlString(value) {
 }
 
 function codexSandbox(policy) {
-  if (policy.workflow_state === 'write') return 'workspace-write';
   return policy.filesystem === 'none' || policy.filesystem === 'read' ? 'read-only' : 'workspace-write';
 }
 
@@ -112,11 +118,28 @@ function codexUpdateConfig(source, path) {
   return `${source.slice(0, end)}${body.endsWith('\n') || !body ? '' : '\n'}max_depth = ${MAX_AGENT_DEPTH}\n${source.slice(end)}`;
 }
 
+function codexBrokerConfig(source, path, paths) {
+  const begin = '# ai-work-flow:workflow-broker:begin';
+  const end = '# ai-work-flow:workflow-broker:end';
+  const block = `${begin}\n[mcp_servers.${WORKFLOW_MCP_ID}]\ncommand = "node"\nargs = [${tomlString(brokerPath(paths))}]\n${end}`;
+  const start = source.indexOf(begin);
+  const finish = source.indexOf(end);
+  if ((start === -1) !== (finish === -1) || source.indexOf(begin, start + 1) !== -1 || source.indexOf(end, finish + 1) !== -1) {
+    fail(`Cannot safely update workflow broker block in ${path}.`);
+  }
+  if (start !== -1) return `${source.slice(0, start)}${block}${source.slice(finish + end.length)}`;
+  if (/^\[mcp_servers\.ai-work-flow\]\s*$/m.test(source)) fail(`Unmanaged workflow broker config already exists in ${path}.`);
+  return `${source.replace(/\s*$/, '')}${source.trim() ? '\n\n' : ''}${block}\n`;
+}
+
 // --- Claude strategy ---
 
 function claudePermission(policy) {
-  if (policy.workflow_state === 'write') return 'acceptEdits';
   return policy.filesystem === 'none' || policy.filesystem === 'read' ? 'plan' : 'acceptEdits';
+}
+
+function claudeTools(role) {
+  return (role.tools.length ? role.tools : ['Task']).map((tool) => tool === 'WorkflowState' ? `mcp__${WORKFLOW_MCP_ID}__${WORKFLOW_TOOL}` : tool);
 }
 
 function yamlValue(value) {
@@ -130,7 +153,7 @@ function claudeRender(role, settings, body, policy) {
     `description: ${yamlValue(agentDescription(role))}`,
     `model: ${yamlValue(settings.model)}`,
     `effort: ${yamlValue(settings.effort)}`,
-    `tools: ${yamlValue(role.tools.length ? role.tools : ['Task'])}`,
+    `tools: ${yamlValue(claudeTools(role))}`,
     `permissionMode: ${yamlValue(claudePermission(policy))}`
   ];
   return [
@@ -140,6 +163,15 @@ function claudeRender(role, settings, body, policy) {
     body,
     ''
   ].join('\n');
+}
+
+function claudeUpdateConfig(source, path, roles, paths) {
+  let current;
+  try { current = source ? JSON.parse(source) : {}; }
+  catch (error) { fail(`Cannot safely parse existing Claude config at ${path}: ${error.message}`); }
+  if (!isPlainObject(current) || (current.mcpServers !== undefined && !isPlainObject(current.mcpServers))) fail(`Cannot safely merge Claude MCP config at ${path}.`);
+  const mcpServers = { ...(current.mcpServers ?? {}), [WORKFLOW_MCP_ID]: { type: 'stdio', command: 'node', args: [brokerPath(paths)] } };
+  return `${JSON.stringify({ ...current, mcpServers }, null, 2)}\n`;
 }
 
 // --- OpenCode strategy ---
@@ -161,8 +193,9 @@ export function opencodePermission(role, policy) {
     permission.edit = 'deny';
     permission.glob = 'deny';
     permission.grep = 'deny';
-    if (policy.workflow_state !== 'write') permission.bash = 'deny';
+    permission.bash = 'deny';
   }
+  if (role.tools.includes('WorkflowState')) permission[OPENCODE_WORKFLOW_TOOL] = 'allow';
   if (policy.delegation === 'allowed') permission.task = 'allow';
   if (policy.delegation === 'none') permission.task = 'deny';
   if (role.id === 'task-planner') {
@@ -219,7 +252,7 @@ function opencodeRender(role, settings, body, policy) {
   return frontmatter.join('\n');
 }
 
-function opencodeUpdateConfig(source, path, roles) {
+function opencodeUpdateConfig(source, path, roles, paths) {
   const current = source ? JSON.parse(source) : {};
   if (!isPlainObject(current)) fail(`Cannot safely merge opencode.json: root must be an object.`);
   if (current.agent !== undefined && !isPlainObject(current.agent)) {
@@ -228,11 +261,13 @@ function opencodeUpdateConfig(source, path, roles) {
   if (current.subagent_depth !== undefined && (!Number.isInteger(current.subagent_depth) || current.subagent_depth < 0)) {
     fail(`Cannot safely merge opencode.json: subagent_depth must be a non-negative integer.`);
   }
+  if (current.mcp !== undefined && !isPlainObject(current.mcp)) fail(`Cannot safely merge opencode.json: mcp must be an object.`);
   const agent = { ...(current.agent ?? {}) };
   if (agent.explore === false) delete agent.explore;
   const defaultPrimary = roles.find((role) => role.default_primary === true);
   if (!defaultPrimary) fail('Cannot configure OpenCode without a default primary role.');
-  return `${JSON.stringify({ ...current, agent, subagent_depth: Math.max(MAX_AGENT_DEPTH, current.subagent_depth ?? 0), default_agent: defaultPrimary.id }, null, 2)}\n`;
+  const mcp = { ...(current.mcp ?? {}), [WORKFLOW_MCP_ID]: { type: 'local', command: ['node', brokerPath(paths)], enabled: true } };
+  return `${JSON.stringify({ ...current, agent, mcp, subagent_depth: Math.max(MAX_AGENT_DEPTH, current.subagent_depth ?? 0), default_agent: defaultPrimary.id }, null, 2)}\n`;
 }
 
 function digest(contents) {
@@ -301,7 +336,7 @@ function configurationDrift(strategy, paths, roles) {
   const path = strategy.globalConfig.path(paths);
   try {
     const source = existsSync(path) ? readFileSync(path, 'utf8') : '';
-    return strategy.globalConfig.update(source, path, roles) !== source;
+    return strategy.globalConfig.update(source, path, roles, paths) !== source;
   } catch {
     return true;
   }
@@ -316,7 +351,7 @@ const strategies = {
     render: codexRender,
     globalConfig: {
       path: (paths) => resolve(paths.codexDir, 'config.toml'),
-      update: codexUpdateConfig
+      update: (source, path, roles, paths) => codexBrokerConfig(codexUpdateConfig(source, path), path, paths)
     },
     marker: {
       path: (paths) => resolve(paths.codexDir, 'AGENTS.md'),
@@ -327,6 +362,10 @@ const strategies = {
     agentDir: 'claudeDir',
     extension: 'md',
     render: claudeRender,
+    globalConfig: {
+      path: (paths) => paths.claudeConfig,
+      update: claudeUpdateConfig
+    },
     marker: {
       path: (paths) => resolve(paths.claudeDir, 'CLAUDE.md'),
       update: updateManagedMarker
@@ -345,6 +384,7 @@ const strategies = {
 };
 
 function capabilityLevel(platform, role, capability, requested) {
+  if (capability === 'workflow_state') return role.tools.includes('WorkflowState') ? 'enforced' : 'instruction-only';
   if (capability === 'filesystem') {
     if (platform === 'codex') return requested === 'none' ? 'unsupported' : 'enforced';
     if (platform === 'opencode') return 'enforced';
@@ -367,7 +407,7 @@ export function capabilityEvidence(platform, role, policy) {
   return Object.fromEntries(Object.entries(levels).map(([capability, level]) => [capability, {
     requested: capability === 'delegation_targets' ? role.delegates : policy[capability],
     level,
-    evidence: level === 'enforced' ? ['platform permission key'] : []
+    evidence: level === 'enforced' ? [capability === 'workflow_state' ? 'isolated MCP workflow broker' : 'platform permission key'] : []
   }]));
 }
 
@@ -405,7 +445,7 @@ export function planGeneration({ platform, paths, roles, policies, config, bodie
   if (strategy.globalConfig) {
     const configPath = strategy.globalConfig.path(paths);
     const source = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
-    addWrite(configPath, strategy.globalConfig.update(source, configPath, roles));
+    addWrite(configPath, strategy.globalConfig.update(source, configPath, roles, paths));
   }
 
   if (strategy.marker) {

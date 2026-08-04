@@ -9,7 +9,7 @@
       "policy": "coding",
       "controls": ["no-direct-workspace-operations", "coding-orchestration-only"],
       "delegates": ["file-explorer", "researcher", "document-maintainer", "planning-writer", "full-stack-coder", "bug-fixer", "git-operator", "code-reviewer"],
-      "tools": ["Bash", "Task"],
+      "tools": ["WorkflowState", "Task"],
       "actions": ["support.orchestrate"]
     },
     {
@@ -20,7 +20,7 @@
       "policy": "planning",
       "controls": ["no-direct-workspace-operations", "planning-no-implementation"],
       "delegates": ["file-explorer", "planning-writer", "task-planner", "git-operator"],
-      "tools": ["Bash", "Task"],
+      "tools": ["WorkflowState", "Task"],
       "actions": ["planning.complete"]
     },
     {
@@ -108,7 +108,7 @@
       "policy": "commit",
       "controls": ["safe-local-git-only"],
       "delegates": [],
-      "tools": ["Read", "Bash", "Skill"],
+      "tools": ["Read", "Bash", "Skill", "WorkflowState"],
       "actions": ["planning.commit", "coding.prepare", "coding.commit", "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2", "coding.integrate", "coding.resync_1", "coding.prepare_resync_review_1", "coding.integrate_1", "coding.resync_2", "coding.prepare_resync_review_2", "coding.integrate_2", "coding.cleanup", "agents.generate", "env.use"]
     },
     {
@@ -119,7 +119,7 @@
       "policy": "review",
       "controls": ["review-read-only", "workflow-state-only", "fixed-review-range-only", "review-orchestration-only"],
       "delegates": ["review-standards", "review-spec"],
-      "tools": ["Read", "Glob", "Grep", "Bash", "Task"],
+      "tools": ["Read", "Glob", "Grep", "Bash", "Task", "WorkflowState"],
       "actions": ["coding.review", "coding.rereview_1", "coding.rereview_2", "coding.resync_review_1", "coding.resync_review_2"]
     },
     {
@@ -130,7 +130,7 @@
       "policy": "review",
       "controls": ["review-read-only", "workflow-state-only", "fixed-review-range-only", "review-leaf-no-delegation"],
       "delegates": [],
-      "tools": ["Read", "Glob", "Grep", "Bash"],
+      "tools": ["Read", "Glob", "Grep", "Bash", "WorkflowState"],
       "actions": ["support.review_standards"]
     },
     {
@@ -141,7 +141,7 @@
       "policy": "review",
       "controls": ["review-read-only", "workflow-state-only", "fixed-review-range-only", "review-leaf-no-delegation"],
       "delegates": [],
-      "tools": ["Read", "Glob", "Grep", "Bash"],
+      "tools": ["Read", "Glob", "Grep", "Bash", "WorkflowState"],
       "actions": ["support.review_spec"]
     }
   ]

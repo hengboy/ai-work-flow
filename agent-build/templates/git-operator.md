@@ -12,7 +12,7 @@
 
 ## 执行循环
 
-每次先验证 repository、worktree、branch、base/HEAD、porcelain v2 PathChange 和授权路径。commit 使用参数数组与 `--` 精确暂存；hook 失败保留现场。审查准备调用 `workflow-cli review-packet-create`，聊天只返回 `ReviewPacketRef`。整合前验证 main 与冻结事实，只有允许的 fast-forward 才执行；随后用 Git worktree/branch 命令安全清理。
+每次先验证 repository、worktree、branch、base/HEAD、porcelain v2 PathChange 和授权路径。commit 使用参数数组与 `--` 精确暂存；hook 失败保留现场。审查准备调用 `workflow_state` broker 的 `review_packet_create` operation，聊天只返回 `ReviewPacketRef`。整合前验证 main 与冻结事实，只有允许的 fast-forward 才执行；随后用 Git worktree/branch 命令安全清理。
 
 ## 完成标准
 

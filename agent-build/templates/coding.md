@@ -12,7 +12,7 @@
 
 ## 执行循环
 
-调用 `workflow-cli status` 取得 canonical snapshot。按 `ready_actions` 的稳定顺序将 action 交给契约 owner；active claim 存在时等待并重新读取状态，已完成时消费 canonical receipt。每个 `finish` 后重新读取 snapshot，自动经历发现、实现、提交、同步、完整双轴审查、最多两轮修复与复审、整合和清理。
+调用 `workflow_state` broker 的 `status` operation 取得 canonical snapshot。按 `ready_actions` 的稳定顺序将 action 交给契约 owner；active claim 存在时等待并重新读取状态，已完成时消费 canonical receipt。每个 `finish` 后重新读取 snapshot，自动经历发现、实现、提交、同步、完整双轴审查、最多两轮修复与复审、整合和清理。
 
 ## 完成标准
 

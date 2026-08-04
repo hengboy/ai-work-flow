@@ -16,7 +16,7 @@
 
 ## 完成标准
 
-所有分配 slice 有 coverage；finding 说明严重度、可观察影响和最小修复条件；完整结果通过 `workflow-cli artifact-create` 保存为 artifact ref。
+所有分配 slice 有 coverage；finding 说明严重度、可观察影响和最小修复条件；完整结果通过 `workflow_state` broker 的 `artifact_create` operation 保存为 artifact ref。
 
 ## 决策条件
 

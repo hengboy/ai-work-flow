@@ -40,7 +40,7 @@ node agent-build/install.mjs validate
 
 记录不进入项目提交，并由同一仓库的所有 worktree 和新会话共享。原子写入使用同目录临时文件、fsync 和 rename；每个 run 使用原子目录锁。活动锁返回 busy，只有 owner PID 已确认不存在的锁才会恢复。
 
-统一 CLI：
+统一 CLI 保留给人工诊断和 runtime 测试：
 
 ```sh
 node execution-runtime/workflow-cli.mjs start --repository <repo> --kind <workflow-kind> --plan-digest <sha256> [--task-mode <single|split>]
@@ -55,7 +55,9 @@ node execution-runtime/workflow-cli.mjs artifact-verify --repository <repo> --ru
 
 `start` 对同一计划摘要和任务模式幂等。`claim` 对已完成 action 返回 canonical receipt，对活动 action 返回已有 claim。`finish` 必须增加 revision、改变 phase 或消耗持久化预算，否则停止为 `WORKFLOW_STALLED`。损坏或截断的响应通过 `status --action-id` 恢复，不重新执行 action。
 
-公共对象为 `WorkflowSnapshot`、`ActionReceipt`、`ArtifactRef` 和 `ReviewPacketRef`。完整审查上下文、验收证据和叶子结果通过 `artifact-create` 保存在本地；Agent 交接只传不超过 1 KiB 的 ref。ReviewPacket 还必须绑定完整 runtime identity，并包含规格来源、验收证据和验证记录。
+Agents 不获得运行这些写命令所需的工作区权限。安装器为 Codex、Claude Code 和 OpenCode 注册 `execution-runtime/workflow-broker.mjs` 提供的 MCP `workflow_state` 工具；broker 只接受固定 operation，只允许当前启动仓库，并直接调用 runtime API。它没有命令执行接口，写入范围由 store 固定为 Git common dir 的 `.git/ai-work-flow/`。
+
+公共对象为 `WorkflowSnapshot`、`ActionReceipt`、`ArtifactRef` 和 `ReviewPacketRef`。完整审查上下文、验收证据和叶子结果通过 `artifact_create` operation 保存在本地；Agent 交接只传不超过 1 KiB 的 ref。ReviewPacket 还必须绑定完整 runtime identity，并包含规格来源、验收证据和验证记录。
 
 ## 自动流程
 

@@ -367,7 +367,7 @@ function listEnvironments() {
 function transactionOptions(paths) {
   return {
     transactionPath: paths.generationTransaction,
-    roots: [paths.configHome, paths.codexDir, paths.claudeDir]
+    roots: [paths.home, paths.configHome, paths.codexDir, paths.claudeDir]
   };
 }
 

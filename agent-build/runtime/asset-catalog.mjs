@@ -27,6 +27,7 @@ const TOOL_REQUIREMENTS = {
   WebSearch: ["network", new Set(["official"])],
   WebFetch: ["network", new Set(["official"])],
   Task: ["delegation", new Set(["allowed", "review-only"])],
+  WorkflowState: ["workflow_state", new Set(["write"])],
   Skill: null,
 };
 const HEADINGS = ["角色结果", "能力与控制", "允许的 Actions 与输入", "执行循环", "完成标准", "决策条件", "结果回执"];

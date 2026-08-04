@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import { loadAgentAssets } from "../agent-build/runtime/asset-catalog.mjs";
-import { capabilityMatrix, controlMatrix, planGeneration } from "../agent-build/runtime/platform-adapter.mjs";
+import { capabilityEvidence, capabilityMatrix, controlMatrix, planGeneration } from "../agent-build/runtime/platform-adapter.mjs";
 import { loadSkillAssets, renderSkillOpenAiYaml } from "../agent-build/runtime/skill-catalog.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -69,15 +69,16 @@ test("planning artifact prompts preserve fenced Markdown file templates", () => 
   assert.match(tasks, /tasks\/NN-<short-name>\.md[\s\S]*```markdown[\s\S]*task_id:[\s\S]*source_plan_digest:[\s\S]*## 验收标准[\s\S]*```/);
 });
 
-test("review roles expose instruction-only workflow state while source and Git remain read-only", () => {
+test("review roles use enforced broker state while source and Git remain read-only", () => {
   const assets = loadAgentAssets();
   for (const id of ["code-reviewer", "review-standards", "review-spec"]) {
     const role = assets.roles.find((candidate) => candidate.id === id);
     const policy = assets.policies[role.policy];
     assert.equal(policy.filesystem, "read");
     assert.equal(policy.git, "read");
-    assert.equal(capabilityMatrix("opencode", role, policy).workflow_state, "instruction-only");
-    assert.equal(controlMatrix("opencode", role, policy, assets.controls)["workflow-state-only"], "instruction-only");
+    assert.equal(capabilityMatrix("opencode", role, policy).workflow_state, "enforced");
+    assert.deepEqual(capabilityEvidence("opencode", role, policy).workflow_state.evidence, ["isolated MCP workflow broker"]);
+    assert.equal(controlMatrix("opencode", role, policy, assets.controls)["workflow-state-only"], "enforced");
   }
 });
 
@@ -115,24 +116,54 @@ test("agent validation rejects policy-control conflicts and invalid delegation g
   }
 });
 
-test("Planning and Coding can execute only the read-only workflow CLI driver", () => {
+test("Planning and Coding use the broker while generated workspace permissions remain read-only", () => {
   const assets = loadAgentAssets();
   for (const id of ["planning", "coding"]) {
     const role = assets.roles.find((candidate) => candidate.id === id);
-    assert.ok(role.tools.includes("Bash"), id);
-    assert.equal(assets.policies[role.policy].shell, "read", id);
-    assert.match(assets.compiledBodies.get(id), /workflow-cli/);
+    assert.ok(role.tools.includes("WorkflowState"), id);
+    assert.equal(role.tools.includes("Bash"), false, id);
+    assert.equal(assets.policies[role.policy].shell, "none", id);
+    assert.match(assets.compiledBodies.get(id), /workflow_state/);
     const fixture = mkdtempSync(resolve(tmpdir(), `driver-permissions-${id}-`));
-    const paths = { codexDir: resolve(fixture, "codex"), claudeDir: resolve(fixture, "claude"), openCodeDir: resolve(fixture, "opencode") };
-    for (const path of Object.values(paths)) mkdirSync(path, { recursive: true });
+    const paths = {
+      dir: resolve(fixture, "ai-work-flow"),
+      codexDir: resolve(fixture, "codex"),
+      claudeDir: resolve(fixture, "claude"),
+      claudeConfig: resolve(fixture, "claude.json"),
+      openCodeDir: resolve(fixture, "opencode"),
+    };
+    for (const path of [paths.dir, paths.codexDir, paths.claudeDir, paths.openCodeDir]) mkdirSync(path, { recursive: true });
     const rendered = Object.fromEntries(["codex", "claude", "opencode"].map((platform) => {
       const entry = planGeneration({ platform, paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies })
         .find((candidate) => candidate.type === "write" && candidate.path.includes(`/agents/${id}.`));
       return [platform, entry.contents];
     }));
-    assert.match(rendered.codex, /sandbox_mode = "workspace-write"/);
-    assert.match(rendered.claude, /permissionMode: "acceptEdits"/);
-    assert.match(rendered.opencode, /"bash":"allow"/);
+    assert.match(rendered.codex, /sandbox_mode = "read-only"/);
+    assert.match(rendered.claude, /permissionMode: "plan"/);
+    assert.match(rendered.claude, /mcp__ai-work-flow__workflow_state/);
+    assert.match(rendered.opencode, /"bash":"deny"/);
+    assert.match(rendered.opencode, /"ai-work-flow_workflow_state":"allow"/);
+  }
+});
+
+test("all platform configurations register the installed workflow broker", () => {
+  const assets = loadAgentAssets();
+  const fixture = mkdtempSync(resolve(tmpdir(), "broker-config-"));
+  const paths = {
+    dir: resolve(fixture, "ai-work-flow"),
+    codexDir: resolve(fixture, "codex"),
+    claudeDir: resolve(fixture, "claude"),
+    claudeConfig: resolve(fixture, "claude.json"),
+    openCodeDir: resolve(fixture, "opencode"),
+  };
+  for (const path of [paths.dir, paths.codexDir, paths.claudeDir, paths.openCodeDir]) mkdirSync(path, { recursive: true });
+  const expected = resolve(paths.dir, "execution-runtime", "workflow-broker.mjs");
+  for (const platform of ["codex", "claude", "opencode"]) {
+    const plan = planGeneration({ platform, paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies });
+    const config = plan.find((entry) => entry.type === "write" && [resolve(paths.codexDir, "config.toml"), paths.claudeConfig, resolve(paths.openCodeDir, "opencode.json")].includes(entry.path));
+    assert.ok(config, platform);
+    assert.match(config.contents, /ai-work-flow/);
+    assert.ok(config.contents.includes(expected), platform);
   }
 });
 
@@ -161,11 +192,13 @@ test("all three platforms render every compiled prompt from the same contract di
   const assets = loadAgentAssets();
   const fixture = mkdtempSync(resolve(tmpdir(), "agent-platforms-"));
   const paths = {
+    dir: resolve(fixture, "ai-work-flow"),
     codexDir: resolve(fixture, "codex"),
     claudeDir: resolve(fixture, "claude"),
+    claudeConfig: resolve(fixture, "claude.json"),
     openCodeDir: resolve(fixture, "opencode"),
   };
-  for (const path of Object.values(paths)) mkdirSync(path, { recursive: true });
+  for (const path of [paths.dir, paths.codexDir, paths.claudeDir, paths.openCodeDir]) mkdirSync(path, { recursive: true });
   for (const platform of ["codex", "claude", "opencode"]) {
     const plan = planGeneration({ platform, paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies });
     const agentWrites = plan.filter((entry) => entry.type === "write" && entry.path.includes("/agents/") && !entry.path.endsWith("AGENTS.md"));

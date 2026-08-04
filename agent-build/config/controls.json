@@ -2,10 +2,10 @@
   "version": 1,
   "controls": {
     "no-direct-workspace-operations": {
-      "instruction": "主协调角色只可通过 workflow-cli 读写运行状态并使用委派工具，不直接访问工作区、其他 Shell、Skill 或 Git。",
+      "instruction": "主协调角色只可通过 `workflow_state` broker 读写运行状态并使用委派工具，不直接访问工作区、Shell、Skill 或 Git。",
       "policy_requirements": {
         "filesystem": ["none"],
-        "shell": ["read"],
+        "shell": ["none"],
         "git": ["none"],
         "write_scope": ["none"]
       }
@@ -103,7 +103,7 @@
       }
     },
     "workflow-state-only": {
-      "instruction": "审查角色只可通过 workflow-cli 写运行元数据；源码与 Git 保持只读。",
+      "instruction": "审查角色只可通过 `workflow_state` broker 写运行元数据；源码与 Git 保持只读。",
       "policy_requirements": {
         "workflow_state": ["write"]
       }

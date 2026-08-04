@@ -8,6 +8,7 @@ export function globalPaths() {
   const dir = resolve(configHome, 'ai-work-flow');
   const environments = resolve(dir, 'environments');
   return {
+    home,
     configHome,
     dir,
     routing: resolve(dir, 'routing.md'),
@@ -18,6 +19,7 @@ export function globalPaths() {
     generationTransaction: resolve(dir, '.generation-transaction.json'),
     codexDir: resolve(home, '.codex'),
     claudeDir: resolve(home, '.claude'),
+    claudeConfig: resolve(home, '.claude.json'),
     openCodeDir: resolve(configHome, 'opencode')
   };
 }

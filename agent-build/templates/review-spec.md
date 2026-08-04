@@ -16,7 +16,7 @@
 
 ## 完成标准
 
-每项适用验收标准有实现或检查证据，所有分配 slice 有 coverage；完整结果通过 `workflow-cli artifact-create` 保存为 artifact ref。
+每项适用验收标准有实现或检查证据，所有分配 slice 有 coverage；完整结果通过 `workflow_state` broker 的 `artifact_create` operation 保存为 artifact ref。
 
 ## 决策条件
 

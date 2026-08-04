@@ -12,7 +12,7 @@
 6. `决策条件`
 7. `结果回执`
 
-模板显式保留加粗角色名，并只写角色独有判断。`能力与控制` 由 roles、controls 和 policies 注入；`Actions 与输入` 由 workflow contract 和 owner 关系注入；`结果回执` 由 contract 的 `ActionReceipt` 结构注入。`routing.md` 仅参与 digest 和治理说明，不复制进角色 prompt。Planning Writer 与 Task Planner 可在“执行循环”内用带 `markdown` info string 的 fenced code block 维护 `spec.md`、`plan.md` 和 task 文件的统一模板。
+模板显式保留加粗角色名，并只写角色独有判断。`能力与控制` 由 roles、controls 和 policies 注入；`Actions 与输入` 由 workflow contract 和 owner 关系注入；`结果回执` 由 contract 的 `ActionReceipt` 结构注入。需要写运行状态的只读角色使用 MCP `workflow_state`，不获得工作区写权限。`routing.md` 仅参与 digest 和治理说明，不复制进角色 prompt。Planning Writer 与 Task Planner 可在“执行循环”内用带 `markdown` info string 的 fenced code block 维护 `spec.md`、`plan.md` 和 task 文件的统一模板。
 
 编译器必须验证：每个 contract action 恰有一个 owner；owner 的角色声明该 action；能力、工具和 control 一致；所有 action/结果字段有结构覆盖。禁止用中文短语、表格行或历史 marker 判断状态机完整性。
 
