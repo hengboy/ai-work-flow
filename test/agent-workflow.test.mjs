@@ -1592,9 +1592,13 @@ test('planning prompt converges one decision at a time while planning writer own
   assert.match(body, /完整固定模板只由 Planning Writer 拥有/);
   assert.equal([...writer.matchAll(/```markdown\n([\s\S]*?)\n```/g)].length, 2);
   assert.match(body, /一次只问一个/);
-  assert.match(body, /每个会话从 `问题 1：` 开始/);
-  assert.match(body, /后续问题连续递增.*不复用、跳号或重置/s);
-  assert.match(body, /同名冲突、共享理解、任务模式、颗粒度和删除确认沿用序号/);
+  assert.match(body, /仅需求确认编号/);
+  assert.match(body, /首问 `问题 1：`/);
+  assert.match(body, /后续递增.*不复用、跳号或重置/s);
+  assert.match(body, /所有流程询问.*均不编号、不推进序号/);
+  for (const confirmation of ['共享理解', '拆分', '规划文件提交']) {
+    assert.match(body, new RegExp(confirmation));
+  }
   assert.match(body, /推荐答案、理由与主要取舍/);
   assert.match(body, /目标、成功标准、受众、范围、约束、现状、接口、数据流、失败处理、测试、兼容、迁移和发布策略/);
   assert.match(body, /沿每个会影响结果的设计分支持续追问.*依赖顺序逐一解决/s);
