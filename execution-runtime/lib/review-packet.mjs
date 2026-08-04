@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { lstat, readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { validateArtifactRef } from "./workflow-contract.mjs";
-import { loadWorkflowContract } from "./workflow-contract.mjs";
+import { loadAndAssertRuntimeIdentity } from "./runtime-identity.mjs";
 import { ensureWorkflowDirectory, statusRun, workflowRunPaths } from "./workflow-store.mjs";
 
 const execFileAsync = promisify(execFile);
+const RUNTIME_ROOT = resolve(import.meta.dirname, "..");
 
 function digest(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
@@ -26,9 +27,21 @@ async function gitRaw(repository, args) {
 
 function assertPacketInput(input) {
   const commit = /^[0-9a-f]{40,64}$/;
+  const reviewContext = input.review_context;
+  const identity = input.runtime_identity;
+  const specSource = reviewContext?.spec_source;
+  if (!reviewContext || typeof reviewContext !== "object" || Array.isArray(reviewContext) ||
+    !specSource || typeof specSource.path !== "string" || !specSource.path || !/^[0-9a-f]{64}$/.test(specSource.sha256) ||
+    !Array.isArray(reviewContext.acceptance_evidence) || reviewContext.acceptance_evidence.length === 0 ||
+    reviewContext.acceptance_evidence.some((item) => !item || typeof item.criterion !== "string" || !item.criterion || typeof item.evidence !== "string" || !item.evidence) ||
+    !Array.isArray(reviewContext.verification) || reviewContext.verification.length === 0 ||
+    reviewContext.verification.some((item) => !item || typeof item.command !== "string" || !item.command || typeof item.result !== "string" || !item.result)) {
+    throw new Error("Review packet review context is incomplete");
+  }
   if (!commit.test(input.review_base_commit) || !commit.test(input.review_commit) ||
-    !input.review_context || !Array.isArray(input.review_slices) || input.review_slices.length === 0 ||
-    !input.runtime_identity || !/^[0-9a-f]{64}$/.test(input.runtime_identity.contract_digest)) {
+    !Array.isArray(input.review_slices) || input.review_slices.length === 0 ||
+    !identity || Object.keys(identity).sort().join() !== "identity_digest,source_revision" ||
+    !/^[0-9a-f]{64}$/.test(identity.identity_digest) || !/^[0-9a-f]{64}$/.test(identity.source_revision)) {
     throw new Error("Review packet input is invalid");
   }
 }
@@ -56,8 +69,10 @@ async function assertReviewSlices(input) {
 }
 
 async function assertRuntimeIdentity(input) {
-  const contract = await loadWorkflowContract();
-  if (input.runtime_identity.contract_digest !== contract.digest) throw new Error("Review packet runtime identity is drifted");
+  const { evidence } = loadAndAssertRuntimeIdentity(RUNTIME_ROOT);
+  if (input.runtime_identity.identity_digest !== evidence.identity_digest || input.runtime_identity.source_revision !== evidence.source_revision) {
+    throw new Error("Review packet runtime identity is drifted");
+  }
 }
 
 export async function createReviewPacket(input) {
@@ -93,7 +108,10 @@ export async function verifyReviewPacket({ repository, run_id, ref }) {
   validateArtifactRef(ref);
   if (ref.kind !== "review_packet" || !/^review_packet_[0-9a-f]{24}$/.test(ref.id)) throw new Error("ReviewPacketRef is invalid");
   const paths = await workflowRunPaths(repository, run_id);
-  const content = await readFile(join(paths.run, "artifacts", `${ref.id}.json`));
+  const target = join(paths.run, "artifacts", `${ref.id}.json`);
+  const stat = await lstat(target);
+  if (stat.isSymbolicLink() || !stat.isFile()) throw new Error("Review packet path is unsafe");
+  const content = await readFile(target);
   if (content.byteLength !== ref.bytes || digest(content) !== ref.sha256) throw new Error("Review packet digest or size does not match");
   const packet = JSON.parse(content);
   assertPacketInput({ repository, ...packet });

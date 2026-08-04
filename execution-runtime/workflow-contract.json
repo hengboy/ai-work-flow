@@ -1,5 +1,5 @@
 {
-  "digest": "f114f5c27f0a116c136ed02740da4054ad02860badfb7202df974368a2e28ee8",
+  "digest": "b3b5a6b7a567b7fee20b39e98a1b44e60406c1c52b116580336b83c41cafb969",
   "snapshot_schema": {
     "required": ["run_id", "kind", "revision", "phase", "ready_actions", "active_claims", "budgets"],
     "decision_request_optional": true
@@ -85,7 +85,7 @@
     "navigation": {
       "initial_phase": "started",
       "terminal_phases": ["complete", "failed", "awaiting_decision"],
-      "phase_actions": { "started": ["navigation.locate_or_maintain"] }
+      "phase_actions": { "started": ["navigation.locate"] }
     }
   },
   "actions": {
@@ -119,7 +119,7 @@
     "agents.generate": { "owner": "git-operator", "workflow": "agent_generation", "from": "started", "completed_to": "complete" },
     "env.use": { "owner": "git-operator", "workflow": "environment_switch", "from": "started", "completed_to": "complete" },
     "project.initialize": { "owner": "full-stack-coder", "workflow": "project_initialization", "from": "started", "completed_to": "complete" },
-    "navigation.locate_or_maintain": { "owner": "file-explorer", "workflow": "navigation", "from": "started", "completed_to": "complete" },
+    "navigation.locate": { "owner": "file-explorer", "workflow": "navigation", "from": "started", "completed_to": "complete" },
     "support.research": { "owner": "researcher", "workflow": "support" },
     "support.update_docs": { "owner": "document-maintainer", "workflow": "support" },
     "support.review_standards": { "owner": "review-standards", "workflow": "support" },

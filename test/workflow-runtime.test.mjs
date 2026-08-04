@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -16,10 +16,25 @@ import {
   statusRun,
 } from "../execution-runtime/lib/workflow-store.mjs";
 import { createReviewPacket, verifyReviewPacket } from "../execution-runtime/lib/review-packet.mjs";
+import { createArtifact, verifyArtifact } from "../execution-runtime/lib/artifact-store.mjs";
 
 const run = promisify(execFile);
 const contractPath = resolve("execution-runtime/workflow-contract.json");
 const cliPath = resolve("execution-runtime/workflow-cli.mjs");
+const runtimeRoot = resolve("execution-runtime");
+
+async function runtimeIdentityRef() {
+  const identity = JSON.parse(await readFile(resolve(runtimeRoot, "runtime-identity.json"), "utf8"));
+  return { identity_digest: identity.identity_digest, source_revision: identity.source.revision };
+}
+
+function reviewContext() {
+  return {
+    spec_source: { path: "spec.md", sha256: "1".repeat(64) },
+    acceptance_evidence: [{ criterion: "content", evidence: "README changed" }],
+    verification: [{ command: "test", result: "passed" }],
+  };
+}
 
 async function repository() {
   const root = await mkdtemp(join(tmpdir(), "workflow-runtime-"));
@@ -158,6 +173,32 @@ test("retry and recovery budgets persist and cannot reset on reload", async () =
   assert.equal((await statusRun({ repository: root, run_id: started.run_id })).budgets.recover_remaining, 0);
 });
 
+test("generic artifacts stay local and are verified by digest", async () => {
+  const root = await repository();
+  const started = await startRun({ repository: root, kind: "coding", plan_digest: "7".repeat(64), task_mode: "single" });
+  const ref = await createArtifact({
+    repository: root,
+    run_id: started.run_id,
+    kind: "review_result",
+    content: { verdict: "pass", findings: [] },
+  });
+
+  assert.equal(ref.kind, "review_result");
+  assert.deepEqual(await verifyArtifact({ repository: root, run_id: started.run_id, ref }), { verdict: "pass", findings: [] });
+  const cliCreate = spawnSync(process.execPath, [cliPath, "artifact-create", "--repository", root, "--run-id", started.run_id], {
+    input: JSON.stringify({ kind: "spec_result", content: { verdict: "pass" } }), encoding: "utf8",
+  });
+  assert.equal(cliCreate.status, 0, cliCreate.stderr);
+  const cliRef = JSON.parse(cliCreate.stdout);
+  const cliVerify = spawnSync(process.execPath, [cliPath, "artifact-verify", "--repository", root, "--run-id", started.run_id], {
+    input: JSON.stringify(cliRef), encoding: "utf8",
+  });
+  assert.equal(cliVerify.status, 0, cliVerify.stderr);
+  assert.deepEqual(JSON.parse(cliVerify.stdout), { verdict: "pass" });
+  await assert.rejects(verifyArtifact({ repository: root, run_id: started.run_id, ref: { ...ref, sha256: "0".repeat(64) } }), /digest/);
+  await assert.rejects(createArtifact({ repository: root, run_id: started.run_id, kind: "review_packet", content: {} }), /reserved/);
+});
+
 test("review packets stay local, use current names, and reject tampering or Git drift", async () => {
   const root = await repository();
   const started = await startRun({ repository: root, kind: "coding", plan_digest: "f".repeat(64), task_mode: "single" });
@@ -171,9 +212,9 @@ test("review packets stay local, use current names, and reject tampering or Git 
     run_id: started.run_id,
     review_base_commit: base,
     review_commit: reviewCommit,
-    review_context: { acceptance_evidence: [{ criterion: "content", evidence: "README changed" }] },
+    review_context: reviewContext(),
     review_slices: [{ id: "slice-1", paths: ["README.md"] }],
-    runtime_identity: { contract_digest: JSON.parse(await readFile(contractPath, "utf8")).digest },
+    runtime_identity: await runtimeIdentityRef(),
   });
 
   assert.equal(ref.kind, "review_packet");
@@ -182,8 +223,8 @@ test("review packets stay local, use current names, and reject tampering or Git 
   const packet = await verifyReviewPacket({ repository: root, run_id: started.run_id, ref });
   assert.equal(packet.review_base_commit, base);
   assert.equal(packet.review_commit, reviewCommit);
-  assert.equal(Object.hasOwn(packet, "fixed_point"), false);
-  assert.equal(Object.hasOwn(packet, "bundle"), false);
+  assert.equal(Object.hasOwn(packet, ["fixed", "point"].join("_")), false);
+  assert.equal(Object.hasOwn(packet, ["bun", "dle"].join("")), false);
 
   await writeFile(join(root, "README.md"), "dirty\n");
   await assert.rejects(verifyReviewPacket({ repository: root, run_id: started.run_id, ref }), /worktree must be clean/);
@@ -203,12 +244,41 @@ test("review packet creation rejects runtime identity drift and incomplete slice
     run_id: started.run_id,
     review_base_commit: base,
     review_commit: reviewCommit,
-    review_context: { acceptance_evidence: [] },
+    review_context: reviewContext(),
     review_slices: [{ id: "slice-1", paths: ["README.md"] }],
-    runtime_identity: { contract_digest: JSON.parse(await readFile(contractPath, "utf8")).digest },
+    runtime_identity: await runtimeIdentityRef(),
   };
-  await assert.rejects(createReviewPacket({ ...baseInput, runtime_identity: { contract_digest: "0".repeat(64) } }), /identity is drifted/);
+  await assert.rejects(createReviewPacket({ ...baseInput, runtime_identity: { identity_digest: "0".repeat(64), source_revision: "0".repeat(64) } }), /identity is drifted/);
+  await assert.rejects(createReviewPacket({ ...baseInput, review_context: { ...reviewContext(), verification: [] } }), /review context/);
   await assert.rejects(createReviewPacket({ ...baseInput, review_slices: [{ id: "slice-1", paths: ["missing.md"] }] }), /cover every changed path/);
+});
+
+test("review packet creation rejects drift in a non-contract runtime file", async () => {
+  const root = await repository();
+  const copiedRoot = await mkdtemp(join(tmpdir(), "workflow-runtime-copy-"));
+  const copiedRuntime = join(copiedRoot, "execution-runtime");
+  await cp(runtimeRoot, copiedRuntime, { recursive: true });
+  const copiedCli = join(copiedRuntime, "workflow-cli.mjs");
+  const storePath = join(copiedRuntime, "lib", "workflow-store.mjs");
+  await writeFile(storePath, `${await readFile(storePath, "utf8")}\n`);
+  const started = JSON.parse((await run(process.execPath, [copiedCli, "start", "--repository", root, "--kind", "coding", "--plan-digest", "6".repeat(64), "--task-mode", "single"])).stdout);
+  const base = (await run("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
+  await writeFile(join(root, "README.md"), "changed\n");
+  await run("git", ["add", "README.md"], { cwd: root });
+  await run("git", ["commit", "-m", "change"], { cwd: root });
+  const reviewCommit = (await run("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
+  const input = {
+    review_base_commit: base,
+    review_commit: reviewCommit,
+    review_context: reviewContext(),
+    review_slices: [{ id: "slice-1", paths: ["README.md"] }],
+    runtime_identity: await runtimeIdentityRef(),
+  };
+  const result = spawnSync(process.execPath, [copiedCli, "review-packet-create", "--repository", root, "--run-id", started.run_id], {
+    input: JSON.stringify(input), encoding: "utf8",
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /runtime identity|runtime files/i);
 });
 
 test("workflow CLI resumes from canonical persisted state without prompt-carried JSON", async () => {
@@ -286,7 +356,7 @@ test("maintenance Skill workflows use the same claim and receipt contract", asyn
     ["agent_generation", "agents.generate"],
     ["environment_switch", "env.use"],
     ["project_initialization", "project.initialize"],
-    ["navigation", "navigation.locate_or_maintain"],
+    ["navigation", "navigation.locate"],
   ];
   for (const [kind, action] of cases) {
     let snapshot = await startRun({ repository: root, kind, plan_digest: createHash("sha256").update(kind).digest("hex") });

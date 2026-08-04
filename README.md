@@ -49,11 +49,13 @@ node execution-runtime/workflow-cli.mjs claim --repository <repo> --run-id <run_
 node execution-runtime/workflow-cli.mjs finish --repository <repo> < receipt.json
 node execution-runtime/workflow-cli.mjs recover --repository <repo> --run-id <run_id> --action-id <action_id>
 node execution-runtime/workflow-cli.mjs decide --repository <repo> --run-id <run_id> < decision.json
+node execution-runtime/workflow-cli.mjs artifact-create --repository <repo> --run-id <run_id> < artifact.json
+node execution-runtime/workflow-cli.mjs artifact-verify --repository <repo> --run-id <run_id> < artifact-ref.json
 ```
 
 `start` 对同一计划摘要和任务模式幂等。`claim` 对已完成 action 返回 canonical receipt，对活动 action 返回已有 claim。`finish` 必须增加 revision、改变 phase 或消耗持久化预算，否则停止为 `WORKFLOW_STALLED`。损坏或截断的响应通过 `status --action-id` 恢复，不重新执行 action。
 
-公共对象为 `WorkflowSnapshot`、`ActionReceipt`、`ArtifactRef` 和 `ReviewPacketRef`。完整审查上下文、验收证据和叶子结果只保存在本地 artifact；Agent 交接只传不超过 1 KiB 的 ref。
+公共对象为 `WorkflowSnapshot`、`ActionReceipt`、`ArtifactRef` 和 `ReviewPacketRef`。完整审查上下文、验收证据和叶子结果通过 `artifact-create` 保存在本地；Agent 交接只传不超过 1 KiB 的 ref。ReviewPacket 还必须绑定完整 runtime identity，并包含规格来源、验收证据和验证记录。
 
 ## 自动流程
 

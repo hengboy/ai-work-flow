@@ -70,6 +70,36 @@ function validateContract(contract, errors) {
   }
 }
 
+function validateDelegateGraph(roles, errors) {
+  const byId = new Map(roles.map((role) => [role.id, role]));
+  const visiting = new Set();
+  const visited = new Set();
+  const visit = (id, path) => {
+    if (visiting.has(id)) {
+      errors.push(`Role delegation contains a cycle: ${[...path, id].join(" -> ")}.`);
+      return;
+    }
+    if (visited.has(id)) return;
+    visiting.add(id);
+    for (const delegate of byId.get(id)?.delegates ?? []) visit(delegate, [...path, id]);
+    visiting.delete(id);
+    visited.add(id);
+  };
+  for (const role of roles) visit(role.id, []);
+}
+
+function validateDelegateDepth(roles, errors) {
+  const byId = new Map(roles.map((role) => [role.id, role]));
+  const visit = (id, path) => {
+    if (path.length - 1 > MAX_AGENT_DEPTH) {
+      errors.push(`Role delegation exceeds max depth ${MAX_AGENT_DEPTH}: ${path.join(" -> ")}.`);
+      return;
+    }
+    for (const delegate of byId.get(id)?.delegates ?? []) if (!path.includes(delegate)) visit(delegate, [...path, delegate]);
+  };
+  for (const role of roles.filter((candidate) => candidate.kind === "primary")) visit(role.id, [role.id]);
+}
+
 function validateAssets(catalog, controlsDocument, policiesDocument, defaults, templates, contract) {
   const errors = [];
   validateContract(contract, errors);
@@ -101,6 +131,10 @@ function validateAssets(catalog, controlsDocument, policiesDocument, defaults, t
     }
     for (const delegate of role.delegates ?? []) if (!ids.includes(delegate)) errors.push(`Role ${role.id} delegates to unknown role ${delegate}.`);
     const policy = policies[role.policy];
+    if (policy?.delegation === "none" && ((role.delegates?.length ?? 0) > 0 || role.tools?.includes("Task"))) errors.push(`Role ${role.id} conflicts with delegation=none.`);
+    if (policy?.delegation === "review-only" && (role.delegates ?? []).some((id) => roles.find((candidate) => candidate.id === id)?.kind !== "reviewer")) {
+      errors.push(`Role ${role.id} review-only delegation must target reviewers.`);
+    }
     for (const tool of role.tools ?? []) {
       const requirement = TOOL_REQUIREMENTS[tool];
       if (requirement === undefined) errors.push(`Role ${role.id} declares unknown tool ${tool}.`);
@@ -117,6 +151,19 @@ function validateAssets(catalog, controlsDocument, policiesDocument, defaults, t
       if (!CAPABILITIES[capability] || !unique(values) || values.some((value) => !CAPABILITIES[capability].has(value))) errors.push(`Control ${id}.${capability} is invalid.`);
     }
   }
+  for (const role of roles) {
+    const policy = policies[role.policy];
+    if (!policy) continue;
+    for (const id of role.controls ?? []) {
+      for (const [capability, values] of Object.entries(controls[id]?.policy_requirements ?? {})) {
+        if (Array.isArray(values) && !values.includes(policy[capability])) {
+          errors.push(`Role ${role.id} policy does not satisfy control ${id}: ${capability}=${policy[capability]}.`);
+        }
+      }
+    }
+  }
+  validateDelegateGraph(roles, errors);
+  validateDelegateDepth(roles, errors);
   for (const id of Object.keys(contract.actions)) if (!referencedActions.has(id)) errors.push(`Action is not assigned to a role: ${id}.`);
   if (!isPlainObject(defaults?.roles)) errors.push("default-config.json must define roles.");
   for (const id of ids) for (const platform of PLATFORM_NAMES) if (!isPlainObject(defaults?.roles?.[id]?.[platform])) errors.push(`default-config.json is missing ${id}/${platform}.`);

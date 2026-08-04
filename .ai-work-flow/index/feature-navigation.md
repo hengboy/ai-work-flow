@@ -3,7 +3,7 @@
 | 安装、生成、环境管理 | `agent-build/install.mjs` -> `agent-build/runtime/workflow.mjs` | 事务式安装配置、runtime、Skills 和三平台 Agents；清理明确列出的旧受管理文件。 |
 | Workflow 契约与公共结构 | `execution-runtime/workflow-contract.json`、`execution-runtime/lib/workflow-contract.mjs` | 唯一声明 workflow、phase、action owner、转换、预算、决策代码和结构校验。 |
 | Run、claim、receipt、恢复与决策 | `execution-runtime/workflow-cli.mjs` -> `execution-runtime/lib/workflow-store.mjs` | Git common dir 持久化、原子锁/写入、幂等 start/claim/finish、recover 和 decision。 |
-| ReviewPacket 与 runtime identity | `execution-runtime/lib/review-packet.mjs`、`execution-runtime/lib/runtime-identity.mjs`、`execution-runtime/runtime-identity.json` | 冻结 committed review context、slice coverage、contract identity 和安装完整性；聊天只传 ref。 |
+| Artifact、ReviewPacket 与 runtime identity | `execution-runtime/lib/artifact-store.mjs`、`execution-runtime/lib/review-packet.mjs`、`execution-runtime/lib/runtime-identity.mjs`、`execution-runtime/runtime-identity.json` | 持久化完整结果，冻结 committed review context 和 slice coverage，并绑定整个 runtime 安装身份；聊天只传 ref。 |
 | Agent 角色与七段 prompt 编译 | `agent-build/config/{roles,controls,policies}.json`、`agent-build/templates/*.md`、`agent-build/runtime/asset-catalog.mjs` | contract 生成 action 输入/结果，角色模板只保留独有判断；总量限制由编译器校验。 |
 | Skills 元数据与生成 | `agent-build/config/skills.json`、`agent-build/runtime/skill-catalog.mjs`、`agent-build/generate-skill-metadata.mjs` | 五个 Skills、frontmatter 和 `agents/openai.yaml` 的单一元数据来源与确定性校验。 |
 | 项目上下文初始化 | `skills/init-ai-work-flow/SKILL.md`、`skills/init-ai-work-flow/references/project-context-contract.md`、`skills/init-ai-work-flow/scripts/validate-project-context.mjs` | 联合维护 MEMORY、导航和项目指令，验证章节唯一性与路径真实性。 |

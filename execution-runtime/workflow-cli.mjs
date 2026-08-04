@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
 
+import { createArtifact, verifyArtifact } from "./lib/artifact-store.mjs";
 import { createReviewPacket, verifyReviewPacket } from "./lib/review-packet.mjs";
 import { claimAction, finishAction, recoverAction, resolveDecision, startRun, statusRun } from "./lib/workflow-store.mjs";
 
@@ -37,6 +38,10 @@ async function main() {
     result = await recoverAction(input);
   } else if (command === "decide") {
     result = await resolveDecision({ repository: input.repository, run_id: input.run_id, decision: await stdinJson() });
+  } else if (command === "artifact-create") {
+    result = await createArtifact({ repository: input.repository, run_id: input.run_id, ...await stdinJson() });
+  } else if (command === "artifact-verify") {
+    result = await verifyArtifact({ repository: input.repository, run_id: input.run_id, ref: await stdinJson() });
   } else if (command === "review-packet-create") {
     result = await createReviewPacket({ repository: input.repository, run_id: input.run_id, ...await stdinJson() });
   } else if (command === "review-packet-verify") {
@@ -44,7 +49,7 @@ async function main() {
   } else if (command === "contract") {
     result = JSON.parse(await readFile(new URL("./workflow-contract.json", import.meta.url), "utf8"));
   } else {
-    throw new Error("usage: workflow-cli <start|status|claim|finish|recover|decide|review-packet-create|review-packet-verify|contract> [options]");
+    throw new Error("usage: workflow-cli <start|status|claim|finish|recover|decide|artifact-create|artifact-verify|review-packet-create|review-packet-verify|contract> [options]");
   }
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }

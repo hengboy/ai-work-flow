@@ -9,7 +9,7 @@ description: 使用项目索引只读定位业务入口，或在已授权实现�
 
 # 必要前置条件
 
-- 首先选择一个分支：只读定位，或随实现维护。
+- 首先选择一个分支：只读定位使用 `navigation.locate`；随实现维护只在已认领的 `coding.implement` 内执行。
 - 根 `MEMORY.md` 或索引缺失时先使用 `$init-ai-work-flow`。
 
 # 步骤

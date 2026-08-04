@@ -13,6 +13,24 @@ const configRoot = resolve(root, "agent-build/config");
 const templatesRoot = resolve(root, "agent-build/templates");
 const contractPath = resolve(root, "execution-runtime/workflow-contract.json");
 const headings = ["角色结果", "能力与控制", "允许的 Actions 与输入", "执行循环", "完成标准", "决策条件", "结果回执"];
+const retiredTerms = [
+  ["protocol", "recovery", "attempt"].join("_"),
+  ["prepare", "envelope"].join(" "),
+  ["directory", "bundle"].join("_"),
+  ["fixed", "point"].join("_"),
+  ["runtime", "provenance"].join("_"),
+];
+
+function fixtureAssets() {
+  const fixture = mkdtempSync(resolve(tmpdir(), "agent-assets-"));
+  const fixtureConfig = resolve(fixture, "config");
+  const fixtureTemplates = resolve(fixture, "templates");
+  const fixtureContract = resolve(fixture, "workflow-contract.json");
+  cpSync(configRoot, fixtureConfig, { recursive: true });
+  cpSync(templatesRoot, fixtureTemplates, { recursive: true });
+  cpSync(contractPath, fixtureContract);
+  return { fixtureConfig, fixtureTemplates, fixtureContract };
+}
 
 test("machine contract assigns every action to exactly one of 13 roles", () => {
   const assets = loadAgentAssets();
@@ -37,7 +55,7 @@ test("compiled prompts use the seven-section interface and stay within budgets",
     assert.match(prompt, new RegExp(`contract-digest=${assets.contract.digest}`));
     assert.match(prompt, /ActionReceipt/);
     assert.match(prompt, new RegExp(`\\*\\*${role.name}\\*\\*`), role.id);
-    assert.doesNotMatch(prompt, /protocol_recovery_attempt|prepare envelope|directory_bundle|fixed_point|runtime_provenance/);
+    for (const term of retiredTerms) assert.equal(prompt.includes(term), false, `${role.id}: ${term}`);
   }
   assert.ok(total <= 45_000, total);
 });
@@ -64,13 +82,7 @@ test("review roles expose instruction-only workflow state while source and Git r
 });
 
 test("removing an action or required contract field makes asset validation fail", () => {
-  const fixture = mkdtempSync(resolve(tmpdir(), "agent-assets-"));
-  const fixtureConfig = resolve(fixture, "config");
-  const fixtureTemplates = resolve(fixture, "templates");
-  const fixtureContract = resolve(fixture, "workflow-contract.json");
-  cpSync(configRoot, fixtureConfig, { recursive: true });
-  cpSync(templatesRoot, fixtureTemplates, { recursive: true });
-  cpSync(contractPath, fixtureContract);
+  const { fixtureConfig, fixtureTemplates, fixtureContract } = fixtureAssets();
 
   const roles = JSON.parse(readFileSync(resolve(fixtureConfig, "roles.json"), "utf8"));
   roles.roles.find((role) => role.id === "coding").actions = [];
@@ -82,6 +94,42 @@ test("removing an action or required contract field makes asset validation fail"
   delete contract.actions["coding.cleanup"].owner;
   writeFileSync(fixtureContract, JSON.stringify(contract));
   assert.throws(() => loadAgentAssets(fixtureConfig, fixtureTemplates, fixtureContract), /digest is stale|must declare owner/);
+});
+
+test("agent validation rejects policy-control conflicts and invalid delegation graphs", () => {
+  {
+    const { fixtureConfig, fixtureTemplates, fixtureContract } = fixtureAssets();
+    const policiesPath = resolve(fixtureConfig, "policies.json");
+    const policies = JSON.parse(readFileSync(policiesPath, "utf8"));
+    policies.policies.review.workflow_state = "read";
+    writeFileSync(policiesPath, JSON.stringify(policies));
+    assert.throws(() => loadAgentAssets(fixtureConfig, fixtureTemplates, fixtureContract), /does not satisfy control/);
+  }
+  {
+    const { fixtureConfig, fixtureTemplates, fixtureContract } = fixtureAssets();
+    const rolesPath = resolve(fixtureConfig, "roles.json");
+    const roles = JSON.parse(readFileSync(rolesPath, "utf8"));
+    roles.roles.find((role) => role.id === "review-standards").delegates = ["code-reviewer"];
+    writeFileSync(rolesPath, JSON.stringify(roles));
+    assert.throws(() => loadAgentAssets(fixtureConfig, fixtureTemplates, fixtureContract), /delegation=|cycle/);
+  }
+});
+
+test("Planning and Coding can execute only the read-only workflow CLI driver", () => {
+  const assets = loadAgentAssets();
+  for (const id of ["planning", "coding"]) {
+    const role = assets.roles.find((candidate) => candidate.id === id);
+    assert.ok(role.tools.includes("Bash"), id);
+    assert.equal(assets.policies[role.policy].shell, "read", id);
+    assert.match(assets.compiledBodies.get(id), /workflow-cli/);
+  }
+});
+
+test("navigation runtime action is read-only and implementation maintenance stays with Full Stack Coder", () => {
+  const assets = loadAgentAssets();
+  assert.equal(assets.contract.actions["navigation.locate"].owner, "file-explorer");
+  assert.equal(Object.hasOwn(assets.contract.actions, ["navigation.locate", "maintain"].join("_or_")), false);
+  assert.ok(assets.roles.find((role) => role.id === "full-stack-coder").actions.includes("coding.implement"));
 });
 
 test("skill metadata deterministically owns all five Skills and generated OpenAI YAML", () => {

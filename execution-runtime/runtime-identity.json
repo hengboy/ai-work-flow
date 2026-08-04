@@ -2,18 +2,19 @@
   "type": "execution-runtime-identity",
   "source": {
     "identity": "ai-work-flow/execution-runtime",
-    "revision": "cf3f168577207cfd35138dd1ab6de513be34204c844dff3ccec69576130bbbee"
+    "revision": "541cd913e6a5e1220d7ad572b4d77ef3993285b8f5c21ee7e696065d427f68c1"
   },
   "managed_files": [
+    { "path": "lib/artifact-store.mjs", "digest": "9b38bd9f12c57afef21a4bea18cd7946f10e308fd082374f4b3944a0a2af547f" },
     { "path": "lib/git.mjs", "digest": "df02abc962b04ca0f49fb9c97c1db66607fafc57200ba53fa86bb8142b0e6e9b" },
     { "path": "lib/paths.mjs", "digest": "dbbdd4ca01aad02051200932e7a78450dc7ebae358ce966e4d6689917fde2a65" },
-    { "path": "lib/review-packet.mjs", "digest": "3c5dfb0826dc9d226be42ba2d923993c282de7c55b23d2be3a3959ffaeb9cc76" },
+    { "path": "lib/review-packet.mjs", "digest": "6b4cebfc34743c2beeb48a4f5631ca34589e3752f64e680b63249544bfe46625" },
     { "path": "lib/runtime-identity.mjs", "digest": "d803e568c9e53bb8ca605da3672e37d0da7dc246bd8044b5adbe3dd39548e73d" },
     { "path": "lib/workflow-contract.mjs", "digest": "c9f35bebce0c9cf49950541f42013e6044e161d2cb1cd570a174363dc9eefa23" },
     { "path": "lib/workflow-store.mjs", "digest": "bd48e23a6b8c4c92155931df4bfe1aba7c7cbc72d1221e044070c381d2f6d1fd" },
-    { "path": "workflow-cli.mjs", "digest": "17455b567c2df2ad39c3f8870c58a331be5cd17fc8ed201aa7f2caae9ca917ce" },
-    { "path": "workflow-contract.json", "digest": "71a431f7087c7ab8d8d41b2ae763a1835d92487f6ddb7e4ab45aaf4803fb1650" }
+    { "path": "workflow-cli.mjs", "digest": "53ab39a4e489797015c4e3ffb874032efc91e4a1669f157b9b297dee3d101e79" },
+    { "path": "workflow-contract.json", "digest": "a460aa7ec48a2f11a4b5220fab2964dc8396c67e154e4ed119ea53b4fb336bb2" }
   ],
-  "files_digest": "cf3f168577207cfd35138dd1ab6de513be34204c844dff3ccec69576130bbbee",
-  "identity_digest": "c76263686220ab369b0d8faebba9667c24590d6df8abe858ad2375d898d69486"
+  "files_digest": "541cd913e6a5e1220d7ad572b4d77ef3993285b8f5c21ee7e696065d427f68c1",
+  "identity_digest": "ca2573e15187210c6dc027fc3cf2e104330bded4ef95c2f349897bce2ec32546"
 }

@@ -9,7 +9,7 @@
       "policy": "coding",
       "controls": ["no-direct-workspace-operations", "coding-orchestration-only"],
       "delegates": ["file-explorer", "researcher", "document-maintainer", "planning-writer", "full-stack-coder", "bug-fixer", "git-operator", "code-reviewer"],
-      "tools": [],
+      "tools": ["Bash", "Task"],
       "actions": ["support.orchestrate"]
     },
     {
@@ -20,7 +20,7 @@
       "policy": "planning",
       "controls": ["no-direct-workspace-operations", "planning-no-implementation"],
       "delegates": ["file-explorer", "planning-writer", "task-planner", "git-operator"],
-      "tools": ["Task"],
+      "tools": ["Bash", "Task"],
       "actions": ["planning.complete"]
     },
     {
@@ -32,7 +32,7 @@
       "controls": ["read-only-discovery"],
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash", "Skill"],
-      "actions": ["planning.discover", "navigation.locate_or_maintain"]
+      "actions": ["planning.discover", "navigation.locate"]
     },
     {
       "id": "researcher",

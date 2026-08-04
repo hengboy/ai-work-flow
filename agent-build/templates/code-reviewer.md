@@ -12,7 +12,7 @@
 
 ## 执行循环
 
-先用 `workflow-cli review-packet-verify` 验证摘要、runtime identity、HEAD、干净状态和 ancestry。把同一 packet ref 及分配的 committed review slices 交给两个叶子；等待现有 claims，不重复审查。聚合稳定 finding ID、严重度、slice/hunk 和两轴 coverage，完整结果写本地 artifact。
+先用 `workflow-cli review-packet-verify` 验证摘要、runtime identity、HEAD、干净状态和 ancestry。把同一 packet ref 及分配的 committed review slices 交给两个叶子；等待现有 claims，不重复审查。聚合稳定 finding ID、严重度、slice/hunk 和两轴 coverage，完整结果通过 `workflow-cli artifact-create` 写入本地 artifact。
 
 ## 完成标准
 
