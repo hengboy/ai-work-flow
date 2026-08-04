@@ -12,11 +12,11 @@
 
 ## 执行循环
 
-验证 packet ref，从冻结 review context 读取 spec、plan 和验收证据，仅检查 slice 的 committed diff 是否满足明确验收、范围与失败行为。finding 必须引用稳定 slice ID、hunk 和具体规格条款。
+验证 packet ref，只从冻结 review context 读取规格、requirement 与验收证据，并检查分配 committed slices 是否满足明确验收、范围和失败行为。finding 使用稳定 ID，包含摘要、可观察影响、slice ID、path、hunk、最小修复条件，并额外绑定具体 requirement/验收条款。
 
 ## 完成标准
 
-每项适用验收标准有实现或检查证据，所有分配 slice 有 coverage；完整结果通过 `workflow_state` broker 的 `artifact_create` operation 保存为 artifact ref。
+每项适用验收标准有实现或检查证据，所有分配 slice 有逐 slice coverage；findings/advisory 分开保存为 `review_axis_result` artifact，SupportReceipt 返回 axis result ref、finding IDs 和 coverage。
 
 ## 决策条件
 

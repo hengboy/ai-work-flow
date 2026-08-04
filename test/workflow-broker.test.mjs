@@ -27,11 +27,30 @@ test("workflow broker exposes one fixed MCP tool and no command execution surfac
   const listed = await handleBrokerRequest({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
   assert.equal(listed.result.tools.length, 1);
   assert.equal(listed.result.tools[0].name, "workflow_state");
+  assert.ok(listed.result.tools[0].inputSchema.properties.operation.enum.includes("support_validate"));
+  assert.ok(listed.result.tools[0].inputSchema.properties.input);
   assert.equal(JSON.stringify(listed).includes("command"), false);
   const unknown = await handleBrokerRequest({
     jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "shell", arguments: {} },
   });
   assert.equal(unknown.error.code, -32602);
+});
+
+test("workflow broker validates support receipts without advancing the parent phase", async () => {
+  const root = await repository();
+  const planDigest = "d".repeat(64);
+  const started = await dispatchWorkflowState({ operation: "start", repository: root, kind: "coding", plan_digest: planDigest, task_mode: "single" }, { cwd: root, pid: process.pid });
+  const parentInput = { fields: { plan_digest: planDigest, task_mode: "single", target_base: "main" }, artifacts: [] };
+  const claim = await dispatchWorkflowState({ operation: "claim", repository: root, run_id: started.run_id, action_id: "coding.prepare", claimant: "caller", input: parentInput }, { cwd: root, pid: process.pid });
+  const supportInput = { fields: { report_path: ".ai-work-flow/research/report.md", questions: ["question"], allowed_sources: ["official"], as_of: "2026-08-04" }, artifacts: [] };
+  const receipt = {
+    run_id: started.run_id, caller_ref: claim.claim_id, call_id: "broker-support-001", action_id: "support.research", result: "completed", summary: "complete",
+    outputs: { report_path: ".ai-work-flow/research/report.md", citation_urls: [], changed_paths: [".ai-work-flow/research/report.md"], checks: ["read-back"] }, artifacts: [], checks: ["read-back"],
+  };
+  assert.deepEqual(await dispatchWorkflowState({ operation: "support_validate", repository: root, caller_ref: claim.claim_id, owner: "researcher", input: supportInput, receipt }, { cwd: root, pid: process.pid }), receipt);
+  const status = await dispatchWorkflowState({ operation: "status", repository: root, run_id: started.run_id }, { cwd: root, pid: process.pid });
+  assert.equal(status.phase, "started");
+  assert.equal(status.revision, 0);
 });
 
 test("workflow broker writes only the current repository Git common workflow directory", async () => {

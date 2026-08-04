@@ -1,6 +1,6 @@
 # AI Work Flow
 
-AI Work Flow 为 Codex、Claude Code 和 OpenCode 提供共享的 Planning、Coding、13 个专职 Agents、5 个 Skills 和可恢复执行 runtime。流程状态由机器契约维护，提示词只消费 snapshot 和 artifact refs。
+AI Work Flow 为 Codex、Claude Code 和 OpenCode 提供共享的 Planning、Coding、14 个 Agents、5 个 Skills 和可恢复执行 runtime。流程状态由机器契约维护，提示词只消费 snapshot、canonical inputs 和 artifact refs。
 
 ## 安装
 
@@ -45,23 +45,24 @@ node agent-build/install.mjs validate
 ```sh
 node execution-runtime/workflow-cli.mjs start --repository <repo> --kind <workflow-kind> --plan-digest <sha256> [--task-mode <single|split>]
 node execution-runtime/workflow-cli.mjs status --repository <repo> --run-id <run_id> [--action-id <action_id>]
-node execution-runtime/workflow-cli.mjs claim --repository <repo> --run-id <run_id> --action-id <action_id> --claimant <session> --owner-pid <pid>
+node execution-runtime/workflow-cli.mjs claim --repository <repo> --run-id <run_id> --action-id <action_id> --claimant <session> --owner-pid <pid> --input-json '<json>'
 node execution-runtime/workflow-cli.mjs finish --repository <repo> < receipt.json
+node execution-runtime/workflow-cli.mjs support-validate --repository <repo> < support.json
 node execution-runtime/workflow-cli.mjs recover --repository <repo> --run-id <run_id> --action-id <action_id>
 node execution-runtime/workflow-cli.mjs decide --repository <repo> --run-id <run_id> < decision.json
 node execution-runtime/workflow-cli.mjs artifact-create --repository <repo> --run-id <run_id> < artifact.json
 node execution-runtime/workflow-cli.mjs artifact-verify --repository <repo> --run-id <run_id> < artifact-ref.json
 ```
 
-`start` 对同一计划摘要和任务模式幂等。`claim` 对已完成 action 返回 canonical receipt，对活动 action 返回已有 claim。`finish` 必须增加 revision、改变 phase 或消耗持久化预算，否则停止为 `WORKFLOW_STALLED`。损坏或截断的响应通过 `status --action-id` 恢复，不重新执行 action。
+`start` 对同一计划摘要和任务模式幂等。`claim` 接收 `{fields, artifacts}`，按 action 的命名 I/O contract 校验后完整持久化；重复 claim 返回原 input，调用者不能替换。`finish` 校验必需 `outputs`、error 字段及 artifact kind、run 归属和 digest，并必须增加 revision、改变 phase 或消耗持久化预算，否则停止为 `WORKFLOW_STALLED`。损坏或截断的响应通过 `status --action-id` 恢复，不重新执行 action。
 
 Agents 不获得运行这些写命令所需的工作区权限。安装器为 Codex、Claude Code 和 OpenCode 注册 `execution-runtime/workflow-broker.mjs` 提供的 MCP `workflow_state` 工具；broker 只接受固定 operation，只允许当前启动仓库，并直接调用 runtime API。它没有命令执行接口，写入范围由 store 固定为 Git common dir 的 `.git/ai-work-flow/`。
 
-公共对象为 `WorkflowSnapshot`、`ActionReceipt`、`ArtifactRef` 和 `ReviewPacketRef`。完整审查上下文、验收证据和叶子结果通过 `artifact_create` operation 保存在本地；Agent 交接只传不超过 1 KiB 的 ref。ReviewPacket 还必须绑定完整 runtime identity，并包含规格来源、验收证据和验证记录。
+公共对象为 `WorkflowSnapshot`、`ActionReceipt`、`SupportReceipt`、`ArtifactRef` 和 `ReviewPacketRef`。SupportReceipt 由稳定 caller/call ID 标识，经 `support_validate` 校验但不推进 phase；重要结果必须进入父 ActionReceipt。完整规划上下文、变更证据、审查轴结果和聚合审查结果分别使用 `planning_context`、`change_evidence`、`review_axis_result` 和 `review_result` artifact；Agent 交接只传不超过 1 KiB 的 ref。ReviewPacket 还必须绑定完整 runtime identity，并包含规格来源、验收证据和验证记录。
 
 ## 自动流程
 
-Planning 按以下 action 自动推进：事实发现、必要产品决定、spec、plan、single/split tasks、规划提交、完成。Planning 不实施源码。
+Planning 固定按事实发现、确认门禁、spec、plan、single/split tasks、规划提交、完成推进。决定记录在 snapshot 的 `decision_history`，确认后生成唯一 `planning_context`；Planning 不实施源码。
 
 Coding 在一次实施授权后自动推进：prepare、实现、本地提交、ReviewPacket、双轴审查、blocking finding 修复、完整复审、main 同步、fast-forward 整合和安全清理。修复与完整复审最多两轮；同一 finding 重现时立即产生一个用户决定。main 漂移最多自动 resync 两次，每次冻结新提交并重新审查。
 
@@ -69,7 +70,7 @@ Git mutation 仅由 Git Operator 串行执行。自动授权不包含 push、sta
 
 ## Agents 与 Skills
 
-`roles.json`、controls、policies 和 workflow contract 共同生成角色能力、action 输入和结果结构。13 个角色模板固定使用七段接口：角色结果、能力与控制、允许的 Actions 与输入、执行循环、完成标准、决策条件、结果回执。`routing.md` 只保留人类可读治理，不复制进 prompt。
+`roles.json`、controls、policies 和 workflow contract 共同生成角色能力、命名 action I/O 和结果结构。14 个角色模板固定使用七段接口：角色结果、能力与控制、允许的 Actions 与输入、执行循环、完成标准、决策条件、结果回执。Environment Operator 独占 Agent 生成与环境切换；Git Operator 只负责本地 Git 生命周期。`routing.md` 只保留人类可读治理，不复制进 prompt。
 
 `skills.json` 是五个 Skills 的元数据来源。每份 `SKILL.md` 只保留结果、前置、步骤、分支和验收；分支细节位于一级 `references/`，可重复校验位于 `scripts/`。`agents/openai.yaml` 可通过以下命令确定性生成并校验：
 
@@ -90,3 +91,5 @@ git diff --check
 ```
 
 平台能力报告区分 `enforced`、`instruction-only` 和 `unsupported`。审查角色通过 workflow CLI 写运行元数据的边界在当前三平台均标为 `instruction-only`；源码和 Git 权限仍保持只读请求。
+
+workflow contract digest 变化后，未结束的旧 run 继续 fail-closed，不自动迁移或回写历史 spec、plan、tasks；发布前应完成或明确放弃这些 run。自动授权仍不包含浏览器、额外网络、push、tag、发布或其他远端操作。

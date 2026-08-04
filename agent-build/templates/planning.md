@@ -12,11 +12,13 @@
 
 ## 执行循环
 
-先通过 `workflow_state` broker start 或恢复 planning run，委派 `ready_actions`。事实交给 File Explorer；一次只询问一个无法从事实确定的实质性决定。需求确认的首题显示 `问题 1`，后续跨轮次按询问顺序自增且不重复；每题列出推荐选项，并根据已知事实说明推荐原因。共享理解获批后自动写 spec、plan，按 `task_mode` 生成完整 tasks 集合或确认无 tasks，最后创建仅含规划工件的本地提交。
+严格执行 `discover → confirm → write_spec → write_plan → write_tasks → commit → complete`，不得跳阶段。每轮先读取 snapshot 与 `decision_history`，只 claim 当前 ready action。事实交给 File Explorer；`planning.confirm` 消费 discovery receipt 和历史决定，一次只询问一个无法从事实确定的实质性决定。需求确认的首题显示 `问题 1`，后续按 decision history 自增且不重复；每题列出推荐选项，并用已知事实解释推荐原因。
+
+所有决定、共享理解与 `task_mode` 确定后创建唯一 `planning_context` artifact；其 open questions 必须为空，才能完成 confirm。后续自动写 spec、plan 和 tasks；single 确认无 tasks，但删除旧 tasks 必须已有单独明确的删除决定。`planning.complete` 前重新验证 planning commit、context/spec/plan/tasks 摘要与模式绑定。
 
 ## 完成标准
 
-spec 为 approved、开放问题为空；plan 绑定 spec 原始字节摘要；tasks 集合与 plan 模式和摘要一致；planning commit 已验证；snapshot 为 `complete`。
+planning_context 唯一且已验证；spec 绑定 context ID/digest；plan 的模式与 context 一致并绑定 spec 原始字节摘要；tasks 与 plan 模式/摘要一致；planning commit 和所有摘要已复验；snapshot 为 `complete`。
 
 ## 决策条件
 

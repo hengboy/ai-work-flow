@@ -2,21 +2,21 @@
   "type": "execution-runtime-identity",
   "source": {
     "identity": "ai-work-flow/execution-runtime",
-    "revision": "dcae7fea4b93eb61f0f95e2c45eb106f8ca744baa3260c20bd6035da2024d84a"
+    "revision": "d9db3936ce67c9f833d12f048267362d98c3e91e6a8a6aa769289e463c390ac1"
   },
   "managed_files": [
-    { "path": "lib/artifact-store.mjs", "digest": "5f71c03c786166f571f4f74466ef2cc0a18e922af342a0569372d8e5a6e33d80" },
+    { "path": "lib/artifact-store.mjs", "digest": "32af1d9db0b90683e43f3254228cdbad28100d70915bf4b6c7731536f55d8055" },
     { "path": "lib/git.mjs", "digest": "df02abc962b04ca0f49fb9c97c1db66607fafc57200ba53fa86bb8142b0e6e9b" },
     { "path": "lib/paths.mjs", "digest": "dbbdd4ca01aad02051200932e7a78450dc7ebae358ce966e4d6689917fde2a65" },
     { "path": "lib/review-packet.mjs", "digest": "ce44f878c116df95621f9101e0cbaa39145a3110d5cfa4b4b7812093a43b9c73" },
     { "path": "lib/runtime-identity.mjs", "digest": "d803e568c9e53bb8ca605da3672e37d0da7dc246bd8044b5adbe3dd39548e73d" },
-    { "path": "lib/workflow-broker.mjs", "digest": "5657a5cb3b4500918d8d6535ece09c31f7f7fcb2dbd05f76d310bab69590494d" },
-    { "path": "lib/workflow-contract.mjs", "digest": "c9f35bebce0c9cf49950541f42013e6044e161d2cb1cd570a174363dc9eefa23" },
-    { "path": "lib/workflow-store.mjs", "digest": "bd48e23a6b8c4c92155931df4bfe1aba7c7cbc72d1221e044070c381d2f6d1fd" },
+    { "path": "lib/workflow-broker.mjs", "digest": "4a537721cee67b69c3bd5cc0bc52400d500e095105b3d980779f6228aca8a3ea" },
+    { "path": "lib/workflow-contract.mjs", "digest": "3ad1be3d97559bb78f20b26e70d23437f56856c602023443719a6ba230cf5f98" },
+    { "path": "lib/workflow-store.mjs", "digest": "89d6c2424d52436b5618de2852dac1008d0f08a993790950fa385e1e1958cecc" },
     { "path": "workflow-broker.mjs", "digest": "c410889dfbb754d6e0af5ea23cabf3f431e6781489fc021e9ca716ce370e6879" },
-    { "path": "workflow-cli.mjs", "digest": "53ab39a4e489797015c4e3ffb874032efc91e4a1669f157b9b297dee3d101e79" },
-    { "path": "workflow-contract.json", "digest": "a460aa7ec48a2f11a4b5220fab2964dc8396c67e154e4ed119ea53b4fb336bb2" }
+    { "path": "workflow-cli.mjs", "digest": "00bf1b51efc9748308438ea7316920140bee310591e1eb214134137152c15215" },
+    { "path": "workflow-contract.json", "digest": "a2ab75abb5d878fec326e7ef8477dd13d397cb7a771495f1b0ecba274f5ce042" }
   ],
-  "files_digest": "dcae7fea4b93eb61f0f95e2c45eb106f8ca744baa3260c20bd6035da2024d84a",
-  "identity_digest": "21201dc57091962cd56eced6b80a4994a6a6f51c7284c1e1d44a321f5f1526f7"
+  "files_digest": "d9db3936ce67c9f833d12f048267362d98c3e91e6a8a6aa769289e463c390ac1",
+  "identity_digest": "4d69889f4342351b55750a8320c5d0e2879343432597e680d92e7a2856c9b996"
 }

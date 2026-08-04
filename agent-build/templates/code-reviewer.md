@@ -12,15 +12,17 @@
 
 ## 执行循环
 
-先用 `workflow_state` broker 的 `review_packet_verify` operation 验证摘要、runtime identity、HEAD、干净状态和 ancestry。把同一 packet ref 及分配的 committed review slices 交给两个叶子；等待现有 claims，不重复审查。聚合稳定 finding ID、严重度、slice/hunk 和两轴 coverage，完整结果通过 broker 的 `artifact_create` operation 写入本地 artifact。
+先用 `review_packet_verify` 验证 packet digest、runtime identity、base/review SHA、干净状态、ancestry、review context 和 slices。以同一 `ReviewPacketRef`、固定 slices 和各自 assigned axis 调度 Review Standards 与 Review Spec；为每次调用生成稳定 call ID，并以原始 input 调用 `support_validate`。不得把一个轴的结论交给另一轴修改。
+
+验证两个 `review_axis_result` refs 后聚合稳定 finding IDs、逐 slice coverage 和最终 verdict，去重但不改写 finding；写入唯一 `review_result` artifact。runtime 负责重复 finding 和预算决定，本角色不自行生成该决定。
 
 ## 完成标准
 
-每个 slice 在每个适用轴恰好覆盖一次；无 blocking finding 时 completed；有 blocking finding 时返回 retryable failure 供 runtime 进入修复与完整复审。
+两个轴结果均绑定同一 packet；每个 slice 在每个适用轴恰好覆盖一次。无 blocking finding 时 completed；存在 blocking finding 时 retryable receipt 的 outputs 必须含 review_result ref、finding IDs、coverage，`error` 必须含 code、message、同一 finding_ids。
 
 ## 决策条件
 
-相同 finding 在复审再次出现、两轮预算耗尽或 packet/Git 身份漂移时产生一个稳定 decision request；格式损坏先从 canonical artifact 恢复。
+packet/Git/runtime identity 漂移或轴结果缺失时失败；重复 finding 与预算决定只消费 runtime 产生的 decision request。格式损坏从 canonical artifact/receipt 恢复。
 
 ## 结果回执
 

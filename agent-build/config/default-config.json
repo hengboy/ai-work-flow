@@ -61,6 +61,21 @@
         "options": {}
       }
     },
+    "environment-operator": {
+      "codex": {
+        "model": "gpt-5.6-terra",
+        "reasoning": "medium"
+      },
+      "claude": {
+        "model": "haiku",
+        "effort": "low"
+      },
+      "opencode": {
+        "model": "baibai/gpt-5.6-terra",
+        "variant": "medium",
+        "options": {}
+      }
+    },
     "researcher": {
       "codex": {
         "model": "gpt-5.6-terra",

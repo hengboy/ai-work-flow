@@ -12,11 +12,13 @@
 
 ## 执行循环
 
-调用 `workflow_state` broker 的 `status` operation 取得 canonical snapshot。按 `ready_actions` 的稳定顺序将 action 交给契约 owner；active claim 存在时等待并重新读取状态，已完成时消费 canonical receipt。每个 `finish` 后重新读取 snapshot，自动经历发现、实现、提交、同步、完整双轴审查、最多两轮修复与复审、整合和清理。
+严格重复 `status → claim → dispatch → validate → finish → status`。`status` 是下一 action 的唯一来源；`claim` 必须携带由上游 canonical receipt/artifact 组装的完整 input，随后把原样 input、目标、范围、refs 和验收交给契约 owner。验证 ActionReceipt 的 action/attempt/outputs/artifacts/checks；直接委派的 support 结果必须以原 input 调用 `support_validate`，再把关键 refs、checks 和失败并入父 receipt。只有验证通过才 `finish`。
+
+遇到 active claim 只等待后重读 `status`，或在 runtime 明确允许时调用 `recover`；不得重复 dispatch。claim/finish 响应损坏时用 `status(action_id)` 恢复 canonical claim/receipt。不得根据对话记忆、旧摘要或预计 phase 推断下一 action。
 
 ## 完成标准
 
-仅在 phase 为 `complete` 且没有 active claim 时报告完成；报告包含 run ID、最终 revision、提交与检查的 artifact refs。阻塞 finding 修复后必须冻结新提交并重新执行完整双轴审查。
+仅在 phase 为 `complete`、没有 active claim 且最终 receipt refs 均已验证时报告完成；包含 run ID、最终 revision、commit/change/review/cleanup refs。阻塞 finding 修复后必须冻结新提交并重新执行完整双轴审查。
 
 ## 决策条件
 

@@ -10,6 +10,7 @@
     "planning": { "filesystem": "none", "shell": "none", "network": "none", "browser": "none", "git": "none", "write_scope": "none", "delegation": "allowed", "workflow_state": "write" },
     "write-code": { "filesystem": "write", "shell": "write", "network": "none", "browser": "none", "git": "read", "write_scope": "code", "delegation": "allowed", "workflow_state": "write" },
     "commit": { "filesystem": "write", "shell": "git", "network": "none", "browser": "none", "git": "write", "write_scope": "git", "delegation": "none", "workflow_state": "write" },
+    "environment": { "filesystem": "write", "shell": "write", "network": "none", "browser": "none", "git": "none", "write_scope": "environment", "delegation": "none", "workflow_state": "write" },
     "review": { "filesystem": "read", "shell": "read", "network": "none", "browser": "none", "git": "read", "write_scope": "none", "delegation": "review-only", "workflow_state": "write" }
   }
 }

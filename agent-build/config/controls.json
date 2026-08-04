@@ -28,7 +28,7 @@
       }
     },
     "official-research-only": {
-      "instruction": "Researcher 只使用获准的官方来源，不读取本地项目。",
+      "instruction": "Researcher 只使用获准的官方来源，本地读取仅限指定报告的写后验证。",
       "policy_requirements": {
         "network": ["official"],
         "delegation": ["none"]
@@ -91,6 +91,14 @@
       "policy_requirements": {
         "git": ["write"],
         "write_scope": ["git"],
+        "delegation": ["none"]
+      }
+    },
+    "managed-environment-only": {
+      "instruction": "只可运行受管理 Agent 环境的安装器生成或切换命令，不得编辑项目实现文件或执行 Git mutation。",
+      "policy_requirements": {
+        "git": ["none"],
+        "write_scope": ["environment"],
         "delegation": ["none"]
       }
     },

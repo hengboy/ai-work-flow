@@ -22,7 +22,7 @@ const SKILLS_ROOT = resolve(ROOT, 'skills');
 const PLATFORMS = new Set(['codex', 'claude', 'opencode']);
 const LEGACY_PRIMARY_AGENT_ID = 'orchestrator';
 const LEGACY_GIT_OPERATOR_AGENT_ID = 'git-committer';
-const INSTALL_MISSING_ROLE_DEFAULTS = ['planning', 'planning-writer', 'task-planner', 'bug-fixer'];
+const INSTALL_MISSING_ROLE_DEFAULTS = ['planning', 'planning-writer', 'task-planner', 'bug-fixer', 'environment-operator'];
 const OBSOLETE_SKILLS = [
   `run-${['m', 'att'].join('')}-spec-to-completion`,
   'init-project-code-navigation'
@@ -61,7 +61,10 @@ const LEGACY_ROLE_RENAMES = new Map([
 ]);
 
 function compatibilityRoleDefaults(assets) {
-  return { 'bug-fixer': assets.defaults.roles['bug-fixer'] };
+  return {
+    'bug-fixer': assets.defaults.roles['bug-fixer'],
+    'environment-operator': assets.defaults.roles['environment-operator']
+  };
 }
 
 function usage() {

@@ -8,7 +8,7 @@
       "default_primary": true,
       "policy": "coding",
       "controls": ["no-direct-workspace-operations", "coding-orchestration-only"],
-      "delegates": ["file-explorer", "researcher", "document-maintainer", "planning-writer", "full-stack-coder", "bug-fixer", "git-operator", "code-reviewer"],
+      "delegates": ["file-explorer", "researcher", "document-maintainer", "planning-writer", "full-stack-coder", "bug-fixer", "git-operator", "environment-operator", "code-reviewer"],
       "tools": ["WorkflowState", "Task"],
       "actions": ["support.orchestrate"]
     },
@@ -21,7 +21,7 @@
       "controls": ["no-direct-workspace-operations", "planning-no-implementation"],
       "delegates": ["file-explorer", "planning-writer", "task-planner", "git-operator"],
       "tools": ["WorkflowState", "Task"],
-      "actions": ["planning.complete"]
+      "actions": ["planning.confirm", "planning.complete"]
     },
     {
       "id": "file-explorer",
@@ -32,7 +32,7 @@
       "controls": ["read-only-discovery"],
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash", "Skill"],
-      "actions": ["planning.discover", "navigation.locate"]
+      "actions": ["planning.discover", "navigation.locate", "support.locate"]
     },
     {
       "id": "researcher",
@@ -42,7 +42,7 @@
       "policy": "research",
       "controls": ["official-research-only", "research-report-path-only", "single-research-report-only"],
       "delegates": [],
-      "tools": ["WebSearch", "WebFetch", "Write"],
+      "tools": ["Read", "WebSearch", "WebFetch", "Write"],
       "actions": ["support.research"]
     },
     {
@@ -86,7 +86,7 @@
       "policy": "write-code",
       "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "no-git-mutation"],
       "delegates": ["file-explorer"],
-      "tools": ["Read", "Edit", "Write", "Bash", "Task"],
+      "tools": ["Read", "Edit", "Write", "Bash", "Skill", "Task", "WorkflowState"],
       "actions": ["coding.implement", "project.initialize"]
     },
     {
@@ -96,8 +96,8 @@
       "kind": "subagent",
       "policy": "write-code",
       "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "authorized-bug-or-finding-only", "no-git-mutation"],
-      "delegates": ["file-explorer", "git-operator", "researcher", "document-maintainer"],
-      "tools": ["Read", "Edit", "Write", "Bash", "Task"],
+      "delegates": ["file-explorer", "researcher", "document-maintainer"],
+      "tools": ["Read", "Edit", "Write", "Bash", "Task", "WorkflowState"],
       "actions": ["coding.fix_1", "coding.fix_2"]
     },
     {
@@ -109,7 +109,18 @@
       "controls": ["safe-local-git-only"],
       "delegates": [],
       "tools": ["Read", "Bash", "Skill", "WorkflowState"],
-      "actions": ["planning.commit", "coding.prepare", "coding.commit", "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2", "coding.integrate", "coding.resync_1", "coding.prepare_resync_review_1", "coding.integrate_1", "coding.resync_2", "coding.prepare_resync_review_2", "coding.integrate_2", "coding.cleanup", "agents.generate", "env.use"]
+      "actions": ["planning.commit", "coding.prepare", "coding.commit", "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2", "coding.integrate", "coding.resync_1", "coding.prepare_resync_review_1", "coding.integrate_1", "coding.resync_2", "coding.prepare_resync_review_2", "coding.integrate_2", "coding.cleanup"]
+    },
+    {
+      "id": "environment-operator",
+      "name": "Environment Operator",
+      "description": "校验并生成受管理 Agent 环境，或事务式切换既有环境。",
+      "kind": "subagent",
+      "policy": "environment",
+      "controls": ["managed-environment-only", "no-git-mutation"],
+      "delegates": [],
+      "tools": ["Bash", "Skill", "WorkflowState"],
+      "actions": ["agents.generate", "env.use"]
     },
     {
       "id": "code-reviewer",

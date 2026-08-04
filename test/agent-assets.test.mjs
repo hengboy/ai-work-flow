@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import { loadAgentAssets } from "../agent-build/runtime/asset-catalog.mjs";
-import { capabilityEvidence, capabilityMatrix, controlMatrix, planGeneration } from "../agent-build/runtime/platform-adapter.mjs";
+import { capabilityEvidence, capabilityMatrix, controlMatrix, evaluateOpenCodePermission, planGeneration } from "../agent-build/runtime/platform-adapter.mjs";
 import { loadSkillAssets, renderSkillOpenAiYaml } from "../agent-build/runtime/skill-catalog.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -32,9 +32,9 @@ function fixtureAssets() {
   return { fixtureConfig, fixtureTemplates, fixtureContract };
 }
 
-test("machine contract assigns every action to exactly one of 13 roles", () => {
+test("machine contract assigns every action to exactly one of 14 roles", () => {
   const assets = loadAgentAssets();
-  assert.equal(assets.roles.length, 13);
+  assert.equal(assets.roles.length, 14);
   const assigned = assets.roles.flatMap((role) => role.actions).sort();
   assert.deepEqual(assigned, Object.keys(assets.contract.actions).sort());
   for (const role of assets.roles) {
@@ -72,8 +72,8 @@ test("planning artifact prompts preserve fenced Markdown file templates", () => 
 test("Planning numbers requirement questions and explains each recommendation", () => {
   const planning = loadAgentAssets().compiledBodies.get("planning");
   assert.match(planning, /需求确认的首题显示 `问题 1`/);
-  assert.match(planning, /后续跨轮次按询问顺序自增且不重复/);
-  assert.match(planning, /每题列出推荐选项，并根据已知事实说明推荐原因/);
+  assert.match(planning, /后续按 decision history 自增且不重复/);
+  assert.match(planning, /每题列出推荐选项，并用已知事实解释推荐原因/);
 });
 
 test("review roles use enforced broker state while source and Git remain read-only", () => {
@@ -237,6 +237,47 @@ test("skill metadata deterministically owns all five Skills and generated OpenAI
   }
 });
 
+test("every action I/O contract is compiled and multi-action roles keep explicit branches", () => {
+  const assets = loadAgentAssets();
+  for (const [id, action] of Object.entries(assets.contract.actions)) {
+    const prompt = assets.compiledBodies.get(action.owner);
+    const io = assets.contract.io_contracts[action.io_contract];
+    assert.match(prompt, new RegExp(id.replaceAll(".", "\\.")), id);
+    for (const field of io.input_contract.required_fields) assert.ok(prompt.includes(field), `${id}: ${field}`);
+    for (const result of Object.values(io.result_contracts)) for (const field of result.required_fields) assert.ok(prompt.includes(field), `${id}: ${field}`);
+  }
+  assert.match(assets.compiledBodies.get("full-stack-coder"), /`coding\.implement`[\s\S]*`project\.initialize`/);
+  assert.match(assets.compiledBodies.get("git-operator"), /prepare：[\s\S]*commit：[\s\S]*review prepare：[\s\S]*resync：[\s\S]*integrate：[\s\S]*cleanup：/);
+  assert.match(assets.compiledBodies.get("planning-writer"), /`planning\.write_spec`[\s\S]*`planning\.write_plan`/);
+  assert.match(assets.compiledBodies.get("file-explorer"), /`planning\.discover`[\s\S]*`navigation\.locate`/);
+});
+
+test("platform Skill allowlists are derived only from skills.json ownership", () => {
+  const assets = loadAgentAssets();
+  for (const role of assets.roles) {
+    const policy = assets.policies[role.policy];
+    for (const skill of assets.skills) {
+      assert.equal(evaluateOpenCodePermission(role, policy, "skill", skill.name), skill.owner === role.id ? "allow" : "deny", `${role.id}/${skill.name}`);
+    }
+  }
+  assert.deepEqual(assets.roles.find((role) => role.id === "git-operator").skills, ["git-commit"]);
+  assert.deepEqual(assets.roles.find((role) => role.id === "environment-operator").skills, ["generate-ai-work-flow-agents", "switch-ai-work-flow-env"]);
+  assert.deepEqual(assets.roles.find((role) => role.id === "full-stack-coder").skills, ["init-ai-work-flow"]);
+});
+
+test("Environment Operator owns maintenance actions without Git or delegation", () => {
+  const assets = loadAgentAssets();
+  const role = assets.roles.find((candidate) => candidate.id === "environment-operator");
+  const policy = assets.policies[role.policy];
+  assert.deepEqual(role.actions, ["agents.generate", "env.use"]);
+  assert.deepEqual(role.delegates, []);
+  assert.equal(policy.git, "none");
+  assert.equal(policy.write_scope, "environment");
+  assert.equal(assets.defaults.roles[role.id].codex.model, "gpt-5.6-terra");
+  assert.equal(assets.defaults.roles[role.id].claude.model, "haiku");
+  assert.equal(assets.defaults.roles[role.id].opencode.model, "baibai/gpt-5.6-terra");
+});
+
 test("all three platforms render every compiled prompt from the same contract digest", () => {
   const assets = loadAgentAssets();
   const fixture = mkdtempSync(resolve(tmpdir(), "agent-platforms-"));
@@ -251,7 +292,7 @@ test("all three platforms render every compiled prompt from the same contract di
   for (const platform of ["codex", "claude", "opencode"]) {
     const plan = planGeneration({ platform, paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies });
     const agentWrites = plan.filter((entry) => entry.type === "write" && entry.path.includes("/agents/") && !entry.path.endsWith("AGENTS.md"));
-    assert.equal(agentWrites.length, 13, platform);
+    assert.equal(agentWrites.length, 14, platform);
     for (const entry of agentWrites) assert.match(entry.contents, new RegExp(`contract-digest=${assets.contract.digest}`), entry.path);
   }
 });

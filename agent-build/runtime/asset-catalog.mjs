@@ -13,7 +13,7 @@ const CAPABILITIES = {
   network: new Set(["none", "official"]),
   browser: new Set(["none"]),
   git: new Set(["none", "read", "write"]),
-  write_scope: new Set(["none", "docs", "planning-artifacts", "tasks", "research", "code", "git"]),
+  write_scope: new Set(["none", "docs", "planning-artifacts", "tasks", "research", "code", "git", "environment"]),
   delegation: new Set(["none", "allowed", "review-only"]),
   workflow_state: new Set(["none", "read", "write"]),
 };
@@ -65,6 +65,7 @@ function validateContract(contract, errors) {
   if (digest !== actual) errors.push("workflow-contract.json digest is stale.");
   for (const [id, action] of Object.entries(contract.actions)) {
     if (!action.owner || !action.workflow) errors.push(`Action ${id} must declare owner and workflow.`);
+    if (!action.io_contract || !contract.io_contracts?.[action.io_contract]) errors.push(`Action ${id} must reference a named I/O contract.`);
     if (action.workflow !== "support" && (!action.from || !action.completed_to || !contract.workflows[action.workflow]?.phase_actions?.[action.from]?.includes(id))) {
       errors.push(`Action ${id} has an invalid transition.`);
     }
@@ -182,8 +183,14 @@ function validateAssets(catalog, controlsDocument, policiesDocument, defaults, t
 function actionText(role, contract) {
   return role.actions.map((id) => {
     const action = contract.actions[id];
-    const input = action.workflow === "support" ? "由调用者提供精确目标和验收证据" : `仅当 snapshot.phase 为 \`${action.from}\` 且 \`ready_actions\` 包含此 ID`;
-    return `- \`${id}\`：${input}；成功后由 runtime 转到 \`${action.completed_to ?? "support result"}\`。`;
+    const io = contract.io_contracts[action.io_contract];
+    const input = io.input_contract;
+    const result = Object.entries(io.result_contracts).map(([name, output]) => {
+      const error = output.required_error_fields?.length ? `；error=${output.required_error_fields.join(",")}` : "";
+      return `${name}[outputs=${output.required_fields.join(",") || "无"}; artifacts=${output.required_artifact_kinds.join(",") || "无"}${error}]`;
+    }).join("；");
+    const gate = action.workflow === "support" ? "经 support_validate 校验且不推进 phase" : `phase=\`${action.from}\` 且位于 ready_actions`;
+    return `- \`${id}\`（\`${action.io_contract}\`）：${gate}；input.fields 必需=${input.required_fields.join(",") || "无"}，可选=${input.optional_fields.join(",") || "无"}；input.artifacts=${input.required_artifact_kinds.join(",") || "无"}。结果：${result}。`;
   }).join("\n");
 }
 
@@ -197,8 +204,10 @@ function controlsText(role, controls, policies) {
   ].join("\n");
 }
 
-function receiptText() {
-  return "只返回一个 `ActionReceipt`：`run_id`、`action_id`、`attempt`、`result`、`summary`、`artifacts`、`checks`，需要用户决定时附 `decision_request`，失败时可附 `error`。完整证据写入本地 artifact，聊天只传 `ArtifactRef`。";
+function receiptText(role, contract) {
+  const supportOnly = role.actions.every((id) => contract.actions[id].workflow === "support");
+  if (supportOnly) return "只返回一个 `SupportReceipt`：`run_id`、`caller_ref`、稳定 `call_id`、`action_id`、`result`、`summary`、`outputs`、`artifacts`、`checks`；需要决定时附 `decision_request`，失败时附契约要求的 `error`。调用者用原始 support input 执行 `support_validate`，并把重要 refs、checks 与失败写入父 `ActionReceipt`。";
+  return "只返回一个 `ActionReceipt`：`run_id`、`action_id`、`attempt`、`result`、`summary`、必需 `outputs`、`artifacts`、`checks`；需要决定时附 `decision_request`，失败时附契约要求的 `error`。完整证据写入本地 artifact，聊天只传 `ArtifactRef`；响应损坏时用 `status(action_id)` 读取同一 canonical receipt。";
 }
 
 export function loadAgentAssets(configRoot = resolve(import.meta.dirname, "..", "config"), templatesRoot = resolve(import.meta.dirname, "..", "templates"), workflowContractPath = contractPath()) {
@@ -215,14 +224,21 @@ export function loadAgentAssets(configRoot = resolve(import.meta.dirname, "..", 
   const bodies = new Map(readdirSync(templateRoot, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => [entry.name.slice(0, -3), readFileSync(resolve(templateRoot, entry.name), "utf8").trimEnd()]));
-  const { roles, controls, policies } = validateAssets(catalog, controlDocument, policyDocument, defaults, bodies, contract);
+  const validated = validateAssets(catalog, controlDocument, policyDocument, defaults, bodies, contract);
+  const skillNamesByOwner = new Map();
+  for (const skill of skillAssets.skills) skillNamesByOwner.set(skill.owner, [...(skillNamesByOwner.get(skill.owner) ?? []), skill]);
+  const roles = validated.roles.map((role) => ({ ...role, skills: (skillNamesByOwner.get(role.id) ?? []).map((skill) => skill.name).sort() }));
+  for (const role of roles) {
+    if (role.tools.includes("Skill") !== (role.skills.length > 0)) fail(`Role ${role.id} Skill tool must match skills.json ownership.`);
+  }
+  const { controls, policies } = validated;
   const routing = readFileSync(resolve(config, "routing.md"), "utf8");
   const routingDigest = createHash("sha256").update(routing).digest("hex");
   const compiledBodies = new Map(roles.map((role) => {
     const compiled = `<!-- ai-work-flow:contract-digest=${contract.digest} routing-digest=${routingDigest} -->\n\n${bodies.get(role.id)}`
       .replace(CONTROL_MARKER, controlsText(role, controls, policies))
       .replace(ACTION_MARKER, actionText(role, contract))
-      .replace(RECEIPT_MARKER, receiptText());
+      .replace(RECEIPT_MARKER, receiptText(role, contract));
     if (compiled.length > MAX_PROMPT) fail(`Compiled prompt ${role.id} exceeds ${MAX_PROMPT} characters.`);
     return [role.id, compiled];
   }));

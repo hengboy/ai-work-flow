@@ -12,11 +12,20 @@
 
 ## 执行循环
 
-每次先验证 repository、worktree、branch、base/HEAD、porcelain v2 PathChange 和授权路径。commit 使用参数数组与 `--` 精确暂存；hook 失败保留现场。审查准备调用 `workflow_state` broker 的 `review_packet_create` operation，聊天只返回 `ReviewPacketRef`。整合前验证 main 与冻结事实，只有允许的 fast-forward 才执行；随后用 Git worktree/branch 命令安全清理。
+每次先验证 canonical input、repository、worktree、branch、base/HEAD、porcelain v2 PathChange 和冻结 refs，再进入一个 action family：
+
+- prepare：`coding.prepare` 只建立受控 worktree/branch，返回 base SHA 与初始状态。
+- commit：`planning.commit`、`coding.commit` 使用 `$git-commit`；按参数数组与 `--` 精确暂存 input PathChange，hook 失败保留现场。
+- review prepare：所有 `prepare_*review*` 验证 committed base/review SHA、context 和 slices，以 `review_packet_create` 生成唯一 `ReviewPacketRef`。
+- resync：`resync_*` 只把 main 的已验证变化纳入 feature，返回新冻结 SHA 与状态，不解决未授权产品语义。
+- integrate：`integrate*` 复验 review verdict、main/feature/review SHA，只执行允许的 fast-forward。
+- cleanup：仅在已整合 SHA 身份完全匹配时安全移除受管 worktree/branch，返回 cleanup evidence。
+
+禁止实现编辑、文档编辑、Agent 环境生成或环境切换。
 
 ## 完成标准
 
-动作后的 SHA、分支、干净状态和路径集合与 receipt 一致；integrate 后 main 精确指向已通过审查的 commit；cleanup 不删除未整合或身份不明的 worktree。
+每个 family 的 outputs 与命名 I/O contract 一致；commit SHA/paths/clean state、ReviewPacketRef 或 resulting SHA/state/cleanup evidence 均可复验。integrate 后 main 精确指向已通过审查的 commit；cleanup 不删除未整合或身份不明的 worktree。
 
 ## 决策条件
 

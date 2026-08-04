@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import { createArtifact, verifyArtifact } from "./lib/artifact-store.mjs";
 import { createReviewPacket, verifyReviewPacket } from "./lib/review-packet.mjs";
-import { claimAction, finishAction, recoverAction, resolveDecision, startRun, statusRun } from "./lib/workflow-store.mjs";
+import { claimAction, finishAction, recoverAction, resolveDecision, startRun, statusRun, validateSupportAction } from "./lib/workflow-store.mjs";
 
 function options(argumentsList) {
   const parsed = {};
@@ -31,7 +31,7 @@ async function main() {
   } else if (command === "status") {
     result = await statusRun(input);
   } else if (command === "claim") {
-    result = await claimAction({ ...input, owner_pid: Number(input.owner_pid) });
+    result = await claimAction({ ...input, owner_pid: Number(input.owner_pid), input: JSON.parse(input.input_json) });
   } else if (command === "finish") {
     result = await finishAction({ repository: input.repository, receipt: await stdinJson() });
   } else if (command === "recover") {
@@ -46,10 +46,12 @@ async function main() {
     result = await createReviewPacket({ repository: input.repository, run_id: input.run_id, ...await stdinJson() });
   } else if (command === "review-packet-verify") {
     result = await verifyReviewPacket({ repository: input.repository, run_id: input.run_id, ref: await stdinJson() });
+  } else if (command === "support-validate") {
+    result = await validateSupportAction({ repository: input.repository, ...await stdinJson() });
   } else if (command === "contract") {
     result = JSON.parse(await readFile(new URL("./workflow-contract.json", import.meta.url), "utf8"));
   } else {
-    throw new Error("usage: workflow-cli <start|status|claim|finish|recover|decide|artifact-create|artifact-verify|review-packet-create|review-packet-verify|contract> [options]");
+    throw new Error("usage: workflow-cli <start|status|claim|finish|recover|decide|support-validate|artifact-create|artifact-verify|review-packet-create|review-packet-verify|contract> [options]");
   }
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }

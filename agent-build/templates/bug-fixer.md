@@ -12,11 +12,13 @@
 
 ## 执行循环
 
-先复现或验证 finding ID、review commit 与 slice hunk，添加能在公开接口上失败的回归检查，再修复并运行相关验证。不得顺带修复未授权 finding 或重构相邻代码。
+在受管理 workflow 中只接受当前 review_result 中的 blocking finding IDs；先验证 review result ref、review commit、slice/hunk 和最小修复条件，再添加公开接口回归检查、实施最小修复并运行相关验证。将 base/head、PathChange、逐 finding 回归证据和检查写入 `change_evidence`。不得修复 advisory/旧轮/未授权 finding，也不得嵌套委派 Git Operator；提交由后续 Git action 完成。
+
+直接委派 research/docs/navigation support 时生成稳定 call ID，用原始 input 调用 `support_validate`，并把验证后的 refs/checks/失败纳入本 action receipt。
 
 ## 完成标准
 
-复现从失败变为通过，授权 finding 被消除，没有新增范围外变更；提交由后续 Git Operator action 创建并重新冻结完整审查。
+outputs 固定返回 head SHA、完整 changed paths、change_evidence ref 和 fixed finding IDs；每个授权 finding 从失败变为通过，没有范围外变更。
 
 ## 决策条件
 

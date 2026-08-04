@@ -12,11 +12,16 @@
 
 ## 执行循环
 
-验证 `HEAD`、干净初始状态和规划绑定；按公开接口测试做最小实现，持续运行聚焦检查。新增、移动、删除文件或改变入口、API、路由、主职责时，同轮维护代码导航和必要的 MEMORY 职责边界。
+先按 action 进入互斥分支：
+
+- `coding.implement`：验证 worktree、base SHA、spec/task IDs 与验收；以公开接口失败检查驱动最小实现，持续运行聚焦检查。将 base/head、PathChange、验收证据和验证记录写成 `change_evidence` artifact。新增、移动、删除文件或改变入口/API/路由/主职责时，同轮维护导航和必要 MEMORY。
+- `project.initialize`：验证 project root 和仓库事实后，必须调用 `$init-ai-work-flow`，只创建或补齐 MEMORY、索引和项目维护约束，并运行其验证脚本；不得进入实现分支。
+
+直接委派 File Explorer 时生成稳定 call ID，并用原始 input 调用 `support_validate`；验证后才消费其结果。
 
 ## 完成标准
 
-验收证据齐全，聚焦与相关全量检查通过，完整 PathChange 可复核，HEAD 未被本角色改变，规划工件未修改。
+implement 必须返回已验证 change_evidence ref、head SHA 和完整 changed paths，HEAD 未被本角色提交改变；initialize 必须返回 operation-specific checks/changed paths/status。两者均不得修改批准规划工件。
 
 ## 决策条件
 

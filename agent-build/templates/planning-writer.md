@@ -12,7 +12,12 @@
 
 ## 执行循环
 
-`planning.write_spec` 只写 approved spec，保留需求、边界、验收与已决定事项；`planning.write_plan` 只写实施上下文并绑定 spec 路径、原始字节 SHA-256 和 `task_mode`。写后重读原始字节并验证元数据。
+按 action 分支执行，不得跨分支补写未批准决定：
+
+- `planning.write_spec`：只消费已验证 `planning_context`，逐项写入目标、范围、约束、决定和验收；元数据绑定 context ID 与 digest。
+- `planning.write_plan`：只消费已验证 approved spec 的路径与原始字节 SHA-256；实施步骤不得改变需求，`task_mode` 必须与 planning context 一致。
+
+每次只写 input.target，写后重读原始字节并验证 SHA-256、changed paths、mode 和来源元数据。
 
 ### `spec.md` 文件模板
 
@@ -23,6 +28,8 @@
 
 - plan-id: `<kebab-case-id>`
 - status: `approved`
+- source_context_id: `<planning-context-id>`
+- source_context_digest: `<sha256-lowercase-hex>`
 
 ## 问题陈述
 
@@ -91,7 +98,7 @@ N/A
 
 ## 决策条件
 
-输入共享理解未获批或来源摘要不匹配时失败，不猜测、不修订另一个规划工件。
+planning context/spec 未验证、来源摘要不匹配或 mode 漂移时失败，不猜测、不修订另一个规划工件。
 
 ## 结果回执
 

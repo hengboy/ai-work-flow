@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { loadWorkflowContract, validateActionReceipt } from "./workflow-contract.mjs";
+import { loadWorkflowContract, validateActionInput, validateActionReceipt, validateSupportReceipt } from "./workflow-contract.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -118,11 +118,14 @@ function snapshot(run, contract) {
   const result = {
     run_id: run.run_id,
     kind: run.kind,
+    plan_digest: run.plan_digest,
+    task_mode: run.task_mode,
     revision: run.revision,
     phase: run.phase,
     ready_actions: ready.filter((id) => !run.active_claims[id] && !run.completed_actions[id]),
     active_claims: active,
     budgets: structuredClone(run.budgets),
+    decision_history: structuredClone(run.decision_history),
   };
   if (run.decision_request) result.decision_request = structuredClone(run.decision_request);
   return result;
@@ -175,6 +178,7 @@ export async function startRun({ repository, kind, plan_digest, task_mode }) {
       receipts: {},
       budgets: initialBudgets(contract),
       decision_request: null,
+      decision_history: [],
       review_finding_ids: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -210,7 +214,7 @@ export async function statusRun({ repository, run_id, action_id }) {
   return result;
 }
 
-export async function claimAction({ repository, run_id, action_id, claimant, owner_pid }) {
+export async function claimAction({ repository, run_id, action_id, claimant, owner_pid, input }) {
   const loaded = await loadRun(repository, run_id);
   const performClaim = () => withLock(loaded.location.lock, async () => {
     const { contract, location } = await loadRun(repository, run_id);
@@ -220,6 +224,11 @@ export async function claimAction({ repository, run_id, action_id, claimant, own
     if (run.active_claims[action_id]) return { claim_status: "existing_claim", ...run.active_claims[action_id] };
     if (!(contract.workflows[run.kind].phase_actions[run.phase] ?? []).includes(action_id)) throw new Error(`action ${action_id} is not ready`);
     if (typeof claimant !== "string" || !claimant.trim() || !Number.isSafeInteger(owner_pid) || owner_pid <= 0) throw new Error("claim identity is invalid");
+    validateActionInput(input, action_id, contract);
+    if (action_id === "coding.prepare" && (input.fields.plan_digest !== run.plan_digest || input.fields.task_mode !== run.task_mode)) throw new Error("coding.prepare input does not match run identity");
+    if (action_id === "planning.confirm" && JSON.stringify(input.fields.decision_history) !== JSON.stringify(run.decision_history)) throw new Error("planning.confirm decision history is stale");
+    const { verifyArtifact } = await import("./artifact-store.mjs");
+    for (const ref of input.artifacts) await verifyArtifact({ repository, run_id, ref });
     const attempt = (run.attempts[action_id] ?? 0) + 1;
     const claim = {
       claim_id: `claim_${randomBytes(12).toString("hex")}`,
@@ -227,6 +236,7 @@ export async function claimAction({ repository, run_id, action_id, claimant, own
       attempt,
       claimant,
       owner_pid,
+      input: structuredClone(input),
       claimed_at: new Date().toISOString(),
     };
     run.attempts[action_id] = attempt;
@@ -293,6 +303,9 @@ export async function finishAction({ repository, receipt }) {
     const { contract, location } = await loadRun(repository, receipt.run_id);
     const run = await readJson(location.runFile);
     validateActionReceipt(receipt, contract);
+    const { verifyArtifact } = await import("./artifact-store.mjs");
+    const verifiedArtifacts = new Map();
+    for (const ref of receipt.artifacts) verifiedArtifacts.set(ref.id, await verifyArtifact({ repository, run_id: receipt.run_id, ref }));
     const receiptKey = `${receipt.action_id}:${receipt.attempt}`;
     if (run.receipts[receiptKey]) {
       if (JSON.stringify(run.receipts[receiptKey]) !== JSON.stringify(receipt)) throw new Error("attempt already finished with a different receipt");
@@ -307,6 +320,24 @@ export async function finishAction({ repository, receipt }) {
     if (!claim || claim.attempt !== receipt.attempt) throw new Error(`action ${receipt.action_id} is not actively claimed for attempt ${receipt.attempt}`);
     const action = contract.actions[receipt.action_id];
     if (!action || action.workflow !== run.kind || action.from !== run.phase) throw new Error("receipt transition is illegal");
+    if (receipt.action_id === "planning.confirm" && receipt.result === "completed") {
+      const context = verifiedArtifacts.get(receipt.outputs.planning_context_ref.id);
+      if (context.plan_id !== receipt.outputs.plan_id || context.task_mode !== receipt.outputs.task_mode || JSON.stringify(context.decisions) !== JSON.stringify(run.decision_history)) {
+        throw new Error("planning_context does not match confirmation outputs or decision history");
+      }
+    }
+    if (action.io_contract === "dual_axis_review" && ["completed", "retryable_failure", "needs_decision"].includes(receipt.result)) {
+      const result = verifiedArtifacts.get(receipt.outputs.review_result_ref.id);
+      const packetRef = claim.input.artifacts.find((ref) => ref.kind === "review_packet");
+      for (const axisRef of result.axis_result_refs) {
+        const axis = await verifyArtifact({ repository, run_id: receipt.run_id, ref: axisRef });
+        if (JSON.stringify(axis.review_packet_ref) !== JSON.stringify(packetRef)) throw new Error("review axis result does not match claimed ReviewPacketRef");
+      }
+      if (JSON.stringify([...receipt.outputs.finding_ids].sort()) !== JSON.stringify([...result.finding_ids].sort()) ||
+        (receipt.error?.finding_ids && JSON.stringify([...receipt.error.finding_ids].sort()) !== JSON.stringify([...result.finding_ids].sort()))) {
+        throw new Error("review finding IDs do not match review_result");
+      }
+    }
     delete run.active_claims[receipt.action_id];
     applyReceipt(run, receipt, action, contract);
     run.receipts[receiptKey] = structuredClone(receipt);
@@ -346,15 +377,54 @@ export async function resolveDecision({ repository, run_id, decision }) {
     const run = await readJson(location.runFile);
     if (run.phase !== "awaiting_decision" || !run.decision_request?.resume_phase) throw new Error("run has no resumable decision request");
     if (!decision || decision.code !== run.decision_request.code || typeof decision.summary !== "string" || !decision.summary.trim()) throw new Error("decision does not match the active request");
+    const historyEntry = { revision: run.revision + 1, code: decision.code, summary: decision.summary };
     run.phase = run.decision_request.resume_phase;
     run.decision_request = null;
+    run.decision_history.push(historyEntry);
     run.revision += 1;
     run.updated_at = new Date().toISOString();
     const decisionDirectory = join(location.run, "decisions");
     await ensureDirectoryChain(location.common, decisionDirectory);
-    await atomicJson(join(decisionDirectory, `revision-${run.revision}.json`), decision);
+    await atomicJson(join(decisionDirectory, `revision-${run.revision}.json`), historyEntry);
     await atomicJson(location.runFile, run);
     return snapshot(run, contract);
+  });
+}
+
+export async function validateSupportAction({ repository, caller_ref, owner, input, receipt }) {
+  const loaded = await loadRun(repository, receipt?.run_id);
+  return withLock(loaded.location.lock, async () => {
+    const { contract, location } = await loadRun(repository, receipt.run_id);
+    const run = await readJson(location.runFile);
+    validateSupportReceipt(receipt, contract);
+    if (receipt.caller_ref !== caller_ref || contract.actions[receipt.action_id].owner !== owner) throw new Error("SupportReceipt caller or owner is invalid");
+    const callerClaim = Object.values(run.active_claims).find((claim) => claim.claim_id === caller_ref);
+    if (!callerClaim) throw new Error("SupportReceipt caller_ref is not an active claim");
+    validateActionInput(input, receipt.action_id, contract);
+    const { verifyArtifact } = await import("./artifact-store.mjs");
+    const verified = new Map();
+    for (const ref of [...input.artifacts, ...receipt.artifacts]) verified.set(ref.id, await verifyArtifact({ repository, run_id: receipt.run_id, ref }));
+    if (["support.review_standards", "support.review_spec"].includes(receipt.action_id) && receipt.result === "completed") {
+      const packetRef = input.artifacts.find((ref) => ref.kind === "review_packet");
+      const axis = verified.get(receipt.outputs.axis_result_ref.id);
+      const expectedAxis = receipt.action_id === "support.review_standards" ? "standards" : "spec";
+      if (axis.axis !== expectedAxis || input.fields.axis !== expectedAxis || JSON.stringify(axis.review_packet_ref) !== JSON.stringify(packetRef)) {
+        throw new Error("review support result does not match its axis or ReviewPacketRef");
+      }
+    }
+    const directory = join(location.run, "support");
+    const target = join(directory, `${receipt.call_id}.json`);
+    const canonical = { owner, input: structuredClone(input), receipt: structuredClone(receipt) };
+    try {
+      const existing = await readJson(target);
+      if (JSON.stringify(existing) !== JSON.stringify(canonical)) throw new Error("support call already validated with different input or receipt");
+      return structuredClone(existing.receipt);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    await ensureDirectoryChain(location.common, directory);
+    await atomicJson(target, canonical);
+    return structuredClone(receipt);
   });
 }
 

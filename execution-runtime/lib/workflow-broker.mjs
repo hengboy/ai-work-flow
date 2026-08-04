@@ -5,18 +5,19 @@ import { promisify } from "node:util";
 import { createArtifact, verifyArtifact } from "./artifact-store.mjs";
 import { createReviewPacket, verifyReviewPacket } from "./review-packet.mjs";
 import { loadWorkflowContract } from "./workflow-contract.mjs";
-import { claimAction, finishAction, recoverAction, resolveDecision, startRun, statusRun } from "./workflow-store.mjs";
+import { claimAction, finishAction, recoverAction, resolveDecision, startRun, statusRun, validateSupportAction } from "./workflow-store.mjs";
 
 const execFileAsync = promisify(execFile);
 const TOOL_NAME = "workflow_state";
 const OPERATIONS = new Set([
   "start", "status", "claim", "finish", "recover", "decide",
   "artifact_create", "artifact_verify", "review_packet_create", "review_packet_verify", "contract",
+  "support_validate",
 ]);
 const OPERATION_FIELDS = Object.freeze({
   start: ["operation", "repository", "kind", "plan_digest", "task_mode"],
   status: ["operation", "repository", "run_id", "action_id"],
-  claim: ["operation", "repository", "run_id", "action_id", "claimant"],
+  claim: ["operation", "repository", "run_id", "action_id", "claimant", "input"],
   finish: ["operation", "repository", "receipt"],
   recover: ["operation", "repository", "run_id", "action_id"],
   decide: ["operation", "repository", "run_id", "decision"],
@@ -24,6 +25,7 @@ const OPERATION_FIELDS = Object.freeze({
   artifact_verify: ["operation", "repository", "run_id", "ref"],
   review_packet_create: ["operation", "repository", "run_id", "packet"],
   review_packet_verify: ["operation", "repository", "run_id", "ref"],
+  support_validate: ["operation", "repository", "caller_ref", "owner", "input", "receipt"],
   contract: ["operation"],
 });
 
@@ -43,6 +45,9 @@ const TOOL = Object.freeze({
       plan_digest: { type: "string" },
       task_mode: { type: "string" },
       receipt: { type: "object" },
+      input: { type: "object" },
+      caller_ref: { type: "string" },
+      owner: { type: "string" },
       decision: { type: "object" },
       content: {},
       ref: { type: "object" },
@@ -72,7 +77,7 @@ export async function dispatchWorkflowState(input, context = {}) {
   const repository = await trustedRepository(input.repository, context.cwd ?? process.cwd());
   if (input.operation === "start") return startRun({ repository, kind: input.kind, plan_digest: input.plan_digest, task_mode: input.task_mode });
   if (input.operation === "status") return statusRun({ repository, run_id: input.run_id, action_id: input.action_id });
-  if (input.operation === "claim") return claimAction({ repository, run_id: input.run_id, action_id: input.action_id, claimant: input.claimant, owner_pid: context.pid ?? process.pid });
+  if (input.operation === "claim") return claimAction({ repository, run_id: input.run_id, action_id: input.action_id, claimant: input.claimant, owner_pid: context.pid ?? process.pid, input: input.input });
   if (input.operation === "finish") return finishAction({ repository, receipt: input.receipt });
   if (input.operation === "recover") return recoverAction({ repository, run_id: input.run_id, action_id: input.action_id });
   if (input.operation === "decide") return resolveDecision({ repository, run_id: input.run_id, decision: input.decision });
@@ -82,6 +87,7 @@ export async function dispatchWorkflowState(input, context = {}) {
     if (!input.packet || typeof input.packet !== "object" || Array.isArray(input.packet)) throw new Error("review packet input is required");
     return createReviewPacket({ ...input.packet, repository, run_id: input.run_id });
   }
+  if (input.operation === "support_validate") return validateSupportAction({ repository, caller_ref: input.caller_ref, owner: input.owner, input: input.input, receipt: input.receipt });
   return verifyReviewPacket({ repository, run_id: input.run_id, ref: input.ref });
 }
 

@@ -12,7 +12,7 @@
 
 ## 执行循环
 
-校验 plan 原始字节摘要。`split` 模式按依赖形成 tracer-bullet tasks，每项含稳定 ID、顺序、`blocked_by`、plan 路径与摘要、非穷举 `write_scope`、验收和验证；事务式全量替换。`single` 模式确保 tasks 不存在。
+校验 plan 原始字节摘要和固定 mode。`split` 模式先建立 requirement-to-task 覆盖，按依赖形成 tracer-bullet tasks；每项含稳定 ID、顺序、`blocked_by`、plan 路径与摘要、非穷举 `write_scope`、独立验收和验证。确认所有 plan 步骤恰有覆盖、依赖无环后事务式全量替换。`single` 模式确认不生成 tasks；只有 input 含单独明确的 deletion decision ref 时才删除旧 tasks，否则保持并返回 needs_decision。
 
 每个 `tasks/NN-<short-name>.md` 文件使用以下统一模板；完整文件内容必须单独放在带 `markdown` info string 的 fenced code block 中：
 
@@ -49,7 +49,7 @@
 
 ## 完成标准
 
-tasks 集合完整、编号稳定、依赖无环、每项可独立验收，所有来源摘要相同且当前；single 模式无 tasks 目录。
+split outputs 汇总完整 changed paths、SHA-256 与 mode，且覆盖完整、编号稳定、依赖无环、每项可独立验收；single outputs 明确无 tasks，任何 deleted paths 均绑定删除授权。
 
 ## 决策条件
 

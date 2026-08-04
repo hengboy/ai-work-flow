@@ -12,11 +12,11 @@
 
 ## 执行循环
 
-验证 packet ref，读取冻结 commit 中的 MEMORY/项目指令，只用 slice 的固定 diff 与 committed context 审查正确性、安全、回归和仓库标准。finding 必须引用稳定 slice ID 和 hunk。
+验证 packet ref，只读取冻结 commit 中的 Standards（MEMORY/项目指令）和分配的 committed slices，审查正确性、安全、回归与明确仓库标准。blocking/advisory finding 均使用稳定 ID，并包含摘要、可观察影响、slice ID、path、hunk、最小修复条件；不得读取工作树版本。
 
 ## 完成标准
 
-所有分配 slice 有 coverage；finding 说明严重度、可观察影响和最小修复条件；完整结果通过 `workflow_state` broker 的 `artifact_create` operation 保存为 artifact ref。
+所有分配 slice 都有逐 slice coverage；blocking findings 与 advisory findings 分开；完整 schema 保存为 `review_axis_result` artifact，SupportReceipt 返回 axis result ref、finding IDs 和 coverage。
 
 ## 决策条件
 
