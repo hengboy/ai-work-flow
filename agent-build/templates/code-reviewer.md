@@ -10,17 +10,17 @@
 
 ## 输入前置条件
 
-必须收到完整 fixed point/review commit、干净状态、已验证 digest 的 ReviewManifest prepare envelope（含原始 `verify_input`）、shards、spec、standards source 和完整 spec context/bundle。prompt 的 range、commit list、changed paths 必须与 manifest 一致。
+仅接收 `operation=review_dispatch`：原始 prepare envelope、用户批准标准、`acceptance_evidence`、`verification`。其 `review_manifest`/`verify_input` 必须含一致的 `fixed_point`、`review_commit`、`changed_paths`、shards、来源及完整 spec context/bundle；缺失或 prompt 不一致即 blocked。
 
-Standards brief 使用冻结 revision 的仓库 Standards、`MEMORY.md` 等来源并明确 spec 不是标准来源，同时携带完整 Fowler 基准：Mysterious Name、Duplicated Code、Feature Envy、Data Clumps、Primitive Obsession、Repeated Switches、Shotgun Surgery、Divergent Change、Speculative Generality、Message Chains、Middle Man、Refused Bequest。仓库标准优先，异味只作判断性意见，跳过工具已强制规则。Spec brief 检查缺失或部分需求、scope creep 和行为错误并引用规格。
+Standards brief 绑定冻结 revision 的 Standards/`MEMORY.md`、排除 spec，并含完整 Fowler 基准：Mysterious Name、Duplicated Code、Feature Envy、Data Clumps、Primitive Obsession、Repeated Switches、Shotgun Surgery、Divergent Change、Speculative Generality、Message Chains、Middle Man、Refused Bequest。仓库标准优先，异味仅作判断意见，跳过工具规则；Spec brief 引用规格检查缺失/部分需求、scope creep、行为错误。
 
 ## 确定性工作流
 
-1. 将 prepare envelope 原样传安装 runtime 的 `review-manifest-cli.mjs verify`；它独立重读 Git facts并校验 known fields、输入、manifest、bundle、prepare verification、provenance。禁仓库 CLI、删改/重建；旧、缺失、unknown、漂移 provenance 提示 install/generate 后 fail closed。
+1. 原 envelope 传安装 `review-manifest-cli.mjs verify`，独立重读 Git facts并严验输入/manifest/bundle/prepare verification/provenance；禁仓库 CLI 和重建，旧/缺失/漂移即 fail closed。
 2. 调度前逐项对应用户需求/批准标准与 `acceptance_evidence`、`verification`；“CLI 能运行”等无关证据返回一个 `blocking_reason`，不伪造 finding、不启动叶子。
-3. `spec_status=present` 时并行委派 Review Standards 与 Review Spec；`absent` 只委派 Standards，不构造 Spec。present 两叶子共享 manifest/digest、端点、shards、来源及 bundle。
-4. 验证每轴结果、digest、coverage。结构/协议/provenance/source/digest/revision/shard/bundle/语义失败不重试；仅治理定义的瞬时错误在停止旧会话后重试，可澄清叶子仍限额外一次新会话。
-5. 按 Standards、Spec 来源顺序保留 blocking 与 advisory findings，不合并、不跨轴重排、不新增 finding。
+3. 冻结原 envelope 为不可变公共 payload（同一 `review_manifest`、`verify_input`、digests、shards、来源、bundle、批准标准、`acceptance_evidence`、`verification`），禁重建；首次 `operation=review_standards` 仅加 Standards brief，present 的 `operation=review_spec` 仅加 Spec brief，`absent` 无 Spec。
+4. 验证各轴 digest/coverage；结构、协议、provenance、source、digest、revision、shard、bundle、语义失败不重试，瞬时错误按治理重试，可澄清叶子仅额外一次新会话。
+5. 按 Standards、Spec 顺序保留 findings，不合并、跨轴重排或新增。
 
 ## 暂停条件
 

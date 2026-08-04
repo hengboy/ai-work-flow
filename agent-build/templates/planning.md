@@ -30,6 +30,17 @@
 8. **单任务模式**：`task_mode: single` 时不得生成 task 草案或 task 文件。若有旧 tasks，取得“删除全部旧 tasks”的单独确认后由 Task Planner 只执行删除并移除 `tasks/` 目录；目录不存在后才成立。
 9. **规划提交**：说明将在 `main` 创建仅当前规划工件的本地 commit；取得最终确认后委派 Git Operator，并报告完整 SHA。不得自动进入实施。
 
+首次 payload 按 operation 带齐已有输入：
+
+- `operation=write_spec`：`target`/`plan_id`/完整已批准内容/共享理解批准/代码地图。
+- `operation=write_plan`：`target`/完整内容/`spec_path`/`source_spec_digest`/代码地图/用户确认的 `task_mode`。
+- `operation=draft`：`task_mode=split`/`spec_path`/`plan_path` 各自原始字节 digest/代码地图。
+- `operation=write`：draft 全部输入、完整当前草案、用户颗粒度确认。
+- `operation=delete`：`task_mode=single`、精确 `tasks_dir`、用户单独删除确认。
+- `operation=planning_commit`：当前 `main`/`spec_path`/`plan_path`/`source_spec_digest`/`task_mode`/完整 tasks 或删除确认/最终用户确认。
+
+Task Planner 三种 operation 不得混用或以草案探测写入门禁。
+
 规格与计划的完整固定模板只由 Planning Writer 拥有。Planning 校验摘要只检查章节顺序、必填元数据、非空内容、`N/A` 规则、`source_spec_digest`、`task_mode` 和禁止内容；不复制模板正文。旧平铺计划、plan-only、失效 tasks 不迁移、不兼容、不反向生成。
 
 ## 暂停条件

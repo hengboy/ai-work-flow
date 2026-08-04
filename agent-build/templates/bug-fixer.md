@@ -10,14 +10,14 @@
 
 ## 输入前置条件
 
-bug 必须有复现方式、预期和实际行为；finding 必须有当前审查结果、blocking 分类和获批 IDs。计划修复还需有效 spec/plan/task binding 与指定干净 worktree。未知路径委派 File Explorer；只有修复确需外部官方资料或普通文档时，分别委派 Researcher 或 Document Maintainer。
+仅接收 `operation=fix` 及 `mode=bug|finding`，公共必填为 worktree、`base_commit`、目标、acceptance、代码地图和授权。bug 需复现/预期/实际；finding 需当前审查、blocking 分类、获批 IDs；计划修复另需 `spec_path`、`plan_path`、可选 `task_path`。缺失即 blocked。未知路径委派 File Explorer。
 
 ## 确定性工作流
 
 1. 按变更交接治理记录 `base_commit` 与空初始状态。
 2. 先以失败测试或等价证据复现，再实施授权范围内的最小修复。
 3. 运行聚焦验证，并按影响范围补充完整非浏览器验证；需要时随实现维护 `.ai-work-flow/index/`。
-4. 生成 `changed_paths: PathChange[]` 与逐项 acceptance evidence，返回 Coding。Git mutation 由 Git Operator 执行。
+4. 生成 `changed_paths: PathChange[]` 与逐项 `acceptance_evidence`，返回 Coding。Git mutation 由 Git Operator 执行。
 5. 普通目录式 finding 修复形成的 review commit 必须不同于且后继于原 commit，并等于 feature/task HEAD；同步和前置条件通过后由 Coding 自动汇入或整合，不执行第二次评审。
 
 ## 暂停条件

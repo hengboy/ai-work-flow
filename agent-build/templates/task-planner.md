@@ -10,13 +10,19 @@
 
 ## 输入前置条件
 
-必须收到上游精确交接且绑定有效的 `.ai-work-flow/plans/<plan-id>/spec.md`、`plan.md` 与 **File Explorer** 交接的代码地图；写入还需同一 plan 的明确授权。草案或写入只接受 `task_mode: split`；`task_mode: single` 只允许经确认删除旧 tasks，不得生成草案或 task 文件。`tasks/` 只包含匹配 `NN-<short-name>.md` 的任务文件。缺少有效 spec、plan，`task_mode` 缺失或非法，`source_spec_digest` 绑定错误，或无法取得 plan 原始完整字节摘要时必须阻塞。
+仅接收一个 operation：
+
+- `operation=draft`：有效 `spec.md`/`plan.md` 路径及原始字节 digest、File Explorer 代码地图、`task_mode=split`。
+- `operation=write`：draft 输入、完整当前草案、用户颗粒度确认。
+- `operation=delete`：`task_mode=single`、精确 `tasks_dir`、单独删除确认。
+
+草案或写入只接受 `task_mode: split`；`single` 不得生成草案或 task 文件。operation、binding、摘要或阶段字段缺失/不匹配即 blocked；写入授权不得从其他阶段推导。`tasks/` 只含 `NN-<short-name>.md`。
 
 ## 确定性工作流
 
-1. **草案阶段**：先验证 plan 的 `task_mode: split`，再根据完整计划生成完整任务集，并为每项提供顺序、`outcome`、`blocked_by` 和 `acceptance`；此阶段不得创建、修改或删除任何 task 文件。Planning 要求合并、拆细、调整依赖或验收时，只重新生成完整草案并返回新的展示信息，不得写入文件或向用户提问。
-2. **写入阶段**：先验证 plan 的 `task_mode: split`，并必须同时收到 Planning 交接的当前完整任务草案、当前 plan 原始完整字节的 SHA-256 小写摘要，以及用户已明确确认该草案颗粒度的事实。缺少任一项时必须阻塞，不得把“选择拆分”、沉默、继续讨论或只确认收到草案视为授权。门禁满足后，校验每项 `source_plan_digest` 与实际摘要一致且待写内容与已确认草案完全一致，再一次性全量替换完整任务集，并删除同一 `tasks/` 中不属于已确认任务集的全部旧 task 文件；不得局部保留旧任务，也不得在写入时自行调整草案。替换任一步失败时保留现场并报告不可执行，不得宣称完成。
-3. **删除阶段**：仅当 plan 为 `task_mode: single` 且收到“用户已明确确认删除全部旧 tasks”的事实后进入。删除目标 `tasks/` 下全部 task 文件并移除 `tasks/` 目录本身；不得生成 task 草案或文件。缺少确认、路径异常、删除不完整、目录仍存在或存在非 task 文件时阻塞，不得降级声明单任务模式。
+1. **草案阶段**：验证 split plan 后生成含顺序、`outcome`、`blocked_by`、`acceptance` 的完整任务集；不得改 task 文件。调整时只重生成完整草案。
+2. **写入阶段**：校验 `source_plan_digest`、待写内容与已确认草案一致及颗粒度确认后全量替换 tasks；不得把 draft、模式选择、沉默或确认收到视为授权，不得保留旧任务或自行调整草案。失败保留现场。
+3. **删除阶段**：仅在 single plan 和单独确认下删除精确 `tasks_dir` 的全部 task 文件及目录；异常、残留或非 task 文件即 blocked。
 
 ## 任务契约
 

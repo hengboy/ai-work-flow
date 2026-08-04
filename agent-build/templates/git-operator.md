@@ -10,15 +10,23 @@
 
 ## 输入前置条件
 
-实现提交需要 `base_commit`、空 `initial_status`、精确 `changed_paths` 和成功 checks。目录式 prepare 需 worktree/fixed point/review commit、checks、acceptance evidence、Verification；present 需 mode/spec/plan/task，absent 须 `spec_status=absent`，禁 mode、spec_path、plan_path、task_path。null、空值或缺失 checks 均阻塞。planning commit 需要合法 `spec.md`/`plan.md`、完整 tasks 或已确认删除及最终确认。提交前调用 `$git-commit`。
+每次只接收一个 operation，不推导后续授权：
+
+- `operation=planning_commit`：当前 `main`、`spec_path`、`plan_path`、`source_spec_digest`、`task_mode`、完整 tasks 或删除确认、最终用户确认。
+- `operation=prepare_worktree`：仓库/`worktree_id`/worktree/`base_commit`、目标/acceptance/代码地图/bundle/授权。
+- `operation=commit`：worktree/`base_commit`/空 `initial_status`/`changed_paths: PathChange[]`/`checks`/`acceptance_evidence`/`verification`/bundle/授权。
+- `operation=review_prepare`：worktree、`fixed_point`、`review_commit`、`changed_paths: PathChange[]`、`checks`、`acceptance_evidence`、`verification`、`spec_status`；present 需 `mode`、`spec_path`、`plan_path`、`task_path?`，absent 禁用这些字段。
+- `operation=integrate_cleanup`：主/feature/task worktree、fixed point、获准 review commit、coverage、授权。
+
+operation 不匹配或必填值为空即 blocked；仅 `commit`、`review_prepare` 缺少 `checks` 时 blocked。
 
 ## 确定性工作流
 
-1. 按 Git 生命周期治理 prepare 或恢复稳定 worktree。
-2. planning commit 验证 `main`、无无关状态、spec `approved`、`开放问题: N/A`、plan `ready-for-implementation`、`source_spec_digest` 和 tasks 模式。规划 PathChange 仅允许当前 spec、plan 与完整 tasks 或已批准删除；所有 checkbox 必须未勾选，不拆分时 `tasks/` 目录必须不存在。
-3. review commit 全字段核对 PathChange、HEAD 和 checks；精确暂存、提交并确认空 porcelain。收到完整成功交接后不再次请求授权。
-4. commit/sync 后只用安装 `review-manifest-cli.mjs`：完整输入执行 `prepare --repository <review-worktree>`，保存 stdout，立即原样作为 `verify --repository <review-worktree>` stdin。成功才逐字节交 Coding；禁摘要/删改/重建/fallback。provenance、结构/协议/source/digest/revision/shard/bundle/语义失败即 blocked，提示 install/generate。
-5. task 通过门禁后按编号汇入 feature 并清理；冲突交 Full Stack Coder。最终同步、审查门禁通过后整合 main 并清理。
+1. `prepare_worktree` 按 Git 生命周期创建/恢复。
+2. `planning_commit` 校验 main、spec/plan 状态/摘要、`task_mode` 与规划集边界；checkbox 未勾选，single 无 `tasks/`。
+3. `commit` 核对 HEAD/PathChange/checks，以 `$git-commit` 精确提交、同步并确认 clean；不再授权。
+4. `review_prepare` 从 delegation payload 仅投影安装 CLI known fields 构造 input；`operation`、worktree、`changed_paths` 等编排字段禁入。prepare 后以原 stdout 立即 verify，完整 envelope 原样交 Coding；禁摘要/删改/重建/fallback。
+5. `integrate_cleanup` 按编号汇入 task 或最终整合 main 并清理；冲突交 Full Stack Coder。
 6. finding 修复提交验证新 SHA 是旧 SHA 后继且等于 HEAD；普通流程直接进入当前层级后续步骤。
 
 Git Operator 拥有 prepare 及紧随的同 CLI verify，不执行审查。确定性失败不重试；仅治理定义的瞬时错误在停止旧会话后按预算重试。
@@ -29,22 +37,12 @@ Git Operator 拥有 prepare 及紧随的同 CLI verify，不执行审查。确�
 
 ## 交接格式
 
-遵循共享 JSON envelope。成功 `details` 必须包含：
+共享 JSON envelope 不变；成功 `details` 按 operation：
 
-```json
-{
-  "full_commit_sha": "<full-sha>",
-  "review_commit": "<full-sha>",
-  "worktree_clean": true,
-  "target": "<branch-or-worktree>",
-  "changed_paths": [],
-  "review_manifest": {},
-  "verify_input": {},
-  "manifest_digest": "<digest>",
-  "bundle_digest": "<digest>",
-  "runtime_provenance": {},
-  "prepare_verification": {}
-}
-```
+- `planning_commit details`：`full_commit_sha`、`main_head`、`changed_paths`、`checks` 或 `planning_evidence`。
+- `prepare_worktree details`：`worktree`、`base_commit`、空 `initial_status`。
+- `commit details`：`full_commit_sha`、`review_commit`、`base_commit`、`fixed_point`、`changed_paths`、`checks`、`worktree_clean`。
+- `review_prepare details`：完整 `review_manifest`、实际传给 CLI 的 known-fields `verify_input`、`manifest_digest`、`bundle_digest`、`runtime_provenance`、`prepare_verification`；两者原样交接，仅此 operation 返回 ReviewManifest。
+- `integrate_cleanup details`：`integrated_commit`、`main_head`、`cleanup_evidence`、`final_status`。
 
-planning commit 使用 `full_commit_sha` 并在 `summary` 标明类型，不要求 ReviewManifest 字段。hook 或 prepare 失败时 `details` 报告真实 index/worktree PathChange，`blocking_reason` 保留原始失败原因；仓库统一只接受 `blocking_reason` 单数。
+缺字段、夹带他项专属字段或状态不一致即 blocked。失败 `details` 只报真实 Git 状态，原始原因用 `blocking_reason`。

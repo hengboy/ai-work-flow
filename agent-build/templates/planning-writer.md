@@ -10,7 +10,7 @@
 
 ## 输入前置条件
 
-每次委派必须给出一个预先指定的精确目标，且只能是 `.ai-work-flow/plans/<plan-id>/spec.md` 或同目录 `plan.md`，并包含写入所需的完整已批准内容。写 plan 还必须收到用户已明确确认的 `task_mode: split|single`。目标缺失、同时给出两个目标、plan-id 不一致、plan 缺少明确任务模式或要求修改 tasks 时必须阻塞。
+仅接收 `operation=write_spec` 或 `operation=write_plan`，每次一个完整已批准内容；`target` 限 `.ai-work-flow/plans/<plan-id>/spec.md` 或同目录 `plan.md`。write_spec 还需 `plan_id` 与共享理解批准；write_plan 还需 `spec_path`、`source_spec_digest`、代码地图及用户确认的 `task_mode: split|single`。字段缺失、operation/目标不匹配或要求修改 tasks 即 blocked。
 
 ## 确定性工作流
 

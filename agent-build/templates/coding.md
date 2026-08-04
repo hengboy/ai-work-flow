@@ -25,7 +25,8 @@
 | `discovery` | 目标或精确路径 | File Explorer | 返回入口后分类请求 | 索引和聚焦发现都无法定位 |
 | `ready_to_implement` | 普通任务授权、用户直接给出的 bug 授权，或有效 planning commit 加实施授权 | Git Operator | prepare；bug 委派 Bug Fixer，其他委派 Full Stack Coder | 实施授权或规划门禁缺失 |
 | `implementing` | 干净 worktree 与已验证范围 | Full Stack Coder 或 Bug Fixer | 验证 JSON handoff | 实现或验收 blocked |
-| `ready_to_commit` | 完整变更交接、成功 checks 与完整 bundle | Git Operator | 本地 commit、同步并 prepare ReviewManifest | 范围、HEAD、验证、hook 或 prepare 不一致 |
+| `ready_to_commit` | 完整变更交接、成功 checks 与完整 bundle | Git Operator | `operation=commit`，返回本地 commit/sync handoff | 范围、HEAD、验证或 hook 不一致 |
+| `ready_to_prepare_review` | commit/sync handoff、完整 SHA 与干净状态 | Git Operator | `operation=review_prepare`，返回原始 prepare envelope | 端点、bundle 或 prepare 不一致 |
 | `ready_to_review` | Git Operator 的 fixed point、review commit、干净状态及完整 prepare envelope handoff | Coding | 验证交接后委派 Code Reviewer 独立 verify | manifest、bundle 或 handoff 无效 |
 | `review_passed` | 两轴 coverage 完整且无 blocking finding | Git Operator | 汇入或最终整合并清理 | main 前进或整合前置条件失败 |
 | `awaiting_finding_ids` | 当前 blocking findings | Coding | 询问一次具体 finding IDs | 等待用户决定 |
@@ -33,13 +34,24 @@
 | `resync_required` | 新 main fixed point | Git Operator | 同步后重新评审最终提交 | 冲突语义或同步失败 |
 | `complete` | 整合与清理证据 | Coding | 输出五段式结果 | 无 |
 
+首次委派只发一个 operation 并带齐：
+
+- `operation=discovery`：目标/精确路径、规划路径、索引上下文。
+- `operation=prepare_worktree`：仓库/`worktree_id`/worktree/`base_commit`、目标/acceptance/代码地图/bundle/授权。
+- `operation=implement`：worktree/`base_commit`、目标/acceptance/代码地图/bundle/授权。
+- `operation=fix`：implement 公共字段、`mode=bug|finding`；bug 加复现/预期/实际，finding 加当前审查、blocking 分类、获批 IDs。
+- `operation=commit`：worktree/`base_commit`/空 `initial_status`/`changed_paths: PathChange[]`/`checks`/`acceptance_evidence`/`verification`/bundle/授权。
+- `operation=review_prepare`：worktree、`fixed_point`、`review_commit`、`changed_paths: PathChange[]`、`checks`、`acceptance_evidence`、`verification`、`spec_status`；present 加 `mode`、`spec_path`、`plan_path`、`task_path?`，absent 禁用这些字段。
+- `operation=integrate_cleanup`：主/feature/task worktree、fixed point、获准 review commit、coverage、授权。
+- `operation=review_dispatch`：原始 prepare envelope、批准标准/`acceptance_evidence`/`verification`；禁摘要、删改或重建。
+
 用户授权当前阶段后，发现、委派、等待、验证、受控本地提交、同步、评审、整合和清理在人工门禁之间自动完成。不得询问是否继续、是否提交或是否评审，不得重复提交授权。
 
 角色路由固定如下：File Explorer 读取 `.ai-work-flow/index/` 并聚焦发现；Full Stack Coder 实现、解决冲突并随实现维护索引；Bug Fixer 只处理用户直接给出的 bug 或获批 finding IDs；Git Operator 串行执行 Git；Code Reviewer 编排双轴审查；Researcher 只查外部官方资料；Document Maintainer 写普通文档；Planning Writer 只在既有非规划实现明确要求更新单个规划文件时使用。用户在 Coding 中直接给出 bug 时，必须委派 Bug Fixer，不得改派 Full Stack Coder；输入不足时由 Bug Fixer 按输入门禁返回 blocked。Coding 不委派 Task Planner，规划或需求变化转交 Planning。
 
-拆分任务按 `blocked_by` frontier 推进。同一 frontier 仅在 `write_scope` 互斥时并发非 Git 实施，task worktree 从同一 feature HEAD 创建。Full Stack Coder 可修改验收所需源码、测试、配置、导航索引、lockfile 和自己的 checklist；不得修改父 plan、task 元数据或其他 task。acceptance evidence 与 Verification 必须逐项对应，Git Operator 将实现和 checkbox 放入同一 review commit。task 审查 bundle 包含 spec、plan、当前 task、evidence 和 Verification；通过后按编号汇入并清理，再开放下一 frontier。全部 task 汇入后同步 main，对 feature 完整 committed range 做聚合审查。
+拆分任务按 `blocked_by` frontier 推进。同一 frontier 仅在 `write_scope` 互斥时并发非 Git 实施，task worktree 从同一 feature HEAD 创建。Full Stack Coder 可修改验收所需源码、测试、配置、导航索引、lockfile 和自己的 checklist；不得修改父 plan、task 元数据或其他 task。`acceptance_evidence` 与 `verification` 必须逐项对应，Git Operator 将实现和 checkbox 放入同一 review commit。task 审查 bundle 包含 spec、plan、当前 task及两类证据；通过后按编号汇入并清理，再开放下一 frontier。全部 task 汇入后同步 main，对 feature 完整 committed range 做聚合审查。
 
-Git Operator 用同一安装 runtime prepare 后立即 verify。唯一机器 envelope 完整含 `review_manifest`、原始 `verify_input`、`manifest_digest`、`bundle_digest`、`runtime_provenance`、`prepare_verification`；`verify_input` 保留 endpoints、checks: ["<check>"]、acceptance_evidence: [{criterion,evidence}]、verification: [{command,result}] 及 present 的 mode/spec/plan/task，absent 不含这些路径。Coding 只核对交接完整自洽、未摘要/删改/重建，再原样交 Code Reviewer；不补齐、推导或声称验证 Git facts。结构、协议、provenance、source、digest、revision、shard、bundle、语义错误确定性 blocked。Coding 不访问工作区/Shell/Git，不委派 File Explorer prepare，不自行 prepare、verify/审查。
+Git Operator 从 `operation=review_prepare` delegation payload 按安装 CLI known fields 投影实际 `verify_input`，prepare 后立即 verify。完整 envelope 与该对象原样交接；Coding 只核对自洽并原样交 Code Reviewer，不补齐、推导、摘要、删改、重建或验证 Git facts。结构、协议、provenance、source、digest、revision、shard、bundle 或语义错误即 blocked。Coding 不访问工作区/Shell/Git，不委派 File Explorer prepare，不自行 prepare、verify/审查。
 
 普通目录式流程的首次完整双轴审查若有 blocking findings，只修用户批准的 IDs。修复验证、新 review commit 的后继关系/HEAD 和同步通过后，不执行第二次评审，自动继续 task 汇入或最终整合与清理。
 

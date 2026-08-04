@@ -48,6 +48,45 @@ function assertPromptLayout(source, name, { replyFormat = true } = {}) {
   assert.doesNotMatch(prose, /^#{1,3} [^\n]+\n(?!\n)/m, `${name} headings need a following blank line`);
 }
 
+function promptSection(source, heading) {
+  const marker = `## ${heading}\n\n`;
+  const start = source.indexOf(marker);
+  assert.ok(start >= 0, `missing section: ${heading}`);
+  const bodyStart = start + marker.length;
+  const end = source.indexOf('\n## ', bodyStart);
+  return source.slice(bodyStart, end < 0 ? source.length : end);
+}
+
+function operationLine(source, operation) {
+  const token = `\`operation=${operation}\``;
+  const matches = source.split('\n').filter((line) => line.startsWith('- ') && line.includes(token));
+  assert.equal(matches.length, 1, `${operation} needs one scoped contract line`);
+  return matches[0];
+}
+
+function detailsLine(source, operation) {
+  const token = `\`${operation} details\``;
+  const matches = source.split('\n').filter((line) => line.startsWith('- ') && line.includes(token));
+  assert.equal(matches.length, 1, `${operation} needs one details contract line`);
+  return matches[0];
+}
+
+function removeMarkerFromContractLine(source, token, marker) {
+  const lines = source.split('\n');
+  const indexes = lines.flatMap((line, index) => line.includes(token) ? [index] : []);
+  assert.equal(indexes.length, 1, `${token} needs one contract line`);
+  assert.ok(lines[indexes[0]].includes(marker), `${token} line needs ${marker}`);
+  lines[indexes[0]] = lines[indexes[0]].replace(marker, 'removed-contract-marker');
+  return lines.join('\n');
+}
+
+function runtimeReviewInputFields() {
+  const source = readFileSync(resolve(root, 'execution-runtime/lib/directory-review-manifest.mjs'), 'utf8');
+  const declaration = source.match(/const REVIEW_INPUT_FIELDS = \[([\s\S]*?)\n\];/)?.[1];
+  assert.ok(declaration, 'runtime REVIEW_INPUT_FIELDS declaration');
+  return [...declaration.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+}
+
 function codexDeveloperInstructions(source) {
   const encoded = source.match(/^developer_instructions = (.+)$/m)?.[1];
   assert.ok(encoded, 'Codex agent needs developer instructions');
@@ -269,7 +308,9 @@ test('compiled governance is scoped to each role concern', () => {
   assert.match(assets.routing, /section id="planning-governance"/);
   assert.doesNotMatch(assets.routing, /Policy 与能力边界|^## 回复格式$/m);
   const totalCompiledLength = [...compiled.values()].reduce((total, prompt) => total + prompt.length, 0);
-  assert.ok(totalCompiledLength <= 53_000, `compiled prompts should stay focused, got ${totalCompiledLength} characters`);
+  assert.match(readFileSync(resolve(root, 'agent-build/runtime/asset-catalog.mjs'), 'utf8'), /MAX_COMPILED_PROMPT_LENGTH = 57_000/);
+  assert.ok(totalCompiledLength <= 55_500, `compiled prompt work budget exceeded: ${totalCompiledLength}`);
+  assert.ok(totalCompiledLength <= 55_000, `compiled prompt target exceeded: ${totalCompiledLength}`);
 });
 
 test('coding has one deterministic transition for every implementation state', () => {
@@ -277,7 +318,7 @@ test('coding has one deterministic transition for every implementation state', (
   const rows = [...coding.matchAll(/^\| `([^`]+)` \| ([^|]+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$/gm)]
     .map((match) => ({ state: match[1], input: match[2].trim(), role: match[3].trim(), next: match[4].trim(), pause: match[5].trim() }));
   const expectedStates = [
-    'discovery', 'ready_to_implement', 'implementing', 'ready_to_commit', 'ready_to_review',
+    'discovery', 'ready_to_implement', 'implementing', 'ready_to_commit', 'ready_to_prepare_review', 'ready_to_review',
     'review_passed', 'awaiting_finding_ids', 'fixing_findings', 'resync_required', 'complete'
   ];
   assert.deepEqual(rows.map((row) => row.state), expectedStates);
@@ -291,6 +332,118 @@ test('coding has one deterministic transition for every implementation state', (
   assert.match(coding, /发现、委派、等待、验证、受控本地提交、同步、评审、整合和清理.*自动完成/s);
   assert.match(coding, /不得询问是否继续、是否提交或是否评审/);
   assert.doesNotMatch(coding, /请问是否继续|请问是否提交|请问是否评审/);
+  assert.match(rows.find((row) => row.state === 'ready_to_commit').next, /operation=commit/);
+  assert.match(rows.find((row) => row.state === 'ready_to_prepare_review').next, /operation=review_prepare/);
+});
+
+test('first delegation payload contracts are complete and operation scoped', () => {
+  const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
+  const planning = readFileSync(resolve(templatesDir, 'planning.md'), 'utf8');
+  const coding = readFileSync(resolve(templatesDir, 'coding.md'), 'utf8');
+  const taskPlanner = readFileSync(resolve(templatesDir, 'task-planner.md'), 'utf8');
+  const gitOperator = readFileSync(resolve(templatesDir, 'git-operator.md'), 'utf8');
+  const codeReviewer = readFileSync(resolve(templatesDir, 'code-reviewer.md'), 'utf8');
+
+  const routingMarkers = [
+    /`caller\/receiver\/operation` 契约边首次带齐工件\/摘要\/授权\/证据/,
+    /缺用户决定暂停/,
+    /禁 `blocked` 探测\/补料/
+  ];
+  for (const marker of routingMarkers) assert.match(routing, marker, `routing: ${marker}`);
+
+  for (const [operation, fields] of Object.entries({
+    write_spec: ['`target`', '`plan_id`', '完整已批准内容', '共享理解批准', '代码地图'],
+    write_plan: ['`target`', '完整内容', '`spec_path`', '`source_spec_digest`', '代码地图', '`task_mode`'],
+    draft: ['`task_mode=split`', '`spec_path`/`plan_path`', '原始字节 digest', '代码地图'],
+    write: ['draft 全部输入', '完整当前草案', '用户颗粒度确认'],
+    delete: ['`task_mode=single`', '`tasks_dir`', '单独删除确认'],
+    planning_commit: ['当前 `main`', '`spec_path`', '`plan_path`', '`source_spec_digest`', '`task_mode`', '完整 tasks 或删除确认', '最终用户确认']
+  })) {
+    const line = operationLine(planning, operation);
+    for (const field of fields) assert.ok(line.includes(field), `planning/${operation}: ${field}`);
+  }
+
+  for (const [operation, fields] of Object.entries({
+    discovery: ['目标/精确路径', '规划路径', '索引上下文'],
+    prepare_worktree: ['`worktree_id`', '`base_commit`', 'acceptance', '代码地图', '授权'],
+    implement: ['worktree', '`base_commit`', 'acceptance', '代码地图', '授权'],
+    fix: ['`mode=bug|finding`', '复现/预期/实际', 'blocking 分类', '获批 IDs'],
+    commit: ['`initial_status`', '`changed_paths: PathChange[]`', '`checks`', '`acceptance_evidence`', '`verification`', '授权'],
+    review_prepare: ['`fixed_point`', '`review_commit`', '`changed_paths: PathChange[]`', '`checks`', '`acceptance_evidence`', '`verification`', '`spec_status`', '`spec_path`', '`plan_path`', '`task_path?`'],
+    integrate_cleanup: ['主/feature/task worktree', 'fixed point', 'review commit', 'coverage', '授权'],
+    review_dispatch: ['原始 prepare envelope', '批准标准', '`acceptance_evidence`', '`verification`']
+  })) {
+    const line = operationLine(coding, operation);
+    for (const field of fields) assert.ok(line.includes(field), `coding/${operation}: ${field}`);
+  }
+
+  for (const [operation, fields] of Object.entries({
+    draft: ['`spec.md`/`plan.md` 路径', '原始字节 digest', '代码地图', '`task_mode=split`'],
+    write: ['draft 输入', '完整当前草案', '用户颗粒度确认'],
+    delete: ['`task_mode=single`', '`tasks_dir`', '单独删除确认']
+  })) {
+    const line = operationLine(taskPlanner, operation);
+    for (const field of fields) assert.ok(line.includes(field), `task-planner/${operation}: ${field}`);
+  }
+
+  const gitOperations = ['planning_commit', 'prepare_worktree', 'commit', 'review_prepare', 'integrate_cleanup'];
+  for (const operation of gitOperations) {
+    const line = operationLine(gitOperator, operation);
+    assert.match(gitOperator, new RegExp(`\\d+\\. \`${operation}\``), `git-operator/${operation}: workflow`);
+    if (['commit', 'review_prepare'].includes(operation)) assert.match(line, /`checks`/);
+    else assert.doesNotMatch(line, /`checks`/);
+  }
+  assert.match(gitOperator, /仅 `commit`、`review_prepare` 缺少 `checks` 时 blocked/);
+  for (const field of ['`changed_paths: PathChange[]`', '`acceptance_evidence`', '`verification`', '`spec_status`', '`mode`', '`spec_path`', '`plan_path`', '`task_path?`']) {
+    assert.ok(operationLine(gitOperator, 'review_prepare').includes(field), `git-operator/review_prepare: ${field}`);
+  }
+
+  const reviewerInput = promptSection(codeReviewer, '输入前置条件');
+  for (const field of ['`operation=review_dispatch`', '`review_manifest`', '`verify_input`', '`fixed_point`', '`review_commit`', '`changed_paths`', '`acceptance_evidence`', '`verification`']) {
+    assert.ok(reviewerInput.includes(field), `code-reviewer/input: ${field}`);
+  }
+  assert.match(promptSection(codeReviewer, '确定性工作流'), /不可变公共 payload.*同一 `review_manifest`、`verify_input`.*`acceptance_evidence`、`verification`.*禁重建/s);
+  assert.match(promptSection(codeReviewer, '确定性工作流'), /`operation=review_standards` 仅加 Standards brief.*`operation=review_spec` 仅加 Spec brief/s);
+
+  const gitDetails = {
+    planning_commit: ['`full_commit_sha`', '`main_head`', '`changed_paths`', '`checks`', '`planning_evidence`'],
+    prepare_worktree: ['`worktree`', '`base_commit`', '`initial_status`'],
+    commit: ['`full_commit_sha`', '`review_commit`', '`base_commit`', '`fixed_point`', '`changed_paths`', '`checks`', '`worktree_clean`'],
+    review_prepare: ['`review_manifest`', '`verify_input`', '`manifest_digest`', '`bundle_digest`', '`runtime_provenance`', '`prepare_verification`'],
+    integrate_cleanup: ['`integrated_commit`', '`main_head`', '`cleanup_evidence`', '`final_status`']
+  };
+  for (const [operation, fields] of Object.entries(gitDetails)) {
+    const line = detailsLine(gitOperator, operation);
+    for (const field of fields) assert.ok(line.includes(field), `git-operator/${operation} details: ${field}`);
+  }
+  assert.match(detailsLine(gitOperator, 'review_prepare'), /仅此 operation 返回 ReviewManifest/);
+  for (const operation of ['planning_commit', 'prepare_worktree', 'commit', 'integrate_cleanup']) {
+    assert.doesNotMatch(detailsLine(gitOperator, operation), /review_manifest|verify_input|manifest_digest|prepare_verification/);
+  }
+
+  assert.match(routing, /`operation=commit` 成功后 `details` 含完整 `full_commit_sha`/);
+  assert.match(promptSection(gitOperator, '确定性工作流'), /delegation payload 仅投影安装 CLI known fields.*`operation`、worktree、`changed_paths` 等编排字段禁入/s);
+  assert.match(detailsLine(gitOperator, 'review_prepare'), /实际传给 CLI 的 known-fields `verify_input`.*原样交接/);
+  assert.match(coding, /delegation payload 按安装 CLI known fields 投影实际 `verify_input`/);
+  assert.doesNotMatch(coding, /`verify_input` 精确遵循 `operation=review_prepare`/);
+  const reviewInputFields = runtimeReviewInputFields();
+  for (const field of ['operation', 'worktree', 'changed_paths']) assert.ok(!reviewInputFields.includes(field), `runtime verify_input excludes ${field}`);
+  const delegationPayload = Object.fromEntries([...reviewInputFields, 'operation', 'worktree', 'changed_paths'].map((field) => [field, field]));
+  const verifyInput = Object.fromEntries(Object.entries(delegationPayload).filter(([field]) => reviewInputFields.includes(field)));
+  assert.deepEqual(Object.keys(verifyInput), reviewInputFields);
+
+  const receiverContracts = {
+    'file-explorer': ['`operation=discovery`', '目标/问题/精确路径', '代码地图', '缺失即 blocked'],
+    'planning-writer': ['`operation=write_spec`', '`operation=write_plan`', '`target`', '`spec_path`', '`source_spec_digest`', '字段缺失'],
+    'full-stack-coder': ['`operation=implement`', '`base_commit`', 'acceptance', '代码地图', '实施授权', '`spec_path`', '`plan_path`'],
+    'bug-fixer': ['`operation=fix`', '`mode=bug|finding`', '`base_commit`', '复现/预期/实际', '获批 IDs', '`spec_path`'],
+    'review-standards': ['`operation=review_standards`', '不可变公共 payload', '缺失即 blocked'],
+    'review-spec': ['`operation=review_spec`', '`spec_status=present`', '`acceptance_evidence`', '`verification`', '缺失即 blocked']
+  };
+  for (const [role, fields] of Object.entries(receiverContracts)) {
+    const input = promptSection(readFileSync(resolve(templatesDir, `${role}.md`), 'utf8'), '输入前置条件');
+    for (const field of fields) assert.ok(input.includes(field), `${role}/input: ${field}`);
+  }
 });
 
 test('subagents return one JSON handoff envelope with role-specific details', () => {
@@ -389,16 +542,16 @@ test('routing defines automatic scoped local commits after confirmed implementat
 
   const sharedAssertions = [
     /确认方案或要求实施即授权当前实现阶段创建仅本地 review commit/,
-    /不需要首次暂存前再次授权/,
+    /不含 push、amend、reset、clean、stash/,
     /base_commit/,
     /`changed_paths: PathChange\[\]`/,
     /porcelain v2 `-z`/,
-    /PathChange 全字段/,
-    /同步、提交或验证失败时不启动审查/
+    /PathChange 与验证/,
+    /`operation=commit` 成功后.*失败不启动审查/
   ];
 
   assert.match(gitOperator, /\$git-commit/);
-  assert.match(compiled.get('git-operator'), /不再次请求授权/);
+  assert.match(compiled.get('git-operator'), /不再授权/);
   for (const body of [gitOperator, coding]) {
     assert.doesNotMatch(body, /首次范围检查/);
     assert.doesNotMatch(body, /一次性白名单/);
@@ -410,7 +563,7 @@ test('routing defines automatic scoped local commits after confirmed implementat
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generatedOperator = readFileSync(agentPath(paths, platform, 'git-operator', extension), 'utf8');
     const generatedCoding = readFileSync(agentPath(paths, platform, 'coding', extension), 'utf8');
-    assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedOperator) : generatedBody(paths, platform, 'git-operator', extension), /不再次请求授权/, platform);
+    assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedOperator) : generatedBody(paths, platform, 'git-operator', extension), /不再授权/, platform);
     assert.match(platform === 'codex' ? codexDeveloperInstructions(generatedCoding) : generatedBody(paths, platform, 'coding', extension), /普通目录式流程为/, platform);
   }
 });
@@ -430,7 +583,7 @@ test('implementation commits precede the committed-range dual-axis review', () =
   ];
 
   assert.match(routing, /Full Stack Coder.*Git Operator.*Code Reviewer[\s\S]*Review Standards.*Review Spec/);
-  assert.match(routing, /同步、提交或验证失败时不启动审查/);
+  assert.match(routing, /`operation=commit` 成功后.*失败不启动审查/);
   for (const assertion of requiredScopeContract) assert.match(routing, assertion);
   for (const assertion of requiredScopeContract.slice(0, 5)) assert.match(loadAgentAssets().compiledBodies.get('full-stack-coder'), assertion);
   assert.match(loadAgentAssets().compiledBodies.get('git-operator'), /参数数组与 `--` 暂存/);
@@ -457,7 +610,7 @@ test('generated implementation and review roles preserve their scoped contracts'
 
   const implementationAssertions = [
     /Git Operator prepare -> Full Stack Coder -> Git Operator commit\/sync\/prepare\+verify -> Coding 验证原样交接 -> Code Reviewer independent verify -> Review Standards \+ Review Spec/,
-    /不需要首次暂存前再次授权/,
+    /确认方案或要求实施即授权当前实现阶段创建仅本地 review commit/,
     /base_commit/
   ];
   const reviewAssertions = [
@@ -468,7 +621,7 @@ test('generated implementation and review roles preserve their scoped contracts'
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const coding = generatedBody(paths, platform, 'coding', extension);
     const reviewer = generatedBody(paths, platform, 'code-reviewer', extension);
-    assert.match(coding, /absent 不含这些路径/, `${platform}/coding`);
+    assert.match(coding, /absent 禁用这些字段/, `${platform}/coding`);
     for (const assertion of implementationAssertions) assert.match(coding, assertion, `${platform}/coding`);
     for (const assertion of reviewAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
   }
@@ -485,7 +638,7 @@ test('completed review findings keep blocking items and advice in separate user-
 
   assert.match(reviewerSource, /blocking_findings/);
   assert.match(reviewerSource, /advisory_findings/);
-  assert.match(reviewerSource, /Standards、Spec 来源顺序/);
+  assert.match(reviewerSource, /按 Standards、Spec 顺序保留 findings/);
   assert.match(codingSource, /\*\*阻塞项：\*\*/);
   assert.match(codingSource, /\*\*建议：\*\*/);
   assert.match(codingSource, /保留 Standards、Spec 原顺序/);
@@ -680,14 +833,14 @@ test('generated roles preserve the one-envelope prepare verify handoff and seman
     const operator = generatedBody(paths, platform, 'git-operator', extension);
     const coding = generatedBody(paths, platform, 'coding', extension);
     const reviewer = generatedBody(paths, platform, 'code-reviewer', extension);
-    assert.match(operator, /保存 stdout.*verify --repository <review-worktree>/s, platform);
+    assert.match(operator, /仅投影安装 CLI known fields.*原 stdout 立即 verify/s, platform);
     assert.match(operator, /禁摘要\/删改\/重建\/fallback/, platform);
-    assert.match(coding, /唯一机器 envelope.*runtime_provenance.*prepare_verification/s, platform);
-    assert.match(coding, /只核对交接完整自洽.*原样交 Code Reviewer/s, platform);
+    assert.match(coding, /完整 envelope 与该对象原样交接/s, platform);
+    assert.match(coding, /Coding 只核对自洽并原样交 Code Reviewer/s, platform);
     assert.match(reviewer, /逐项对应用户需求\/批准标准.*acceptance_evidence.*verification/s, platform);
     assert.match(reviewer, /“CLI 能运行”等无关证据.*blocking_reason/s, platform);
-    assert.match(reviewer, /结构\/协议\/provenance.*语义失败不重试/s, platform);
-    assert.match(reviewer, /瞬时错误.*停止旧会话后重试/s, platform);
+    assert.match(reviewer, /结构、协议、provenance.*语义失败不重试/s, platform);
+    assert.match(reviewer, /瞬时错误按治理重试/, platform);
   }
 });
 
@@ -1125,12 +1278,12 @@ test('project navigation is a managed global skill and stores indexes in the pro
   assert.match(skill, /不得执行全局文件检索/);
   assert.match(skill, /同一轮改动中更新对应索引/);
   assert.match(skill, /新功能缺少导航索引视为未完成/);
-  assert.match(explorer, /索引命中时直接验证记录路径，不扩大搜索/);
+  assert.match(explorer, /先读 `\.ai-work-flow\/index\/`，命中时只验证记录路径/);
   assert.match(coder, /新功能缺少索引视为未完成/);
   assert.match(routing, /所有文件检索、未知路径定位和代码导航索引读取必须交由 File Explorer 执行/);
   assert.equal(readFileSync(resolve(paths.config, 'ai-work-flow/routing.md'), 'utf8'), routing);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
-    assert.match(generatedBody(paths, platform, 'file-explorer', extension), /索引命中时直接验证记录路径/);
+    assert.match(generatedBody(paths, platform, 'file-explorer', extension), /命中时只验证记录路径/);
     assert.match(generatedBody(paths, platform, 'full-stack-coder', extension), /同步更新 `\.ai-work-flow\/index\/`/);
   }
 });
@@ -1172,13 +1325,12 @@ test('full stack coder delegates unknown file discovery to file explorer', () =>
   assert.ok(!coderRole.tools.includes('Glob'));
   assert.ok(!coderRole.tools.includes('Grep'));
   assert.equal(policies[coderRole.policy].delegation, 'allowed');
-  assert.match(coder, /未知路径先委派 File Explorer/);
-  assert.match(coder, /先读 `\.ai-work-flow\/index\/`.*聚焦发现/s);
-  assert.match(coder, /返回入口与直接依赖/);
+  assert.match(coder, /未知路径按 File Explorer discovery 门禁委派/);
+  assert.match(promptSection(coder, '输入前置条件'), /`operation=implement`.*代码地图.*缺失即 blocked/s);
   assert.match(coder, /只读取上游精确路径、File Explorer 返回路径及直接依赖/);
 
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
-    assert.match(generatedBody(paths, platform, 'full-stack-coder', extension), /未知路径先委派 File Explorer/, platform);
+    assert.match(generatedBody(paths, platform, 'full-stack-coder', extension), /未知路径按 File Explorer discovery 门禁委派/, platform);
   }
 
   const claude = parseFrontmatter(readFileSync(agentPath(paths, 'claude', 'full-stack-coder', 'md'), 'utf8'));
@@ -1212,8 +1364,8 @@ test('bug fixer is a narrowly governed coding subagent on every platform', () =>
     claude: { model: 'sonnet', effort: 'high' },
     opencode: { model: 'baibai/gpt-5.6-luna', variant: 'max', options: {} }
   });
-  assert.match(body, /bug 必须有复现方式、预期和实际行为/);
-  assert.match(body, /当前审查结果、blocking 分类和获批 IDs/);
+  assert.match(body, /`operation=fix`.*`mode=bug\|finding`/s);
+  assert.match(body, /bug 需复现\/预期\/实际.*finding 需当前审查、blocking 分类、获批 IDs/s);
   assert.match(compiled, /Bug Fixer 只修复用户直接给出的 bug 或获批 blocking finding IDs/);
   assert.match(body, /未知路径委派 File Explorer/);
   assert.match(body, /Git Operator 执行/);
@@ -1386,7 +1538,7 @@ test('coding rejects legacy flat and plan-only planning artifacts', () => {
 test('coding validates non-empty checkbox acceptance criteria before split execution', () => {
   const prompt = loadAgentAssets().compiledBodies.get('coding');
   assert.match(prompt, /空 `验收标准`.*没有 `- \[ \]`\/`- \[x\]` checklist.*阻塞/s);
-  assert.match(prompt, /acceptance evidence 与 Verification.*逐项对应/s);
+  assert.match(prompt, /`acceptance_evidence` 与 `verification`.*逐项对应/s);
 });
 
 test('coding stops implementation when an approved plan needs to change', () => {
@@ -1397,7 +1549,7 @@ test('coding stops implementation when an approved plan needs to change', () => 
 
 test('git operator rejects completed checkboxes from a planning commit', () => {
   const prompt = loadAgentAssets().compiledBodies.get('git-operator');
-  assert.match(prompt, /planning commit.*所有 checkbox 必须未勾选/s);
+  assert.match(prompt, /`planning_commit`.*checkbox 未勾选/s);
 });
 
 test('planning writer catalog and prompt describe one exact spec or plan target', () => {
@@ -1405,7 +1557,7 @@ test('planning writer catalog and prompt describe one exact spec or plan target'
   const prompt = loadAgentAssets().compiledBodies.get('planning-writer');
   assert.equal(role.description, '单次只负责完整写入一个目录式规格或实施计划。');
   assert.match(prompt, /一次只写一个指定的 spec 或 plan/);
-  assert.match(prompt, /目标缺失、同时给出两个目标.*必须阻塞/);
+  assert.match(promptSection(prompt, '输入前置条件'), /字段缺失、operation\/目标不匹配.*blocked/);
   assert.doesNotMatch(role.description, /ADR|交接|跟踪器/);
 });
 
@@ -1489,15 +1641,15 @@ test('spec-first validation and task replacement contracts reject partial state'
   }
   assert.match(writer, /不得包含文件改动清单、实施步骤、技术方案或任务拆分/);
   assert.match(coding, /摘要错误一律拒绝/);
-  assert.match(taskPlanner, /一次性全量替换完整任务集/);
-  assert.match(taskPlanner, /不得局部保留旧任务/);
-  assert.match(taskPlanner, /明确确认删除全部旧 tasks/);
-  assert.match(taskPlanner, /删除不完整.*不得降级声明单任务模式/s);
+  assert.match(taskPlanner, /全量替换 tasks/);
+  assert.match(taskPlanner, /不得保留旧任务/);
+  assert.match(operationLine(taskPlanner, 'delete'), /`task_mode=single`.*单独删除确认/);
+  assert.match(taskPlanner, /删除阶段.*异常、残留或非 task 文件即 blocked/s);
   assert.match(planning, /Planning 校验摘要.*`task_mode`/s);
   assert.match(fileExplorer, /`task_mode` 精确为 `split` 或 `single`.*Planning 交接的已确认模式一致/s);
-  assert.match(writer, /写 plan 还必须收到用户已明确确认的 `task_mode: split\|single`/);
+  assert.match(promptSection(writer, '输入前置条件'), /write_plan.*用户确认的 `task_mode: split\|single`/);
   assert.match(taskPlanner, /草案或写入只接受 `task_mode: split`/);
-  assert.match(taskPlanner, /`task_mode: single`.*不得生成草案或 task 文件/s);
+  assert.match(taskPlanner, /`single` 不得生成草案或 task 文件/);
 });
 
 test('researcher stores Markdown reports in a narrow project research directory', () => {
@@ -1638,19 +1790,19 @@ test('planning confirms plan splitting and commits only final planning artifacts
   assert.match(planning, /不得自动进入实施/);
 
   assert.match(planningWriter, /\.ai-work-flow\/plans\/<plan-id>\/spec\.md.*同目录 `plan\.md`/s);
-  assert.match(planningWriter, /预先指定的精确目标/);
+  assert.match(planningWriter, /`target` 限 `\.ai-work-flow\/plans\/<plan-id>\/spec\.md` 或同目录 `plan\.md`/);
   assert.match(planningWriter, /写 spec 时不创建或修改 plan\/tasks.*写 plan 时不创建或修改 spec\/tasks/s);
   assert.match(planningWriter, /ready-for-implementation/);
-  assert.match(planningWriter, /plan 缺少明确任务模式.*必须阻塞/s);
+  assert.match(promptSection(planningWriter, '输入前置条件'), /write_plan.*`task_mode: split\|single`.*字段缺失.*blocked/s);
   assert.match(taskPlanner, /spec\.md.*plan\.md.*File Explorer.*代码地图/s);
   assert.match(compiledTaskPlanner, /只维护当前 plan 的 `tasks\/NN-\*\.md`/);
-  assert.match(taskPlanner, /草案阶段.*不得创建、修改或删除任何 task 文件/s);
-  assert.match(taskPlanner, /写入阶段.*完整任务草案.*用户已明确确认.*颗粒度/s);
-  assert.match(taskPlanner, /校验每项 `source_plan_digest`.*待写内容与已确认草案完全一致/s);
-  assert.match(taskPlanner, /删除阶段.*删除目标 `tasks\/` 下全部 task 文件并移除 `tasks\/` 目录本身.*目录仍存在.*阻塞/s);
-  assert.match(taskPlanner, /草案阶段.*`task_mode: split`/s);
-  assert.match(taskPlanner, /删除阶段.*`task_mode: single`/s);
-  assert.match(gitOperator, /不拆分时 `tasks\/` 目录必须不存在/);
+  assert.match(taskPlanner, /草案阶段.*不得改 task 文件/s);
+  assert.match(operationLine(taskPlanner, 'write'), /完整当前草案.*用户颗粒度确认/);
+  assert.match(taskPlanner, /写入阶段.*`source_plan_digest`.*待写内容与已确认草案一致.*全量替换/s);
+  assert.match(taskPlanner, /删除阶段.*`tasks_dir`.*异常、残留或非 task 文件即 blocked/s);
+  assert.match(operationLine(taskPlanner, 'draft'), /`task_mode=split`/);
+  assert.match(operationLine(taskPlanner, 'delete'), /`task_mode=single`/);
+  assert.match(gitOperator, /`planning_commit`.*single 无 `tasks\/`/s);
   assert.match(taskPlanner, /默认采用较粗颗粒度并优先减少 task 数量/);
 });
 
@@ -1681,7 +1833,7 @@ test('task planner emits a deterministic dependency-safe task artifact contract'
   assert.match(body, /expand.*migrate.*contract/s);
   assert.match(body, /source_plan: `\.\.\/plan\.md`/);
   assert.match(body, /`source_plan_digest`.*完整字节.*SHA-256/s);
-  assert.match(body, /`tasks\/`.*只包含.*`NN-<short-name>\.md`/s);
+  assert.match(body, /`tasks\/`.*只含.*`NN-<short-name>\.md`/s);
   assert.match(compiled, /只维护当前 plan 的 `tasks\/NN-\*\.md`，不修改其他内容或 Git 状态/);
   assert.doesNotMatch(body, /^- plan_id:/m);
   assert.doesNotMatch(body, /^- plan_digest:/m);
@@ -1713,7 +1865,7 @@ test('coding executes single or split plans through validated task frontiers', (
     /`blocked_by` frontier/,
     /同一 frontier.*`write_scope` 互斥/s,
     /task worktree 从同一 feature HEAD 创建/,
-    /acceptance evidence 与 Verification.*逐项对应/s,
+    /`acceptance_evidence` 与 `verification`.*逐项对应/s,
     /同一 review commit/,
     /通过后按编号汇入并清理.*下一 frontier/s,
     /完整 committed range.*聚合审查/s,
@@ -1731,14 +1883,14 @@ test('implementation roles preserve planning and task commit boundaries', () => 
   const routing = readFileSync(resolve(configDir, 'routing.md'), 'utf8');
   const compiled = loadAgentAssets().compiledBodies;
 
-  assert.match(coder, /task 的 `write_scope` 是非穷举并发提示，不是授权边界/);
+  assert.match(coder, /`write_scope` 不是授权边界/);
   assert.match(coder, /task 模式可修改必要源码、测试、配置、lockfile、索引和自己的 checkbox/);
   assert.match(compiled.get('full-stack-coder'), /不得修改已批准规划工件或其他 task/);
-  assert.match(coder, /acceptance evidence 与 Verification/);
+  assert.match(coder, /`acceptance_evidence` 与 `verification`/);
 
-  assert.match(operator, /planning commit.*`spec\.md`\/`plan\.md`/s);
-  assert.match(operator, /规划 PathChange 仅允许当前 spec、plan 与完整 tasks/);
-  assert.match(operator, /task.*按编号汇入 feature/s);
+  assert.match(operationLine(operator, 'planning_commit'), /`spec_path`.*`plan_path`.*`task_mode`/);
+  assert.match(operator, /`planning_commit`.*规划集边界/s);
+  assert.match(operator, /`integrate_cleanup`.*按编号汇入 task/s);
   assert.match(operator, /串行执行/);
   assert.match(compiled.get('git-operator'), /禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑/);
 
@@ -1877,18 +2029,19 @@ test('structured dual-axis review controls the final integration gate', () => {
   for (const content of [coding, fixer, operator]) {
     for (const pattern of removedBranchPatterns) assert.doesNotMatch(content, pattern);
   }
-  assert.match(coding, /Git Operator.*安装 runtime prepare 后立即 verify/s);
-  assert.match(coding, /Coding 只核对交接完整自洽.*再原样交 Code Reviewer/s);
-  assert.match(coding, /唯一机器 envelope.*原始 `verify_input`/s);
-  assert.match(coding, /Coding 只核对交接完整自洽.*再原样交 Code Reviewer.*不补齐、推导/s);
+  assert.match(coding, /Git Operator.*delegation payload 按安装 CLI known fields 投影实际 `verify_input`.*prepare 后立即 verify/s);
+  assert.match(coding, /完整 envelope 与该对象原样交接/s);
+  assert.match(coding, /Coding 只核对自洽并原样交 Code Reviewer.*不补齐、推导/s);
   assert.match(coding, /不委派 File Explorer prepare/);
-  assert.match(coding, /checks: \["<check>"\].*acceptance_evidence.*criterion.*evidence.*verification.*command.*result/s);
+  for (const field of ['`checks`', '`acceptance_evidence`', '`verification`', '`spec_status`', '`spec_path`', '`plan_path`']) {
+    assert.ok(operationLine(coding, 'review_prepare').includes(field), field);
+  }
   assert.match(compiled.get('git-operator'), /review_manifest.*verify_input.*manifest_digest.*bundle_digest/s);
-  assert.match(compiled.get('git-operator'), /保存 stdout.*verify --repository <review-worktree>/s);
-  assert.match(compiled.get('git-operator'), /review-manifest-cli\.mjs.*prepare --repository <review-worktree>/s);
-  assert.match(compiled.get('git-operator'), /null、空值或缺失 checks 均阻塞/);
+  assert.match(compiled.get('git-operator'), /仅投影安装 CLI known fields.*原 stdout 立即 verify/s);
+  assert.match(compiled.get('git-operator'), /`review_prepare details`.*完整 `review_manifest`、实际传给 CLI 的 known-fields `verify_input`/s);
+  assert.match(compiled.get('git-operator'), /仅 `commit`、`review_prepare` 缺少 `checks` 时 blocked/);
   assert.match(compiled.get('git-operator'), /拥有 prepare 及紧随的同 CLI verify/);
-  assert.match(compiled.get('coding'), /absent 不含这些路径/);
+  assert.match(compiled.get('coding'), /absent 禁用这些字段/);
   assert.match(compiled.get('file-explorer'), /不得 prepare、verify、构造、修改或转交 ReviewManifest envelope/);
   assert.doesNotMatch(compiled.get('file-explorer'), /null、空字符串、空对象或缺失 checks/);
 });
@@ -1913,24 +2066,24 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
     const compiled = compiledBodies.get(role);
     assert.ok(compiled.includes('git diff <fixed-point>...<review-commit>'));
     assert.ok(compiled.includes('git log <fixed-point>..<review-commit> --oneline'));
-    assert.match(body, /ReviewManifest/);
+    assert.match(body, /ReviewManifest|`review_manifest`/);
     assert.match(compiled, /每项 finding 引用 ReviewManifest shard ID/);
     assert.match(compiled, /上下文只使用 `git show <review-commit>:<path>`/);
     assert.match(compiled, /不得从 committed diff 外新增 finding/);
   }
-  assert.match(routing, /两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest\/digest、原始 verify input/);
+  assert.match(routing, /两叶子接收完全相同的 SHA、diff、commit list、来源、shards、`review_manifest`\/digest、原始 `verify_input`/);
   assert.match(routing, /禁止用无参数 `git diff`、`git diff --cached` 或工作树文件读取命令取证/);
   assert.match(routing, /审查 worktree 的 `HEAD` 等于 review commit 且工作树干净/);
-  assert.match(routing, /输入 range、commit list 或 changed paths 与 ReviewManifest 不一致时阻塞/);
+  assert.match(routing, /输入 range、commit list 或 `changed_paths` 与 ReviewManifest 不一致时阻塞/);
   assert.match(routing, /每项 finding 引用 ReviewManifest shard ID 和 `git diff --no-ext-diff <fixed-point>\.\.\.<review-commit> -- <paths>` hunk/);
   assert.match(routing, /上下文只使用 `git show <review-commit>:<path>`/);
   assert.match(routing, /不得从 committed diff 外新增 finding/);
-  assert.match(bodies['code-reviewer'], /不合并、不跨轴重排/);
+  assert.match(bodies['code-reviewer'], /不合并、跨轴重排或新增/);
   assert.match(compiledBodies.get('code-reviewer'), /审查角色只读，不编辑、不执行 Git mutation/);
   assert.match(compiledBodies.get('code-reviewer'), /只根据不可变 ReviewManifest 调度/);
   assert.match(compiledBodies.get('code-reviewer'), /新会话重试一次/);
   assert.match(compiledBodies.get('code-reviewer'), /manifest、digest、SHA、shards 和来源均不变/);
-  assert.match(bodies['code-reviewer'], /prepare envelope 原样传.*review-manifest-cli\.mjs verify/s);
+  assert.match(bodies['code-reviewer'], /原 envelope 传安装 `review-manifest-cli\.mjs verify`/);
   assert.match(compiledBodies.get('code-reviewer'), /仍阻塞即报告用户/);
   assert.doesNotMatch(bodies['code-reviewer'], /git rev-parse/);
   assert.doesNotMatch(bodies['code-reviewer'], /\$code-review|已安装时|未安装时|Matt/);
@@ -1944,7 +2097,7 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
   assert.equal(result.status, 0, result.stderr);
   for (const [platform, extension] of [['codex', 'toml'], ['claude', 'md'], ['opencode', 'md']]) {
     const generatedOperator = generatedBody(paths, platform, 'git-operator', extension);
-    assert.match(generatedOperator, /blocking finding 修复提交必须不同于且后继于首次被拒的 review commit，并等于 feature\/task HEAD/, platform);
+    assert.match(generatedOperator, /finding 修复提交须不同且后继于被拒 commit，并等于 feature\/task HEAD/, platform);
     assert.match(generatedOperator, /finding 修复提交验证新 SHA 是旧 SHA 后继且等于 HEAD/, platform);
     for (const role of Object.keys(bodies)) {
       const generated = generatedBody(paths, platform, role, extension);
@@ -1957,7 +2110,7 @@ test('review agents preserve the AI Work Flow committed-range contract', () => {
       assert.match(generated, /每项 finding 引用 ReviewManifest shard ID/, `${platform}/${role}`);
       assert.match(generated, /上下文只使用 `git show <review-commit>:<path>`/, `${platform}/${role}`);
       assert.match(generated, /审查 worktree 的 `HEAD` 等于 review commit 且工作树干净/, `${platform}/${role}`);
-      assert.match(generated, /输入 range、commit list 或 changed paths 与 ReviewManifest 不一致时阻塞/, `${platform}/${role}`);
+      assert.match(generated, /输入 range、commit list 或 `changed_paths` 与 ReviewManifest 不一致时阻塞/, `${platform}/${role}`);
     }
   }
 });
@@ -1972,23 +2125,23 @@ test('dual-axis review binds standards and complete directory spec bundles witho
   const sharedBundleAssertions = [
     /spec context\/bundle|envelope 绑定/s,
     /\.ai-work-flow\/plans\/<plan-id>\/spec\.md \+ plan\.md/,
-    /拆分 task 加当前 task、acceptance evidence 与 Verification 结果/,
+    /拆分 task 加当前 task、`acceptance_evidence` 与 `verification`/,
     /不得退化为 instruction-only、单文件审查或静默遗漏上下文/
   ];
   const sharedManifestAssertions = [
-    /ReviewManifest 机器冻结端点、commit list、真实 PathChange、review checks、diff、spec\/standards source、稳定 shards 和 digest/,
-    /机器绑定 acceptance evidence\/Verification digest/,
-    /`spec_status=present` 时同时绑定 spec\/plan\/可选 task/,
-    /`spec_status=absent` 时输入不得提供 mode\/spec\/plan\/task 路径且生成的 single bundle sources 必须为空/,
+    /ReviewManifest 机器冻结端点、commit list、真实 `changed_paths: PathChange\[\]`、review checks、diff、spec\/standards source、稳定 shards 和 digest/,
+    /机器绑定 `acceptance_evidence`\/`verification` digest/,
+    /`spec_status=present` 时绑定 `mode`、`spec_path`、`plan_path`、可选 `task_path`/,
+    /`spec_status=absent` 时禁用这些字段且 single bundle sources 必须为空/,
     /不得退化为 instruction-only/
   ];
   for (const assertion of sharedBundleAssertions) assert.match(routing, assertion);
   for (const assertion of sharedManifestAssertions) assert.match(routing, assertion);
-  assert.match(routing, /两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest\/digest、原始 verify input及相同 spec bundle/);
+  assert.match(routing, /两叶子接收完全相同的 SHA、diff、commit list、来源、shards、`review_manifest`\/digest、原始 `verify_input` 及相同 spec bundle/);
   assert.match(routing, /Standards 轴使用冻结 revision 的仓库 Standards、`MEMORY\.md` 等来源，`spec\.md` 不是 Standards 来源/);
   assert.match(bodies['code-reviewer'], /完整 spec context\/bundle/);
-  assert.match(bodies['code-reviewer'], /`absent` 只委派 Standards，不构造 Spec/);
-  assert.match(bodies['code-reviewer'], /present 两叶子共享 manifest\/digest、端点、shards、来源及 bundle/);
+  assert.match(bodies['code-reviewer'], /`absent` 无 Spec/);
+  assert.match(bodies['code-reviewer'], /不可变公共 payload.*`operation=review_standards`.*`operation=review_spec`/s);
   assert.match(bodies['review-standards'], /冻结的 Standards\/`MEMORY\.md` 来源/);
   assert.match(bodies['review-standards'], /`spec\.md` 不得作为 Standards 来源/);
   assert.match(bodies['review-spec'], /review-manifest-cli\.mjs verify.*机器复验/s);
@@ -2004,7 +2157,7 @@ test('dual-axis review binds standards and complete directory spec bundles witho
     const spec = generatedBody(paths, platform, 'review-spec', extension);
     for (const assertion of sharedBundleAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
     for (const assertion of sharedManifestAssertions) assert.match(reviewer, assertion, `${platform}/code-reviewer`);
-    assert.match(reviewer, /present 两叶子共享 manifest\/digest、端点、shards、来源及 bundle/, `${platform}/code-reviewer`);
+    assert.match(reviewer, /不可变公共 payload.*`operation=review_standards`.*`operation=review_spec`/s, `${platform}/code-reviewer`);
     assert.match(standards, /`spec\.md` 不得作为 Standards 来源/, `${platform}/review-standards`);
     assert.match(spec, /完整 spec context\/bundle/, `${platform}/review-spec`);
     for (const assertion of sharedManifestAssertions) assert.match(spec, assertion, `${platform}/review-spec`);
@@ -3041,6 +3194,29 @@ test('catalog rejects missing spec-first contract markers before generation', ()
     const assets = copiedAssets();
     const path = resolve(assets.templates, `${roleId}.md`);
     writeFileSync(path, readFileSync(path, 'utf8').replaceAll(marker, 'removed-contract-marker'));
+    assert.throws(
+      () => loadAgentAssets(assets.config, assets.templates),
+      new RegExp(`Template ${roleId}\\.md is missing spec-first contract marker`)
+    );
+  }
+});
+
+test('catalog rejects missing operation and payload field contracts', () => {
+  for (const [roleId, token, marker] of [
+    ['planning', 'operation=planning_commit', 'operation=planning_commit'],
+    ['git-operator', 'operation=planning_commit', 'operation=planning_commit'],
+    ['code-reviewer', 'operation=review_standards', 'operation=review_standards'],
+    ['review-standards', 'operation=review_standards', 'operation=review_standards'],
+    ['code-reviewer', 'operation=review_spec', 'operation=review_spec'],
+    ['review-spec', 'operation=review_spec', 'operation=review_spec'],
+    ['git-operator', '`review_prepare details`', 'review_manifest'],
+    ['git-operator', '`integrate_cleanup details`', 'cleanup_evidence'],
+    ['full-stack-coder', 'operation=implement', 'operation=implement'],
+    ['git-operator', 'operation=commit', 'acceptance_evidence']
+  ]) {
+    const assets = copiedAssets();
+    const path = resolve(assets.templates, `${roleId}.md`);
+    writeFileSync(path, removeMarkerFromContractLine(readFileSync(path, 'utf8'), token, marker));
     assert.throws(
       () => loadAgentAssets(assets.config, assets.templates),
       new RegExp(`Template ${roleId}\\.md is missing spec-first contract marker`)

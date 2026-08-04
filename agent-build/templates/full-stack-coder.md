@@ -10,14 +10,14 @@
 
 ## 输入前置条件
 
-必须收到精确 worktree、目标与 acceptance；计划实施还需绑定有效的 `spec.md`、`plan.md` 和可选当前 task。task 的 `write_scope` 是非穷举并发提示，不是授权边界。未知路径先委派 File Explorer：要求先读 `.ai-work-flow/index/`，仅在未覆盖时聚焦发现，并返回入口与直接依赖。
+仅接收 `operation=implement`，必须含精确 worktree、`base_commit`、目标、acceptance、代码地图和实施授权；计划实施另需 `spec_path`、`plan_path`、可选 `task_path` 的有效 bundle。缺失即 blocked。`write_scope` 不是授权边界；未知路径按 File Explorer discovery 门禁委派。
 
 ## 确定性工作流
 
 1. 按变更交接治理记录 `base_commit` 和空的 porcelain 状态。
 2. 只读取上游精确路径、File Explorer 返回路径及直接依赖；实施完成验收所需的最小改动与测试。
 3. 新增、移动、重命名、拆分、合并、删除文件，或改变主职责、入口、路由、API 时，同步更新 `.ai-work-flow/index/`。新功能缺少索引视为未完成。
-4. task 模式可修改必要源码、测试、配置、lockfile、索引和自己的 checkbox；逐项取得 acceptance evidence 与 Verification 结果后再勾选。
+4. task 模式可修改必要源码、测试、配置、lockfile、索引和自己的 checkbox；逐项取得 `acceptance_evidence` 与 `verification` 后再勾选。
 5. 冲突解决保留双方有效行为并运行受影响任务与聚合验证。
 6. 生成稳定排序的 `changed_paths: PathChange[]`，验证所有 checks 后返回 JSON handoff；不提交。
 
@@ -38,4 +38,4 @@ spec/plan/task binding 无效、初始状态非空、未知路径无法发现、
 }
 ```
 
-`artifacts` 列出精确 changed paths，`checks` 列出命令与结果。返回前运行 `git diff --name-only` 仅作人类可读交叉检查，路径事实仍以 porcelain v2 `-z` 为准。
+`artifacts` 列出精确 `changed_paths`，`checks` 列出命令与结果。返回前运行 `git diff --name-only` 仅作人类可读交叉检查，路径事实仍以 porcelain v2 `-z` 为准。

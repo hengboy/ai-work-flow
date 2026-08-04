@@ -16,7 +16,7 @@ const POLICY_CAPABILITIES = {
 };
 const ROLE_KINDS = new Set(['primary', 'subagent', 'reviewer']);
 export const MAX_AGENT_DEPTH = 2;
-const MAX_COMPILED_PROMPT_LENGTH = 53_000;
+const MAX_COMPILED_PROMPT_LENGTH = 57_000;
 const ROLE_TEMPLATE_HEADINGS = ['职责结果', '不可违反约束', '输入前置条件', '确定性工作流', '暂停条件', '交接格式'];
 const CONTROL_MARKER = '<!-- ai-work-flow:controls -->';
 const ROUTING_SECTION_ASSIGNMENTS = {
@@ -52,17 +52,45 @@ const SPEC_FIRST_TEMPLATE_CONTRACTS = {
     'source_spec_digest',
     'SHA-256',
     '拆分',
-    '不拆分'
+    '不拆分',
+    'operation=write_spec',
+    'operation=write_plan',
+    'operation=draft',
+    'operation=write',
+    'operation=delete',
+    'operation=planning_commit'
   ],
+  'file-explorer': ['operation=discovery'],
   'planning-writer': [
     '规格元数据',
     'status: `approved`',
     '开放问题',
-    'source_spec_digest'
+    'source_spec_digest',
+    'operation=write_spec',
+    'operation=write_plan'
   ],
-  'task-planner': ['source_plan_digest', '完整字节', '全量替换'],
-  coding: ['spec.md', 'source_spec_digest', '旧平铺计划'],
-  'git-operator': ['spec.md', 'source_spec_digest']
+  'task-planner': ['source_plan_digest', '完整字节', '全量替换', 'operation=draft', 'operation=write', 'operation=delete'],
+  coding: ['spec.md', 'source_spec_digest', '旧平铺计划', 'ready_to_prepare_review', 'operation=review_prepare'],
+  'full-stack-coder': ['operation=implement'],
+  'bug-fixer': ['operation=fix', 'mode=bug|finding'],
+  'git-operator': [
+    'spec_path',
+    'source_spec_digest',
+    'operation=planning_commit',
+    'operation=prepare_worktree',
+    'operation=commit',
+    'operation=review_prepare',
+    'operation=integrate_cleanup',
+    '空 `initial_status`/`changed_paths: PathChange[]`/`checks`/`acceptance_evidence`/`verification`',
+    '`planning_commit details`：`full_commit_sha`、`main_head`',
+    '`prepare_worktree details`：`worktree`、`base_commit`、空 `initial_status`',
+    '`commit details`：`full_commit_sha`、`review_commit`、`base_commit`、`fixed_point`',
+    '`review_prepare details`：完整 `review_manifest`、实际传给 CLI 的 known-fields `verify_input`',
+    '`integrate_cleanup details`：`integrated_commit`、`main_head`、`cleanup_evidence`'
+  ],
+  'code-reviewer': ['operation=review_dispatch', 'operation=review_standards', 'operation=review_spec', 'acceptance_evidence', 'verification'],
+  'review-standards': ['operation=review_standards'],
+  'review-spec': ['operation=review_spec']
 };
 
 function unique(values) {
@@ -356,7 +384,7 @@ export function loadAgentAssets(configRoot = resolve(import.meta.dirname, '..', 
   }
   const coding = compiledBodies.get('coding');
   const codingStates = [...coding.matchAll(/^\| `([^`]+)` \|/gm)].map((match) => match[1]);
-  const expectedCodingStates = ['discovery', 'ready_to_implement', 'implementing', 'ready_to_commit', 'ready_to_review', 'review_passed', 'awaiting_finding_ids', 'fixing_findings', 'resync_required', 'complete'];
+  const expectedCodingStates = ['discovery', 'ready_to_implement', 'implementing', 'ready_to_commit', 'ready_to_prepare_review', 'ready_to_review', 'review_passed', 'awaiting_finding_ids', 'fixing_findings', 'resync_required', 'complete'];
   if (JSON.stringify(codingStates) !== JSON.stringify(expectedCodingStates)) fail('Compiled Coding prompt has an invalid deterministic state table.');
   for (const marker of ['产品决策', '共享理解批准', 'plan-id 同名冲突', '拆分模式', '删除旧 tasks', 'planning commit', '实施授权', 'blocking finding IDs', 'stash 授权', '冲突语义', '不可恢复故障']) {
     if (!coding.includes(marker)) fail(`Compiled Coding prompt is missing manual gate: ${marker}.`);

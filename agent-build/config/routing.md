@@ -33,6 +33,8 @@
 
 ## 子代理故障与重试
 
+`caller/receiver/operation` 契约边首次带齐工件/摘要/授权/证据；缺用户决定暂停，禁 `blocked` 探测/补料。
+
 每个子任务的首次尝试最多重试 2 次，共 3 次。只重试暂态 429、502/503/504、超时、连接重置或结果未知；硬配额/计费 429、400/401/403/404、参数或模型配置错误、正常任务失败、测试失败和需求不清不可重试。429 遵从 `Retry-After`，否则等待 30 秒、60 秒；网关或连接错误等待 5 秒、15 秒；单次等待不超过 120 秒，不承诺平台未提供的原子性或精确计时。
 
 重试前停止旧子代理；只有确认其已终止，才能用全新子会话重试。无法确认终止时启动停止锁：停止新委派、恢复和继续，尽力中止全部已知活跃子代理，报告错误、尝试数、最后错误和会话状态，等待用户明确“继续”或“重试”。恢复后先确认没有持续运行的旧会话，再重置本轮预算。OpenCode 必须新建 child session，复用 `task_id` 只表示恢复。Code Reviewer 可按审查编排契约对可澄清的叶子阻塞额外重试一次。
@@ -79,11 +81,11 @@ spec 只保留确认后的 what、边界与验收共享认知。plan 不重复 s
 
 ## Git 生命周期
 
-Git mutation 必须串行并由 Git Operator 执行，包括 planning commit、worktree 创建、review commit、同步、task 汇入、最终整合和清理。普通实施使用稳定唯一 `worktree_id`、`ai-work-flow/<worktree_id>` 分支和 `.worktrees/<worktree_id>`；创建前幂等维护 Git `info/exclude` 的 `/.worktrees/`。既有 worktree 只有仓库、分支和基点全部匹配时才能恢复。
+Git mutation 必须串行并由 Git Operator 执行，包括 planning commit、worktree、review commit、同步、task 汇入、整合和清理。实施用唯一 `worktree_id`、`ai-work-flow/<worktree_id>` 和 `.worktrees/<worktree_id>`；创建前在 `info/exclude` 加 `/.worktrees/`。仅仓库、分支、基点匹配才恢复既有 worktree。
 
-用户确认方案或要求实施即授权当前实现阶段创建仅本地 review commit，不需要首次暂存前再次授权。授权不包括 push、amend、reset、clean、stash、标签、方案外变更或破坏性分支操作。Git Operator 收到成功交接后调用 `$git-commit`，核对 `HEAD == base_commit`、PathChange 全字段和验证；只能用参数数组与 `--` 暂存声明路径，确认 staged 集合一致且非空。hook 失败不 reset、clean 或重试，返回真实 index/worktree 状态。
+用户确认方案或要求实施即授权当前实现阶段创建仅本地 review commit；不含 push、amend、reset、clean、stash、标签、方案外或破坏性分支操作。Git Operator 以 `$git-commit` 核对 `HEAD == base_commit`、PathChange 与验证；参数数组与 `--` 暂存声明路径，staged 一致非空。hook 失败返回真实 index/worktree 状态，不 reset/clean/重试。
 
-提交成功后 `details` 包含完整 `full_commit_sha`、`review_commit` 和 `worktree_clean: true`。同步、提交或验证失败时不启动审查。blocking finding 修复提交必须不同于且后继于首次被拒的 review commit，并等于 feature/task HEAD。
+`operation=commit` 成功后 `details` 含完整 `full_commit_sha`、`review_commit` 和 `worktree_clean: true`。失败不启动审查。finding 修复提交须不同且后继于被拒 commit，并等于 feature/task HEAD。
 
 整合前确认主工作树与 feature worktree 干净、`main` 等于最近同步 fixed point、feature HEAD 等于允许整合的 review commit。若 main 前进，返回 `resync_required`，同步并重新评审最终提交；同步冲突进入冲突解决与重新评审。通过后只运行 `git merge --ff-only <review_commit>`，再在 worktree 干净且分支已合并时移除 worktree，并用 `git branch -d` 删除本地分支。主工作树无关改动默认阻塞；stash 必须获得本次操作的明确授权。
 
@@ -103,9 +105,9 @@ git diff <fixed-point>...<review-commit>
 git log <fixed-point>..<review-commit> --oneline
 ```
 
-两个端点必须可解析，fixed point 是 review commit 的祖先，diff 非空，审查 worktree 的 `HEAD` 等于 review commit 且工作树干净。输入 range、commit list 或 changed paths 与 ReviewManifest 不一致时阻塞。禁止用无参数 `git diff`、`git diff --cached` 或工作树文件读取命令取证。每项 finding 引用 ReviewManifest shard ID 和 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>` hunk；上下文只使用 `git show <review-commit>:<path>`，不得从 committed diff 外新增 finding。
+两个端点必须可解析，fixed point 是 review commit 的祖先，diff 非空，审查 worktree 的 `HEAD` 等于 review commit 且工作树干净。输入 range、commit list 或 `changed_paths` 与 ReviewManifest 不一致时阻塞。禁止用无参数 `git diff`、`git diff --cached` 或工作树文件读取命令取证。每项 finding 引用 ReviewManifest shard ID 和 `git diff --no-ext-diff <fixed-point>...<review-commit> -- <paths>` hunk；上下文只使用 `git show <review-commit>:<path>`，不得从 committed diff 外新增 finding。
 
-ReviewManifest 机器冻结端点、commit list、真实 PathChange、review checks、diff、spec/standards source、稳定 shards 和 digest。envelope 绑定 manifest、原始 verify input、两种 digest、runtime provenance、prepare verification，严验 known fields/type/mode/shard/command/bundle。manifest 机器绑定 acceptance evidence/Verification digest；`spec_status=present` 时同时绑定 spec/plan/可选 task；`spec_status=absent` 时输入不得提供 mode/spec/plan/task 路径且生成的 single bundle sources 必须为空。Git Operator 以同一安装 CLI prepare 后立即用原始 stdout verify，再逐字节交 Coding 原样转交；Code Reviewer 独立 verify Git facts。全程禁摘要、删改/重建 envelope、切换仓库 CLI。目录式 present 单任务 bundle 为 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`；拆分 task 加当前 task、acceptance evidence 与 Verification 结果；聚合绑定 spec+plan。不得退化为 instruction-only、单文件审查或静默遗漏上下文。
+ReviewManifest 机器冻结端点、commit list、真实 `changed_paths: PathChange[]`、review checks、diff、spec/standards source、稳定 shards 和 digest。envelope 绑定 manifest、原始 `verify_input`、两种 digest、runtime provenance、prepare verification，严验 known fields/type/mode/shard/command/bundle。manifest 机器绑定 `acceptance_evidence`/`verification` digest；`spec_status=present` 时绑定 `mode`、`spec_path`、`plan_path`、可选 `task_path`；`spec_status=absent` 时禁用这些字段且 single bundle sources 必须为空。Git Operator 以同一安装 CLI prepare 后立即用原始 stdout verify，再逐字节交 Coding 原样转交；Code Reviewer 独立 verify Git facts。全程禁摘要、删改/重建 envelope、切换仓库 CLI。目录式 present 单任务 bundle 为 `.ai-work-flow/plans/<plan-id>/spec.md + plan.md`；拆分 task 加当前 task、`acceptance_evidence` 与 `verification`；聚合绑定 spec+plan。不得退化为 instruction-only、单文件审查或静默遗漏上下文。
 
 runtime provenance 绑定 source identity/revision 与摘要，禁绝对路径。安装同事务写 provenance/runtime/agents。CLI fail closed；旧/缺失/篡改/协议/来源漂移须 install/generate，禁 fallback/静默兼容/自动修复；重复生成幂等。
 
@@ -117,7 +119,7 @@ Standards 轴使用冻结 revision 的仓库 Standards、`MEMORY.md` 等来源�
 
 ## 审查编排与门禁
 
-审查拓扑固定为 **Git Operator prepare+verify -> Coding 验证并原样转交 -> Code Reviewer 独立 verify -> Review Standards / Review Spec**。Code Reviewer 调度前逐项核对用户需求/批准标准与 `acceptance_evidence`、`verification`；“CLI 能运行”等无关证据返回单数 `blocking_reason`，不伪造 finding。通过后只根据不可变 ReviewManifest 调度；present 并行两叶子，absent 只 Standards。两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest/digest、原始 verify input及相同 spec bundle。保留 Standards、Spec 原顺序，不跨轴合并或重排。
+审查拓扑固定为 **Git Operator prepare+verify -> Coding 验证并原样转交 -> Code Reviewer 独立 verify -> Review Standards / Review Spec**。Code Reviewer 调度前逐项核对用户需求/批准标准与 `acceptance_evidence`、`verification`；“CLI 能运行”等无关证据返回单数 `blocking_reason`，不伪造 finding。通过后只根据不可变 ReviewManifest 调度；present 并行两叶子，absent 只 Standards。两叶子接收完全相同的 SHA、diff、commit list、来源、shards、`review_manifest`/digest、原始 `verify_input` 及相同 spec bundle。保留 Standards、Spec 原顺序，不跨轴合并或重排。
 
 coverage 完整且无 blocking finding 时自动整合；advisory findings 只报告。blocking finding 进入 `awaiting_user`，用户必须确认具体 finding IDs，不能 approve 绕过。普通目录式流程的获批修复验证并形成合格后继 review commit 后，自动同步并继续：task 汇入、清理和下一 frontier，或单任务/聚合最终整合与清理；不执行第二次评审，也不进入新的用户决策点。冲突解决或 `resync_required` 后仍重新评审最终提交。
 
