@@ -167,6 +167,44 @@ test("all platform configurations register the installed workflow broker", () =>
   }
 });
 
+test("broker configuration preserves unrelated entries, rejects collisions, and is idempotent", () => {
+  const assets = loadAgentAssets();
+  const fixture = mkdtempSync(resolve(tmpdir(), "broker-preserve-"));
+  const paths = {
+    dir: resolve(fixture, "ai-work-flow"),
+    codexDir: resolve(fixture, "codex"),
+    claudeDir: resolve(fixture, "claude"),
+    claudeConfig: resolve(fixture, "claude.json"),
+    openCodeDir: resolve(fixture, "opencode"),
+  };
+  for (const path of [paths.dir, paths.codexDir, paths.claudeDir, paths.openCodeDir]) mkdirSync(path, { recursive: true });
+  const configPaths = {
+    codex: resolve(paths.codexDir, "config.toml"),
+    claude: paths.claudeConfig,
+    opencode: resolve(paths.openCodeDir, "opencode.json"),
+  };
+  writeFileSync(configPaths.codex, "[mcp_servers.user-server]\ncommand = \"user\"\n");
+  writeFileSync(configPaths.claude, JSON.stringify({ keep: true, mcpServers: { "user-server": { command: "user" } } }));
+  writeFileSync(configPaths.opencode, JSON.stringify({ keep: true, mcp: { "user-server": { type: "remote", url: "https://example.test" } } }));
+
+  const generated = {};
+  for (const platform of ["codex", "claude", "opencode"]) {
+    const plan = planGeneration({ platform, paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies });
+    generated[platform] = plan.find((entry) => entry.path === configPaths[platform]).contents;
+    assert.match(generated[platform], /user-server/);
+    writeFileSync(configPaths[platform], generated[platform]);
+    const repeated = planGeneration({ platform, paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies });
+    assert.equal(repeated.some((entry) => entry.path === configPaths[platform]), false, platform);
+  }
+
+  writeFileSync(configPaths.codex, "[mcp_servers.ai-work-flow]\ncommand = \"user\"\n");
+  assert.throws(() => planGeneration({ platform: "codex", paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies }), /Unmanaged/);
+  writeFileSync(configPaths.claude, JSON.stringify({ mcpServers: { "ai-work-flow": { command: "user" } } }));
+  assert.throws(() => planGeneration({ platform: "claude", paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies }), /Unmanaged/);
+  writeFileSync(configPaths.opencode, JSON.stringify({ mcp: { "ai-work-flow": { type: "local", command: ["user"] } } }));
+  assert.throws(() => planGeneration({ platform: "opencode", paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies }), /Unmanaged/);
+});
+
 test("navigation runtime action is read-only and implementation maintenance stays with Full Stack Coder", () => {
   const assets = loadAgentAssets();
   assert.equal(assets.contract.actions["navigation.locate"].owner, "file-explorer");

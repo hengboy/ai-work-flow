@@ -33,6 +33,19 @@ function brokerPath(paths) {
   return resolve(paths.dir, 'execution-runtime', 'workflow-broker.mjs');
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (isPlainObject(value)) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalJson(value[key])]));
+  return value;
+}
+
+function mergeBrokerEntry(entries, expected, path, label) {
+  if (Object.hasOwn(entries, WORKFLOW_MCP_ID) && JSON.stringify(canonicalJson(entries[WORKFLOW_MCP_ID])) !== JSON.stringify(canonicalJson(expected))) {
+    fail(`Unmanaged ${label} workflow broker config already exists in ${path}.`);
+  }
+  return { ...entries, [WORKFLOW_MCP_ID]: expected };
+}
+
 // --- Shared functions ---
 
 function agentDescription(role) {
@@ -170,7 +183,8 @@ function claudeUpdateConfig(source, path, roles, paths) {
   try { current = source ? JSON.parse(source) : {}; }
   catch (error) { fail(`Cannot safely parse existing Claude config at ${path}: ${error.message}`); }
   if (!isPlainObject(current) || (current.mcpServers !== undefined && !isPlainObject(current.mcpServers))) fail(`Cannot safely merge Claude MCP config at ${path}.`);
-  const mcpServers = { ...(current.mcpServers ?? {}), [WORKFLOW_MCP_ID]: { type: 'stdio', command: 'node', args: [brokerPath(paths)] } };
+  const expected = { type: 'stdio', command: 'node', args: [brokerPath(paths)] };
+  const mcpServers = mergeBrokerEntry(current.mcpServers ?? {}, expected, path, 'Claude');
   return `${JSON.stringify({ ...current, mcpServers }, null, 2)}\n`;
 }
 
@@ -266,7 +280,8 @@ function opencodeUpdateConfig(source, path, roles, paths) {
   if (agent.explore === false) delete agent.explore;
   const defaultPrimary = roles.find((role) => role.default_primary === true);
   if (!defaultPrimary) fail('Cannot configure OpenCode without a default primary role.');
-  const mcp = { ...(current.mcp ?? {}), [WORKFLOW_MCP_ID]: { type: 'local', command: ['node', brokerPath(paths)], enabled: true } };
+  const expected = { type: 'local', command: ['node', brokerPath(paths)], enabled: true };
+  const mcp = mergeBrokerEntry(current.mcp ?? {}, expected, path, 'OpenCode');
   return `${JSON.stringify({ ...current, agent, mcp, subagent_depth: Math.max(MAX_AGENT_DEPTH, current.subagent_depth ?? 0), default_agent: defaultPrimary.id }, null, 2)}\n`;
 }
 
