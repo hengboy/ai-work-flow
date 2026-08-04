@@ -4,16 +4,13 @@ import { join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { writeReviewPacketArtifact } from "./artifact-store.mjs";
 import { validateArtifactRef } from "./workflow-contract.mjs";
 import { loadAndAssertRuntimeIdentity } from "./runtime-identity.mjs";
-import { ensureWorkflowDirectory, statusRun, workflowRunPaths } from "./workflow-store.mjs";
+import { statusRun, workflowRunPaths } from "./workflow-store.mjs";
 
 const execFileAsync = promisify(execFile);
 const RUNTIME_ROOT = resolve(import.meta.dirname, "..");
-
-function digest(buffer) {
-  return createHash("sha256").update(buffer).digest("hex");
-}
 
 async function git(repository, args) {
   const { stdout } = await execFileAsync("git", args, { cwd: repository, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -32,6 +29,8 @@ function assertPacketInput(input) {
   const specSource = reviewContext?.spec_source;
   if (!reviewContext || typeof reviewContext !== "object" || Array.isArray(reviewContext) ||
     !specSource || typeof specSource.path !== "string" || !specSource.path || !/^[0-9a-f]{64}$/.test(specSource.sha256) ||
+    !Array.isArray(reviewContext.requirements) || reviewContext.requirements.length === 0 || reviewContext.requirements.some((item) => typeof item !== "string" || !item) ||
+    !Array.isArray(reviewContext.standards_sources) || reviewContext.standards_sources.length === 0 || reviewContext.standards_sources.some((item) => typeof item !== "string" || !item) ||
     !Array.isArray(reviewContext.acceptance_evidence) || reviewContext.acceptance_evidence.length === 0 ||
     reviewContext.acceptance_evidence.some((item) => !item || typeof item.criterion !== "string" || !item.criterion || typeof item.evidence !== "string" || !item.evidence) ||
     !Array.isArray(reviewContext.verification) || reviewContext.verification.length === 0 ||
@@ -81,7 +80,6 @@ export async function createReviewPacket(input) {
   await assertGitFacts(input);
   await assertReviewSlices(input);
   await assertRuntimeIdentity(input);
-  const paths = await workflowRunPaths(input.repository, input.run_id);
   const packet = {
     review_base_commit: input.review_base_commit,
     review_commit: input.review_commit,
@@ -89,19 +87,7 @@ export async function createReviewPacket(input) {
     review_slices: input.review_slices,
     runtime_identity: input.runtime_identity,
   };
-  const content = Buffer.from(`${JSON.stringify(packet, null, 2)}\n`);
-  const sha256 = digest(content);
-  const id = `review_packet_${sha256.slice(0, 24)}`;
-  const ref = { kind: "review_packet", id, sha256, bytes: content.byteLength };
-  const { open, rename } = await import("node:fs/promises");
-  const directory = join(paths.run, "artifacts");
-  await ensureWorkflowDirectory(input.repository, directory);
-  const temporary = join(directory, `.${id}.tmp`);
-  const target = join(directory, `${id}.json`);
-  const handle = await open(temporary, "wx", 0o600);
-  try { await handle.writeFile(content); await handle.sync(); } finally { await handle.close(); }
-  await rename(temporary, target);
-  return ref;
+  return writeReviewPacketArtifact({ repository: input.repository, run_id: input.run_id, content: packet });
 }
 
 export async function verifyReviewPacket({ repository, run_id, ref }) {
@@ -112,7 +98,8 @@ export async function verifyReviewPacket({ repository, run_id, ref }) {
   const stat = await lstat(target);
   if (stat.isSymbolicLink() || !stat.isFile()) throw new Error("Review packet path is unsafe");
   const content = await readFile(target);
-  if (content.byteLength !== ref.bytes || digest(content) !== ref.sha256) throw new Error("Review packet digest or size does not match");
+  const actualDigest = createHash("sha256").update(content).digest("hex");
+  if (content.byteLength !== ref.bytes || actualDigest !== ref.sha256) throw new Error("Review packet digest or size does not match");
   const packet = JSON.parse(content);
   assertPacketInput({ repository, ...packet });
   await assertGitFacts({ repository, ...packet });

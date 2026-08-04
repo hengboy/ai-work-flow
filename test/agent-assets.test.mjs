@@ -122,6 +122,17 @@ test("Planning and Coding can execute only the read-only workflow CLI driver", (
     assert.ok(role.tools.includes("Bash"), id);
     assert.equal(assets.policies[role.policy].shell, "read", id);
     assert.match(assets.compiledBodies.get(id), /workflow-cli/);
+    const fixture = mkdtempSync(resolve(tmpdir(), `driver-permissions-${id}-`));
+    const paths = { codexDir: resolve(fixture, "codex"), claudeDir: resolve(fixture, "claude"), openCodeDir: resolve(fixture, "opencode") };
+    for (const path of Object.values(paths)) mkdirSync(path, { recursive: true });
+    const rendered = Object.fromEntries(["codex", "claude", "opencode"].map((platform) => {
+      const entry = planGeneration({ platform, paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies })
+        .find((candidate) => candidate.type === "write" && candidate.path.includes(`/agents/${id}.`));
+      return [platform, entry.contents];
+    }));
+    assert.match(rendered.codex, /sandbox_mode = "workspace-write"/);
+    assert.match(rendered.claude, /permissionMode: "acceptEdits"/);
+    assert.match(rendered.opencode, /"bash":"allow"/);
   }
 });
 

@@ -17,10 +17,7 @@ async function fsyncDirectory(path) {
   try { await handle.sync(); } finally { await handle.close(); }
 }
 
-export async function createArtifact({ repository, run_id, kind, content }) {
-  if (!KIND_PATTERN.test(kind) || kind === "review_packet" || content === undefined) {
-    throw new Error("Artifact kind is invalid or reserved");
-  }
+async function writeArtifact({ repository, run_id, kind, content }) {
   await statusRun({ repository, run_id });
   const paths = await workflowRunPaths(repository, run_id);
   const directory = join(paths.run, "artifacts");
@@ -35,6 +32,17 @@ export async function createArtifact({ repository, run_id, kind, content }) {
   await rename(temporary, target);
   await fsyncDirectory(directory);
   return { kind, id, sha256, bytes: body.byteLength };
+}
+
+export async function createArtifact({ repository, run_id, kind, content }) {
+  if (!KIND_PATTERN.test(kind) || kind === "review_packet" || content === undefined) {
+    throw new Error("Artifact kind is invalid or reserved");
+  }
+  return writeArtifact({ repository, run_id, kind, content });
+}
+
+export async function writeReviewPacketArtifact({ repository, run_id, content }) {
+  return writeArtifact({ repository, run_id, kind: "review_packet", content });
 }
 
 export async function verifyArtifact({ repository, run_id, ref }) {

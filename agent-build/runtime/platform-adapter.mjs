@@ -53,6 +53,7 @@ function tomlString(value) {
 }
 
 function codexSandbox(policy) {
+  if (policy.workflow_state === 'write') return 'workspace-write';
   return policy.filesystem === 'none' || policy.filesystem === 'read' ? 'read-only' : 'workspace-write';
 }
 
@@ -114,6 +115,7 @@ function codexUpdateConfig(source, path) {
 // --- Claude strategy ---
 
 function claudePermission(policy) {
+  if (policy.workflow_state === 'write') return 'acceptEdits';
   return policy.filesystem === 'none' || policy.filesystem === 'read' ? 'plan' : 'acceptEdits';
 }
 
@@ -159,7 +161,7 @@ export function opencodePermission(role, policy) {
     permission.edit = 'deny';
     permission.glob = 'deny';
     permission.grep = 'deny';
-    permission.bash = 'deny';
+    if (policy.workflow_state !== 'write') permission.bash = 'deny';
   }
   if (policy.delegation === 'allowed') permission.task = 'allow';
   if (policy.delegation === 'none') permission.task = 'deny';

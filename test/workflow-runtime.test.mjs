@@ -31,6 +31,8 @@ async function runtimeIdentityRef() {
 function reviewContext() {
   return {
     spec_source: { path: "spec.md", sha256: "1".repeat(64) },
+    requirements: ["README content must change"],
+    standards_sources: ["MEMORY.md"],
     acceptance_evidence: [{ criterion: "content", evidence: "README changed" }],
     verification: [{ command: "test", result: "passed" }],
   };
@@ -226,6 +228,19 @@ test("review packets stay local, use current names, and reject tampering or Git 
   assert.equal(Object.hasOwn(packet, ["fixed", "point"].join("_")), false);
   assert.equal(Object.hasOwn(packet, ["bun", "dle"].join("")), false);
 
+  const common = (await run("git", ["rev-parse", "--git-common-dir"], { cwd: root })).stdout.trim();
+  const artifacts = join(root, common, "ai-work-flow", "runs", started.run_id, "artifacts");
+  await writeFile(join(artifacts, `.${ref.id}.tmp`), "interrupted\n");
+  assert.deepEqual(await createReviewPacket({
+    repository: root,
+    run_id: started.run_id,
+    review_base_commit: base,
+    review_commit: reviewCommit,
+    review_context: reviewContext(),
+    review_slices: [{ id: "slice-1", paths: ["README.md"] }],
+    runtime_identity: await runtimeIdentityRef(),
+  }), ref);
+
   await writeFile(join(root, "README.md"), "dirty\n");
   await assert.rejects(verifyReviewPacket({ repository: root, run_id: started.run_id, ref }), /worktree must be clean/);
   await assert.rejects(verifyReviewPacket({ repository: root, run_id: started.run_id, ref: { ...ref, sha256: "0".repeat(64) } }), /digest/);
@@ -249,6 +264,8 @@ test("review packet creation rejects runtime identity drift and incomplete slice
     runtime_identity: await runtimeIdentityRef(),
   };
   await assert.rejects(createReviewPacket({ ...baseInput, runtime_identity: { identity_digest: "0".repeat(64), source_revision: "0".repeat(64) } }), /identity is drifted/);
+  await assert.rejects(createReviewPacket({ ...baseInput, review_context: { ...reviewContext(), requirements: [] } }), /review context/);
+  await assert.rejects(createReviewPacket({ ...baseInput, review_context: { ...reviewContext(), standards_sources: [] } }), /review context/);
   await assert.rejects(createReviewPacket({ ...baseInput, review_context: { ...reviewContext(), verification: [] } }), /review context/);
   await assert.rejects(createReviewPacket({ ...baseInput, review_slices: [{ id: "slice-1", paths: ["missing.md"] }] }), /cover every changed path/);
 });
