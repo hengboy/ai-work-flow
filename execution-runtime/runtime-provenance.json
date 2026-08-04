@@ -3,12 +3,12 @@
   "type": "execution-runtime-provenance",
   "source": {
     "identity": "ai-work-flow/execution-runtime",
-    "revision": "e40163878531bb7100a83d5d9793f750575faee883df6a98f966d28d58b06a1c"
+    "revision": "178480e6651014afa94fbf38af578a66efdd074782e0db9e1c97ed2707469862"
   },
   "managed_files": [
     {
       "path": "lib/directory-review-manifest.mjs",
-      "digest": "65efd6914a2a955fe9446cb524ccc085eb33f9775deb8259e919a4a2daba0587"
+      "digest": "fc30f72946f21b0f4eadcd2c9fc9e6cb998e1c1c3f2ed858d39f1bbe24126d7d"
     },
     {
       "path": "lib/git.mjs",
@@ -31,6 +31,6 @@
       "digest": "ce6bb439beee937a9255f942bceba7337df644faacc8dbfd3b00d52f0029fa4d"
     }
   ],
-  "files_digest": "e40163878531bb7100a83d5d9793f750575faee883df6a98f966d28d58b06a1c",
-  "provenance_digest": "12dbe8e60f0cdc3ee85ef7490379db6467a15efbdb87d0f16646e956d0bbc9f4"
+  "files_digest": "178480e6651014afa94fbf38af578a66efdd074782e0db9e1c97ed2707469862",
+  "provenance_digest": "81e3694e3b2c7eec211f90c816d4700ef8073dc8d217b7a56b9e98c500b19104"
 }

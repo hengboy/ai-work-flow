@@ -19,17 +19,20 @@ const installer = resolve(root, 'agent-build/install.mjs');
 const configDir = resolve(root, 'agent-build/config');
 const templatesDir = resolve(root, 'agent-build/templates');
 const executionSkill = `run-${['M', 'att'].join('').toLowerCase()}-spec-to-completion`;
+const legacyProjectNavigationSkill = 'init-project-code-navigation';
 const catalog = JSON.parse(readFileSync(resolve(configDir, 'roles.json'), 'utf8'));
 const controls = JSON.parse(readFileSync(resolve(configDir, 'controls.json'), 'utf8')).controls;
 const policies = JSON.parse(readFileSync(resolve(configDir, 'policies.json'), 'utf8')).policies;
 const managedSkillDirectories = [
   'generate-ai-work-flow-agents',
+  'init-ai-work-flow',
   'switch-ai-work-flow-env',
   'project-code-navigation',
   'git-commit'
 ];
 const defaultSkillPrompts = new Map([
   ['generate-ai-work-flow-agents', '使用 `$generate-ai-work-flow-agents` 验证全局配置并生成代理。'],
+  ['init-ai-work-flow', '使用 `$init-ai-work-flow` 为当前项目联合初始化根 `MEMORY.md` 和 `.ai-work-flow/index/`。'],
   ['switch-ai-work-flow-env', '使用 `$switch-ai-work-flow-env` 切换到指定环境并重新生成代理。'],
   ['project-code-navigation', '使用 `$project-code-navigation` 为当前项目创建或更新 `.ai-work-flow/index/` 代码导航索引。'],
   ['git-commit', '使用 `$git-commit` 生成中文 Conventional Commits 提交信息并创建受控本地提交。']
@@ -1132,6 +1135,31 @@ test('project navigation is a managed global skill and stores indexes in the pro
   }
 });
 
+test('AI Work Flow initialization is planned for every platform and preserves project memory', () => {
+  const skill = readFileSync(resolve(root, 'skills/init-ai-work-flow/SKILL.md'), 'utf8');
+  const navigation = readFileSync(resolve(root, 'skills/project-code-navigation/SKILL.md'), 'utf8');
+  const paths = environment();
+  const dryRun = run(paths, 'install', '--dry-run');
+  assert.equal(dryRun.status, 0, dryRun.stderr);
+
+  assert.match(skill, /^name: init-ai-work-flow$/m);
+  assert.match(skill, /项目级联合初始化入口/);
+  for (const heading of ['# 项目上下文', '## 领域术语', '## 仓库约束', '## 职责', '## 模块边界']) {
+    assert.ok(skill.includes(heading), heading);
+  }
+  assert.match(skill, /不得覆盖或重排任何已有用户内容/);
+  assert.match(skill, /ReviewManifest.*提交绑定.*standards source/s);
+  assert.match(skill, /必须与索引一起提交/);
+  assert.match(skill, /只在项目真实存在对应层时创建 `frontend-navigation\.md` 或 `backend-navigation\.md`/);
+  assert.doesNotMatch(skill, /ai-work-flow:managed/);
+  assert.match(navigation, /先转入 `\$init-ai-work-flow` 联合初始化/);
+  assert.match(navigation, /职责或模块边界变化还必须同步维护根 `MEMORY\.md`/);
+  assert.equal(existsSync(resolve(root, 'skills/init-project-code-navigation/SKILL.md')), false);
+  for (const platformRoot of [resolve(paths.home, '.codex'), resolve(paths.home, '.claude'), resolve(paths.config, 'opencode')]) {
+    assert.match(dryRun.stdout, new RegExp(`${platformRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/skills/init-ai-work-flow`));
+  }
+});
+
 test('full stack coder delegates unknown file discovery to file explorer', () => {
   const coderRole = catalog.roles.find((role) => role.id === 'full-stack-coder');
   const coder = readFileSync(resolve(templatesDir, 'full-stack-coder.md'), 'utf8');
@@ -1953,11 +1981,11 @@ test('dual-axis review binds standards and complete directory spec bundles witho
   for (const assertion of sharedBundleAssertions) assert.match(routing, assertion);
   for (const assertion of sharedManifestAssertions) assert.match(routing, assertion);
   assert.match(routing, /两叶子接收完全相同的 SHA、diff、commit list、来源、shards、manifest\/digest、原始 verify input及相同 spec bundle/);
-  assert.match(routing, /Standards 轴使用冻结 revision 的仓库 Standards、`CONTEXT\.md` 等来源，`spec\.md` 不是 Standards 来源/);
+  assert.match(routing, /Standards 轴使用冻结 revision 的仓库 Standards、`MEMORY\.md` 等来源，`spec\.md` 不是 Standards 来源/);
   assert.match(bodies['code-reviewer'], /完整 spec context\/bundle/);
   assert.match(bodies['code-reviewer'], /`absent` 只委派 Standards，不构造 Spec/);
   assert.match(bodies['code-reviewer'], /present 两叶子共享 manifest\/digest、端点、shards、来源及 bundle/);
-  assert.match(bodies['review-standards'], /冻结的 Standards\/`CONTEXT\.md` 来源/);
+  assert.match(bodies['review-standards'], /冻结的 Standards\/`MEMORY\.md` 来源/);
   assert.match(bodies['review-standards'], /`spec\.md` 不得作为 Standards 来源/);
   assert.match(bodies['review-spec'], /review-manifest-cli\.mjs verify.*机器复验/s);
   assert.doesNotMatch(bodies['review-spec'], /按 `instruction-only` 验证/);
@@ -2339,9 +2367,11 @@ test('install and generate remove obsolete owned content without deleting shared
   writeFileSync(resolve(installedRuntime, 'lib/execution-coding.mjs'), 'obsolete runtime module\n');
   writeFileSync(resolve(installedRuntime, 'user-note.txt'), 'preserve user file\n');
   for (const platformRoot of [resolve(paths.home, '.codex'), resolve(paths.home, '.claude'), resolve(paths.config, 'opencode')]) {
-    const skillRoot = resolve(platformRoot, 'skills', executionSkill);
-    mkdirSync(skillRoot, { recursive: true });
-    writeFileSync(resolve(skillRoot, 'legacy-owned-file.md'), 'obsolete managed tree\n');
+    for (const obsoleteSkill of [executionSkill, legacyProjectNavigationSkill]) {
+      const skillRoot = resolve(platformRoot, 'skills', obsoleteSkill);
+      mkdirSync(skillRoot, { recursive: true });
+      writeFileSync(resolve(skillRoot, 'legacy-owned-file.md'), 'obsolete managed tree\n');
+    }
   }
 
   const result = install(paths);
@@ -2352,17 +2382,21 @@ test('install and generate remove obsolete owned content without deleting shared
   assert.ok(existsSync(resolve(installedRuntime, 'review-manifest-cli.mjs')));
   assert.equal(readFileSync(resolve(installedRuntime, 'user-note.txt'), 'utf8'), 'preserve user file\n');
   for (const platformRoot of [resolve(paths.home, '.codex'), resolve(paths.home, '.claude'), resolve(paths.config, 'opencode')]) {
-    const skillRoot = resolve(platformRoot, 'skills', executionSkill);
-    assert.ok(!existsSync(skillRoot));
-    mkdirSync(skillRoot, { recursive: true });
-    writeFileSync(resolve(skillRoot, 'legacy-owned-file.md'), 'obsolete managed tree\n');
+    for (const obsoleteSkill of [executionSkill, legacyProjectNavigationSkill]) {
+      const skillRoot = resolve(platformRoot, 'skills', obsoleteSkill);
+      assert.ok(!existsSync(skillRoot));
+      mkdirSync(skillRoot, { recursive: true });
+      writeFileSync(resolve(skillRoot, 'legacy-owned-file.md'), 'obsolete managed tree\n');
+    }
   }
   writeFileSync(resolve(installedRuntime, obsoleteSchema), 'obsolete schema\n');
   const generated = run(paths, 'generate');
   assert.equal(generated.status, 0, generated.stderr);
   assert.ok(!existsSync(resolve(installedRuntime, obsoleteSchema)));
   for (const platformRoot of [resolve(paths.home, '.codex'), resolve(paths.home, '.claude'), resolve(paths.config, 'opencode')]) {
-    assert.ok(!existsSync(resolve(platformRoot, 'skills', executionSkill)));
+    for (const obsoleteSkill of [executionSkill, legacyProjectNavigationSkill]) {
+      assert.ok(!existsSync(resolve(platformRoot, 'skills', obsoleteSkill)));
+    }
   }
 });
 

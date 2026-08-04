@@ -22,14 +22,15 @@ description: 在当前项目创建、更新或使用 AI Work Flow 代码导航�
 
 这是**随实现维护模式**，由 Full Stack Coder 在获准实现范围内执行；只读发现不得因为索引过期直接修改文件：
 
-1. 读取项目指令和稳定资料：`AGENTS.md`、`CLAUDE.md`、`MEMORY.md`、README、构建文件及已知入口。
-2. 判断项目形态：前端、后端、全栈、monorepo、库或 worker。
-3. 基于真实代码确认路由、应用入口、Controller、Service、API client、任务入口和模块边界；不得猜测路径。
-4. 在 `.ai-work-flow/index/` 写入或更新 `feature-navigation.md`；仅在对应层存在时写入 `frontend-navigation.md` 和 `backend-navigation.md`。
-5. 每个索引文件使用简短表格，记录业务关键词、入口路径和必要的模块边界。索引路径必须相对项目根目录。
-6. 新增文件，或文件移动、重命名、拆分、合并、删除、主职责变化时，必须在同一轮改动中更新对应索引。
-7. 用户可见功能入口、路由或 API 变化时，必须同步更新对应索引；新功能缺少导航索引视为未完成。
-8. 验证表中每个非计划路径真实存在；无法确认的路径省略或标为 `待确认`。
+1. 项目根 `MEMORY.md` 或 `.ai-work-flow/index/feature-navigation.md` 缺失时，先转入 `$init-ai-work-flow` 联合初始化；不要只创建索引。
+2. 读取项目指令和稳定资料：`MEMORY.md`、`AGENTS.md`、`CLAUDE.md`、README、构建文件及已知入口。
+3. 判断项目形态：前端、后端、全栈、monorepo、库或 worker。
+4. 基于真实代码确认路由、应用入口、Controller、Service、API client、任务入口和模块边界；不得猜测路径。
+5. 在 `.ai-work-flow/index/` 写入或更新 `feature-navigation.md`；仅在对应层存在时写入 `frontend-navigation.md` 和 `backend-navigation.md`。
+6. 每个索引文件使用简短表格，记录业务关键词、入口路径和必要的模块边界。索引路径必须相对项目根目录。
+7. 新增文件，或文件移动、重命名、拆分、合并、删除、主职责变化时，必须在同一轮改动中更新对应索引；职责或模块边界变化还必须同步维护根 `MEMORY.md`。
+8. 用户可见功能入口、路由或 API 变化时，必须同步更新对应索引；新功能缺少导航索引视为未完成。
+9. 验证表中每个非计划路径真实存在；无法确认的路径省略或标为 `待确认`。
 
 ## 索引格式
 

@@ -109,7 +109,7 @@ ReviewManifest 机器冻结端点、commit list、真实 PathChange、review che
 
 runtime provenance 绑定 source identity/revision 与摘要，禁绝对路径。安装同事务写 provenance/runtime/agents。CLI fail closed；旧/缺失/篡改/协议/来源漂移须 install/generate，禁 fallback/静默兼容/自动修复；重复生成幂等。
 
-Standards 轴使用冻结 revision 的仓库 Standards、`CONTEXT.md` 等来源，`spec.md` 不是 Standards 来源；仓库规则优先，跳过工具规则。Spec 轴查缺失/部分需求、scope creep、行为错误。叶子保留 `{verdict, blocking_findings, advisory_findings, manifest_digest, coverage}`；finding 有稳定 ID 和证据。shard/digest 不完整即阻塞。
+Standards 轴使用冻结 revision 的仓库 Standards、`MEMORY.md` 等来源，`spec.md` 不是 Standards 来源；仓库规则优先，跳过工具规则。Spec 轴查缺失/部分需求、scope creep、行为错误。叶子保留 `{verdict, blocking_findings, advisory_findings, manifest_digest, coverage}`；finding 有稳定 ID 和证据。shard/digest 不完整即阻塞。
 
 <!-- ai-work-flow:section-end -->
 

@@ -23,7 +23,10 @@ const PLATFORMS = new Set(['codex', 'claude', 'opencode']);
 const LEGACY_PRIMARY_AGENT_ID = 'orchestrator';
 const LEGACY_GIT_OPERATOR_AGENT_ID = 'git-committer';
 const INSTALL_MISSING_ROLE_DEFAULTS = ['planning', 'planning-writer', 'task-planner', 'bug-fixer'];
-const OBSOLETE_SKILL = `run-${['m', 'att'].join('')}-spec-to-completion`;
+const OBSOLETE_SKILLS = [
+  `run-${['m', 'att'].join('')}-spec-to-completion`,
+  'init-project-code-navigation'
+];
 const OBSOLETE_EXECUTION_RUNTIME_FILES = [
   `${['check', 'point-schema.json'].join('')}`,
   'completion-result-schema.json',
@@ -233,8 +236,10 @@ function hasPathEntry(path) {
 function planObsoleteManagedContent(paths) {
   const plan = [];
   for (const platformRoot of [paths.codexDir, paths.claudeDir, paths.openCodeDir, paths.dir]) {
-    const skill = resolve(platformRoot, 'skills', OBSOLETE_SKILL);
-    if (hasPathEntry(skill)) plan.push({ type: 'delete-tree', path: skill });
+    for (const obsoleteSkill of OBSOLETE_SKILLS) {
+      const skill = resolve(platformRoot, 'skills', obsoleteSkill);
+      if (hasPathEntry(skill)) plan.push({ type: 'delete-tree', path: skill });
+    }
   }
   const installedRuntime = resolve(paths.dir, 'execution-runtime');
   for (const relativePath of OBSOLETE_EXECUTION_RUNTIME_FILES) {

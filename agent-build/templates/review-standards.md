@@ -10,7 +10,7 @@
 
 ## 输入前置条件
 
-必须收到 digest 已验证的 ReviewManifest、Standards brief、完整 Fowler 基准、冻结的 Standards/`CONTEXT.md` 来源和全部 shards；`spec.md` 不得作为 Standards 来源。
+必须收到 digest 已验证的 ReviewManifest、Standards brief、完整 Fowler 基准、冻结的 Standards/`MEMORY.md` 来源和全部 shards；`spec.md` 不得作为 Standards 来源。
 
 ## 确定性工作流
 

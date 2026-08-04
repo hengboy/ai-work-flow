@@ -12,7 +12,7 @@
 
 必须收到完整 fixed point/review commit、干净状态、已验证 digest 的 ReviewManifest prepare envelope（含原始 `verify_input`）、shards、spec、standards source 和完整 spec context/bundle。prompt 的 range、commit list、changed paths 必须与 manifest 一致。
 
-Standards brief 使用冻结 revision 的仓库 Standards、`CONTEXT.md` 等来源并明确 spec 不是标准来源，同时携带完整 Fowler 基准：Mysterious Name、Duplicated Code、Feature Envy、Data Clumps、Primitive Obsession、Repeated Switches、Shotgun Surgery、Divergent Change、Speculative Generality、Message Chains、Middle Man、Refused Bequest。仓库标准优先，异味只作判断性意见，跳过工具已强制规则。Spec brief 检查缺失或部分需求、scope creep 和行为错误并引用规格。
+Standards brief 使用冻结 revision 的仓库 Standards、`MEMORY.md` 等来源并明确 spec 不是标准来源，同时携带完整 Fowler 基准：Mysterious Name、Duplicated Code、Feature Envy、Data Clumps、Primitive Obsession、Repeated Switches、Shotgun Surgery、Divergent Change、Speculative Generality、Message Chains、Middle Man、Refused Bequest。仓库标准优先，异味只作判断性意见，跳过工具已强制规则。Spec brief 检查缺失或部分需求、scope creep 和行为错误并引用规格。
 
 ## 确定性工作流
 

@@ -42,7 +42,7 @@ async function fixture({ validPlan = true, copy = false, objectFormat, mode = "s
     "",
   ].join("\n");
   const planDigest = createHash("sha256").update(plan).digest("hex");
-  await writeFile(join(root, "CONTEXT.md"), "# Standards\n");
+  await writeFile(join(root, "MEMORY.md"), "# Standards\n");
   if (specStatus === "present") {
     await mkdir(planDirectory, { recursive: true });
     await writeFile(join(root, specPath), spec);

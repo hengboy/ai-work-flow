@@ -10,7 +10,7 @@ import { assertReviewManifest, createReviewManifest, reviewBundleDigest } from "
 const execFileAsync = promisify(execFile);
 const SHA_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
-const STANDARDS_PATH = "CONTEXT.md";
+const STANDARDS_PATH = "MEMORY.md";
 const PREPARE_ENVELOPE_VERSION = 2;
 const PREPARE_ENVELOPE_TYPE = "directory-review-prepare";
 const REVIEW_INPUT_FIELDS = [

@@ -41,7 +41,7 @@ test("uses one immutable review manifest for every required review axis and comp
     diff_command: ["git", "diff", "--no-ext-diff", `${fixedPoint}...${reviewCommit}`],
     spec_status: "present",
     spec_source: { path: ".ai-work-flow/plans/example/spec.md", revision: "c".repeat(64) },
-    standards_source: [{ path: "CONTEXT.md", revision: reviewCommit }],
+    standards_source: [{ path: "MEMORY.md", revision: reviewCommit }],
     shards: [
       { id: "a", paths: ["a file"], diff_command: ["git", "diff", "--no-ext-diff", `${fixedPoint}...${reviewCommit}`, "--", "a file"] },
       { id: "b", paths: ["b file"], diff_command: ["git", "diff", "--no-ext-diff", `${fixedPoint}...${reviewCommit}`, "--", "b file"] },
@@ -58,7 +58,7 @@ test("uses one immutable review manifest for every required review axis and comp
   assert.throws(() => assertReviewCoverage(manifest, { manifest_digest: manifest.manifest_digest, completed_shard_ids: ["a"], incomplete_shard_ids: [] }), /coverage/);
   assert.throws(() => assertReviewCoverage(manifest, { manifest_digest: manifest.manifest_digest, completed_shard_ids: ["a"], incomplete_shard_ids: ["a"] }), /coverage/);
   assert.throws(() => assertReviewCoverage(manifest, { manifest_digest: manifest.manifest_digest, completed_shard_ids: ["a", "b"], incomplete_shard_ids: ["unknown"] }), /coverage/);
-  assert.throws(() => assertReviewManifest({ ...manifest, review_commit: "e".repeat(40), standards_source: [{ path: "CONTEXT.md", revision: "e".repeat(40) }] }), /digest|fixed review diff command/);
+  assert.throws(() => assertReviewManifest({ ...manifest, review_commit: "e".repeat(40), standards_source: [{ path: "MEMORY.md", revision: "e".repeat(40) }] }), /digest|fixed review diff command/);
 
   const tampered = createReviewManifest({
     ...structuredClone(manifest),
@@ -66,7 +66,7 @@ test("uses one immutable review manifest for every required review axis and comp
     review_commit: "f".repeat(40),
     diff_command: ["git", "diff", "--no-ext-diff", `${"e".repeat(40)}...${"f".repeat(40)}`],
     changed_paths: [{ record_type: "1", index_status: "M", worktree_status: ".", path: "attacker-controlled" }],
-    standards_source: [{ path: "CONTEXT.md", revision: "f".repeat(40) }],
+    standards_source: [{ path: "MEMORY.md", revision: "f".repeat(40) }],
     shards: [{ id: "a", paths: ["attacker-controlled"], diff_command: ["git", "diff", "--no-ext-diff", `${"e".repeat(40)}...${"f".repeat(40)}`, "--", "attacker-controlled"] }],
   });
   assert.throws(() => assertReviewManifest(tampered, context), /frozen review context/);
@@ -75,7 +75,7 @@ test("uses one immutable review manifest for every required review axis and comp
 test("omits Spec only when the manifest explicitly declares it absent", () => {
   const manifest = createReviewManifest({
     fixed_point: "a".repeat(40), review_commit: "b".repeat(40), commit_list: [], changed_paths: [], checks: [], diff_command: ["git", "diff", "--no-ext-diff", `${"a".repeat(40)}...${"b".repeat(40)}`],
-    spec_status: "absent", spec_source: null, standards_source: [{ path: "CONTEXT.md", revision: "b".repeat(40) }], shards: [],
+    spec_status: "absent", spec_source: null, standards_source: [{ path: "MEMORY.md", revision: "b".repeat(40) }], shards: [],
   });
   assert.deepEqual(Object.keys(createReviewShardAssignments(manifest)), ["standards"]);
 });
