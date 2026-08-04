@@ -3,6 +3,8 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
+import TOML from "@iarna/toml";
+import { parse as parseYaml } from "yaml";
 
 import { loadAgentAssets } from "../agent-build/runtime/asset-catalog.mjs";
 import { capabilityEvidence, capabilityMatrix, controlMatrix, evaluateOpenCodePermission, planGeneration } from "../agent-build/runtime/platform-adapter.mjs";
@@ -252,17 +254,48 @@ test("every action I/O contract is compiled and multi-action roles keep explicit
   assert.match(assets.compiledBodies.get("file-explorer"), /`planning\.discover`[\s\S]*`navigation\.locate`/);
 });
 
-test("platform Skill allowlists are derived only from skills.json ownership", () => {
+test("all platform Skill allowlists are derived only from skills.json ownership", () => {
   const assets = loadAgentAssets();
+  const fixture = mkdtempSync(resolve(tmpdir(), "skill-allowlists-"));
+  const paths = {
+    dir: resolve(fixture, "ai-work-flow"), codexDir: resolve(fixture, "codex"), claudeDir: resolve(fixture, "claude"),
+    claudeConfig: resolve(fixture, "claude.json"), openCodeDir: resolve(fixture, "opencode"),
+  };
+  for (const path of [paths.dir, paths.codexDir, paths.claudeDir, paths.openCodeDir]) mkdirSync(path, { recursive: true });
+  const frontmatter = (source) => parseYaml(source.slice(4, source.indexOf("\n---", 4)));
   for (const role of assets.roles) {
     const policy = assets.policies[role.policy];
     for (const skill of assets.skills) {
       assert.equal(evaluateOpenCodePermission(role, policy, "skill", skill.name), skill.owner === role.id ? "allow" : "deny", `${role.id}/${skill.name}`);
     }
+    const generated = Object.fromEntries(["codex", "claude", "opencode"].map((platform) => {
+      const target = resolve(paths[platform === "opencode" ? "openCodeDir" : `${platform}Dir`], "agents", `${role.id}.${platform === "codex" ? "toml" : "md"}`);
+      const entry = planGeneration({ platform, paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies }).find((step) => step.path === target);
+      return [platform, entry.contents];
+    }));
+    const codex = TOML.parse(generated.codex);
+    const codexSkills = Object.fromEntries(codex.skills.config.map((entry) => [entry.path.split("/").at(-2), entry.enabled]));
+    const claude = frontmatter(generated.claude);
+    const opencode = frontmatter(generated.opencode);
+    for (const skill of assets.skills) {
+      assert.equal(codexSkills[skill.name], skill.owner === role.id, `codex/${role.id}/${skill.name}`);
+      assert.equal(opencode.permission.skill?.[skill.name] ?? "deny", skill.owner === role.id ? "allow" : "deny", `opencode/${role.id}/${skill.name}`);
+    }
+    assert.deepEqual(claude.skills, role.skills, `claude/${role.id}`);
+    assert.equal(claude.tools.includes("Skill"), false, `claude/${role.id}`);
+    assert.match(assets.compiledBodies.get(role.id), /Skill 所有权：/);
   }
   assert.deepEqual(assets.roles.find((role) => role.id === "git-operator").skills, ["git-commit"]);
   assert.deepEqual(assets.roles.find((role) => role.id === "environment-operator").skills, ["generate-ai-work-flow-agents", "switch-ai-work-flow-env"]);
   assert.deepEqual(assets.roles.find((role) => role.id === "full-stack-coder").skills, ["init-ai-work-flow"]);
+});
+
+test("support delegations remain a subset of role delegation permissions", () => {
+  const assets = loadAgentAssets();
+  for (const [callerOwner, actionIds] of Object.entries(assets.contract.support_delegations)) {
+    const caller = assets.roles.find((role) => role.id === callerOwner);
+    for (const actionId of actionIds) assert.ok(caller.delegates.includes(assets.contract.actions[actionId].owner), `${callerOwner}/${actionId}`);
+  }
 });
 
 test("Environment Operator owns maintenance actions without Git or delegation", () => {

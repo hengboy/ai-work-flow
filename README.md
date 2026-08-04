@@ -54,15 +54,15 @@ node execution-runtime/workflow-cli.mjs artifact-create --repository <repo> --ru
 node execution-runtime/workflow-cli.mjs artifact-verify --repository <repo> --run-id <run_id> < artifact-ref.json
 ```
 
-`start` 对同一计划摘要和任务模式幂等。`claim` 接收 `{fields, artifacts}`，按 action 的命名 I/O contract 校验后完整持久化；重复 claim 返回原 input，调用者不能替换。`finish` 校验必需 `outputs`、error 字段及 artifact kind、run 归属和 digest，并必须增加 revision、改变 phase 或消耗持久化预算，否则停止为 `WORKFLOW_STALLED`。损坏或截断的响应通过 `status --action-id` 恢复，不重新执行 action。
+`start` 对同一计划摘要和任务模式幂等。`claim` 接收 `{fields, artifacts}`，按 action 的命名 I/O contract 校验非空值后完整持久化；重复 claim 返回原 input，调用者不能替换。`finish` 校验必需 `outputs`、error 字段、artifact kind/run/digest，并交叉核对 canonical 上游 receipt、SHA、PathChange、finding IDs 与 coverage；状态不一致时不推进 phase。损坏或截断的响应通过 `status --action-id` 恢复，不重新执行 action。
 
 Agents 不获得运行这些写命令所需的工作区权限。安装器为 Codex、Claude Code 和 OpenCode 注册 `execution-runtime/workflow-broker.mjs` 提供的 MCP `workflow_state` 工具；broker 只接受固定 operation，只允许当前启动仓库，并直接调用 runtime API。它没有命令执行接口，写入范围由 store 固定为 Git common dir 的 `.git/ai-work-flow/`。
 
-公共对象为 `WorkflowSnapshot`、`ActionReceipt`、`SupportReceipt`、`ArtifactRef` 和 `ReviewPacketRef`。SupportReceipt 由稳定 caller/call ID 标识，经 `support_validate` 校验但不推进 phase；重要结果必须进入父 ActionReceipt。完整规划上下文、变更证据、审查轴结果和聚合审查结果分别使用 `planning_context`、`change_evidence`、`review_axis_result` 和 `review_result` artifact；Agent 交接只传不超过 1 KiB 的 ref。ReviewPacket 还必须绑定完整 runtime identity，并包含规格来源、验收证据和验证记录。
+公共对象为 `WorkflowSnapshot`、`ActionReceipt`、`SupportReceipt`、`ArtifactRef` 和 `ReviewPacketRef`。SupportReceipt 由稳定 caller/call ID 标识；`support_validate` 从 active caller 派生 owner 并校验委派关系，但不推进 phase。完整规划上下文、变更证据、审查轴结果和聚合审查结果分别使用 `planning_context`、`change_evidence`、`review_axis_result` 和 `review_result` artifact；Agent 交接只传不超过 1 KiB 的 ref。ReviewPacket 还必须绑定完整 runtime identity，并包含规格来源、验收证据和验证记录。
 
 ## 自动流程
 
-Planning 固定按事实发现、确认门禁、spec、plan、single/split tasks、规划提交、完成推进。决定记录在 snapshot 的 `decision_history`，确认后生成唯一 `planning_context`；Planning 不实施源码。
+Planning 固定按事实发现、确认门禁、spec、plan、single/split tasks、规划提交、完成推进。决定记录在 snapshot 的 `decision_history`；确认后生成并持久化唯一 `planning_context` ref 和 task mode，后续 action 必须绑定前一 canonical receipt。Planning 不实施源码。
 
 Coding 在一次实施授权后自动推进：prepare、实现、本地提交、ReviewPacket、双轴审查、blocking finding 修复、完整复审、main 同步、fast-forward 整合和安全清理。修复与完整复审最多两轮；同一 finding 重现时立即产生一个用户决定。main 漂移最多自动 resync 两次，每次冻结新提交并重新审查。
 

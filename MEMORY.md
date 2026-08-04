@@ -17,7 +17,7 @@
 - 仓库使用 Node.js ESM；测试入口为 `npm test`，资产校验入口为 `node agent-build/install.mjs validate` 和 `npm run validate:skills`。
 - run、claim、receipt、decision 和 artifacts 只写 Git common dir 的 `.git/ai-work-flow/`，不得进入项目提交。
 - 自动 Git 授权仅含本地 commit、worktree、fast-forward 整合和安全清理；不含 push、stash、reset、clean、amend、tag、PR 或远端修改。
-- `skills/` 中的五个受管理 Skill 分发到三平台；受管理片段之外的用户内容必须保留。
+- `skills/` 中的五个受管理 Skill 分发到三平台，但每个角色只能启用 `skills.json` 归属的 Skill；受管理片段之外的用户内容必须保留。
 - 根 `MEMORY.md` 是 committed standards source；职责、边界或入口变化时与导航索引同轮维护。
 
 ## 职责

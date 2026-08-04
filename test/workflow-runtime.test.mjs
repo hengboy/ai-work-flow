@@ -25,6 +25,7 @@ const contractPath = resolve("execution-runtime/workflow-contract.json");
 const cliPath = resolve("execution-runtime/workflow-cli.mjs");
 const runtimeRoot = resolve("execution-runtime");
 const contract = await loadWorkflowContract();
+const TEST_PATH_CHANGE = { record_type: "1", index_status: ".", worktree_status: "M", path: "README.md" };
 
 async function runtimeIdentityRef() {
   const identity = JSON.parse(await readFile(resolve(runtimeRoot, "runtime-identity.json"), "utf8"));
@@ -62,23 +63,33 @@ function fieldValue(field) {
 }
 
 async function artifact(root, runId, kind, options = {}) {
-  if (kind === "review_packet") return writeReviewPacketArtifact({ repository: root, run_id: runId, content: { packet: true } });
+  if (kind === "review_packet") return writeReviewPacketArtifact({ repository: root, run_id: runId, content: {
+    review_base_commit: options.claim?.input.fields.base_sha ?? "a".repeat(40),
+    review_commit: options.claim?.input.fields.review_sha ?? "b".repeat(40),
+    review_context: options.claim?.input.fields.review_context ?? reviewContext(),
+    review_slices: options.claim?.input.fields.slices ?? [{ id: "slice-1", paths: ["README.md"] }],
+    runtime_identity: await runtimeIdentityRef(),
+  } });
   if (kind === "planning_context") return createArtifact({ repository: root, run_id: runId, kind, content: {
-    version: 1, plan_id: "plan", task_mode: options.taskMode ?? "single", goal: "goal", users_consumers: [], success_criteria: [], scope: {}, constraints: [], assumptions: [], acceptance_criteria: [], decisions: options.decisions ?? [], open_questions: [],
+    version: 1, plan_id: "plan", task_mode: options.taskMode ?? "single", goal: "goal", users_consumers: ["maintainer"], success_criteria: ["workflow completes"], scope: { included: ["workflow"] }, constraints: [], assumptions: [], acceptance_criteria: ["tests pass"], decisions: options.decisions ?? [], open_questions: [],
   } });
   if (kind === "change_evidence") return createArtifact({ repository: root, run_id: runId, kind, content: {
-    base_sha: "a".repeat(40), head_sha: "b".repeat(40), path_changes: [], acceptance_evidence: [], verification: [],
+    base_sha: options.baseSha ?? options.claim?.input.fields.base_sha ?? "a".repeat(40),
+    head_sha: options.headSha ?? "b".repeat(40),
+    path_changes: options.pathChanges ?? [TEST_PATH_CHANGE],
+    acceptance_evidence: [{ criterion: "requested behavior", evidence: "verified" }],
+    verification: [{ command: "node --test", result: "passed" }],
   } });
   if (kind === "review_axis_result") {
     const packetRef = options.packetRef ?? await artifact(root, runId, "review_packet");
     return createArtifact({ repository: root, run_id: runId, kind, content: {
-      axis: options.axis ?? "standards", review_packet_ref: packetRef, findings: options.findings ?? [], advisory_findings: [], coverage: options.coverage ?? [],
+      axis: options.axis ?? "standards", review_packet_ref: packetRef, findings: options.findings ?? [], advisory_findings: [], coverage: options.coverage ?? ["slice-1"],
     } });
   }
   if (kind === "review_result") {
     const packetRef = options.packetRef ?? await artifact(root, runId, "review_packet");
     const findings = (options.findingIds ?? []).map((id) => ({ id, summary: "finding", observable_impact: "impact", slice_id: "slice-1", path: "README.md", hunk: "@@", minimum_fix: "fix" }));
-    const coverage = options.coverage ?? (findings.length ? ["slice-1"] : []);
+    const coverage = options.coverage ?? ["slice-1"];
     const axisRefs = [
       await artifact(root, runId, "review_axis_result", { axis: "standards", packetRef, findings, coverage }),
       await artifact(root, runId, "review_axis_result", { axis: "spec", packetRef, coverage }),
@@ -91,12 +102,75 @@ async function artifact(root, runId, kind, options = {}) {
 async function actionInput(root, snapshot, actionId) {
   const inputContract = contract.io_contracts[contract.actions[actionId].io_contract].input_contract;
   const fields = Object.fromEntries(inputContract.required_fields.map((field) => [field, fieldValue(field)]));
+  let artifacts = [];
   if (actionId === "coding.prepare") Object.assign(fields, { plan_digest: snapshot.plan_digest ?? "a".repeat(64), task_mode: snapshot.task_mode ?? "single" });
-  if (actionId === "planning.confirm") fields.decision_history = snapshot.decision_history;
+  if (actionId === "planning.confirm") {
+    fields.decision_history = snapshot.decision_history;
+    fields.discovery_receipt = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: "planning.discover" })).result_receipt;
+  }
+  if (["planning.write_spec", "planning.write_plan", "planning.write_tasks"].includes(actionId)) {
+    artifacts = [snapshot.planning_context_ref];
+    fields.mode = snapshot.task_mode;
+    if (actionId === "planning.write_spec") {
+      fields.source_ref = snapshot.planning_context_ref;
+      fields.source_digest = snapshot.planning_context_ref.sha256;
+    } else {
+      const previousId = actionId === "planning.write_plan" ? "planning.write_spec" : "planning.write_plan";
+      const previous = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: previousId })).result_receipt.outputs;
+      fields.source_ref = previous.target;
+      fields.source_digest = previous.sha256;
+    }
+  }
+  if (actionId === "planning.commit") {
+    const planningOutputs = await Promise.all(["planning.write_spec", "planning.write_plan", "planning.write_tasks"].map(async (id) => (
+      await statusRun({ repository: root, run_id: snapshot.run_id, action_id: id })
+    ).result_receipt.outputs));
+    const paths = [...new Set(planningOutputs.flatMap((outputs) => [...outputs.changed_paths, ...(outputs.deleted_paths ?? [])]))].sort();
+    const pathChanges = paths.map((path) => ({ record_type: "?", index_status: ".", worktree_status: ".", path }));
+    const evidence = await artifact(root, snapshot.run_id, "change_evidence", { pathChanges });
+    const content = await verifyArtifact({ repository: root, run_id: snapshot.run_id, ref: evidence });
+    Object.assign(fields, { base_sha: content.base_sha, path_changes: content.path_changes, evidence_ref: evidence });
+    artifacts = [evidence];
+  }
+  if (actionId === "coding.implement") {
+    fields.base_sha = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: "coding.prepare" })).result_receipt.outputs.base_sha;
+  }
+  if (actionId === "coding.commit") {
+    const implementation = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: "coding.implement" })).result_receipt.outputs;
+    const content = await verifyArtifact({ repository: root, run_id: snapshot.run_id, ref: implementation.change_evidence_ref });
+    Object.assign(fields, { base_sha: content.base_sha, path_changes: content.path_changes, evidence_ref: implementation.change_evidence_ref });
+    artifacts = [implementation.change_evidence_ref];
+  }
+  if (contract.actions[actionId].io_contract === "review_prepare") {
+    fields.review_context = reviewContext();
+    fields.slices = [{ id: "slice-1", paths: ["README.md"] }];
+  }
+  if (["coding.fix_1", "coding.fix_2"].includes(actionId)) {
+    const reviewId = actionId === "coding.fix_1" ? "coding.review" : "coding.rereview_1";
+    const review = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: reviewId })).result_receipt.outputs;
+    Object.assign(fields, { finding_ids: review.finding_ids, review_result_ref: review.review_result_ref });
+    artifacts = [review.review_result_ref];
+  }
   if (contract.actions[actionId].io_contract === "dual_axis_review") fields.assigned_axes = ["standards", "spec"];
+  if (contract.actions[actionId].io_contract === "dual_axis_review") {
+    const prepareIds = {
+      "coding.review": "coding.prepare_review", "coding.rereview_1": "coding.prepare_rereview_1", "coding.rereview_2": "coding.prepare_rereview_2",
+      "coding.resync_review_1": "coding.prepare_resync_review_1", "coding.resync_review_2": "coding.prepare_resync_review_2",
+    };
+    const packetRef = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: prepareIds[actionId] })).result_receipt.outputs.review_packet_ref;
+    fields.review_packet_ref = packetRef;
+    artifacts = [packetRef];
+  }
+  if (actionId === "planning.complete") {
+    const outputs = {};
+    for (const [name, id] of Object.entries({ spec: "planning.write_spec", plan: "planning.write_plan", tasks: "planning.write_tasks", commit: "planning.commit" })) {
+      outputs[name] = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: id })).result_receipt.outputs;
+    }
+    fields.refs = { planning_context_ref: snapshot.planning_context_ref, task_mode: snapshot.task_mode, ...outputs };
+  }
   return {
     fields,
-    artifacts: await Promise.all(inputContract.required_artifact_kinds.map((kind) => artifact(root, snapshot.run_id, kind))),
+    artifacts: artifacts.length ? artifacts : await Promise.all(inputContract.required_artifact_kinds.map((kind) => artifact(root, snapshot.run_id, kind))),
   };
 }
 
@@ -108,6 +182,7 @@ async function actionResult(root, snapshot, claim, result) {
     taskMode: snapshot.task_mode ?? "single",
     packetRef: claim.input.artifacts.find((ref) => ref.kind === "review_packet"),
     findingIds: result === "retryable_failure" ? ["F-001"] : [],
+    claim,
   })));
   const refByKind = new Map(artifacts.map((ref) => [ref.kind, ref]));
   const refKinds = { planning_context_ref: "planning_context", change_evidence_ref: "change_evidence", review_packet_ref: "review_packet", review_result_ref: "review_result", axis_result_ref: "review_axis_result" };
@@ -123,6 +198,22 @@ async function actionResult(root, snapshot, claim, result) {
     const planningContext = await verifyArtifact({ repository: root, run_id: snapshot.run_id, ref: planningContextRef });
     outputs.plan_id = planningContext.plan_id;
     outputs.task_mode = planningContext.task_mode;
+  }
+  if (["planning.write_spec", "planning.write_plan", "planning.write_tasks"].includes(actionId) && result === "completed") {
+    outputs.target = claim.input.fields.target;
+    outputs.mode = claim.input.fields.mode;
+  }
+  if (actionId === "planning.complete" && result === "completed") outputs.refs = claim.input.fields.refs;
+  const changeEvidenceRef = refByKind.get("change_evidence");
+  if (changeEvidenceRef && result === "completed") {
+    const evidence = await verifyArtifact({ repository: root, run_id: snapshot.run_id, ref: changeEvidenceRef });
+    outputs.head_sha = evidence.head_sha;
+    outputs.changed_paths = [...new Set(evidence.path_changes.map((change) => change.path))].sort();
+    if (Object.hasOwn(outputs, "fixed_finding_ids")) outputs.fixed_finding_ids = claim.input.fields.finding_ids;
+  }
+  if (contract.actions[actionId].io_contract === "local_commit" && result === "completed") {
+    outputs.commit_sha = "c".repeat(40);
+    outputs.committed_paths = [...new Set(claim.input.fields.path_changes.map((change) => change.path))].sort();
   }
   const error = resultContract.required_error_fields ? Object.fromEntries(resultContract.required_error_fields.map((field) => [field, field === "finding_ids" ? ["F-001"] : "test error"])) : undefined;
   return { outputs, artifacts, ...(error ? { error } : {}) };
@@ -258,6 +349,9 @@ test("action contracts reject missing or extra inputs, outputs, artifacts, and r
   const missingOutput = structuredClone(valid);
   delete missingOutput.outputs.worktree;
   await assert.rejects(finishAction({ repository: root, receipt: missingOutput }), /worktree/);
+  await assert.rejects(finishAction({ repository: root, receipt: {
+    ...valid, outputs: { worktree: null, branch: null, base_sha: null, initial_status: null },
+  } }), /non-empty/);
   await assert.rejects(finishAction({ repository: root, receipt: { ...valid, outputs: { ...valid.outputs, extra: true } } }), /unsupported field/);
   await assert.rejects(finishAction({ repository: root, receipt: { ...valid, artifacts: [unrelated] } }), /unsupported artifact kind/);
   await finishAction({ repository: root, receipt: valid });
@@ -271,6 +365,21 @@ test("action contracts reject missing or extra inputs, outputs, artifacts, and r
   await assert.rejects(finishAction({ repository: root, receipt: missingError }), /error.code/);
   await assert.rejects(finishAction({ repository: root, receipt: { ...retry, error: { ...retry.error, extra: true } } }), /error is invalid/);
   await finishAction({ repository: root, receipt: retry });
+});
+
+test("required collection inputs reject empty values unless the field has defined empty semantics", async () => {
+  const root = await repository();
+  const started = await startRun({ repository: root, kind: "navigation", plan_digest: "3".repeat(64) });
+  const input = await actionInput(root, started, "navigation.locate");
+  await assert.rejects(claimAction({
+    repository: root, run_id: started.run_id, action_id: "navigation.locate", claimant: "empty-terms", owner_pid: process.pid,
+    input: { ...input, fields: { ...input.fields, terms: [] } },
+  }), /terms/);
+  const claim = await claimAction({
+    repository: root, run_id: started.run_id, action_id: "navigation.locate", claimant: "empty-known-paths", owner_pid: process.pid,
+    input: { ...input, fields: { ...input.fields, known_paths: [] } },
+  });
+  assert.deepEqual(claim.input.fields.known_paths, []);
 });
 
 test("planning confirmation persists zero, one, or multiple decisions and binds context", async () => {
@@ -292,39 +401,74 @@ test("planning confirmation persists zero, one, or multiple decisions and binds 
     snapshot = await finishReady(root, snapshot);
     assert.equal(snapshot.phase, "context_ready");
     assert.equal(snapshot.decision_history.length, count);
+    assert.equal(snapshot.task_mode, "single");
+    assert.equal(snapshot.planning_context_ref.kind, "planning_context");
+    const specInput = await actionInput(root, snapshot, "planning.write_spec");
+    await assert.rejects(claimAction({
+      repository: root, run_id: snapshot.run_id, action_id: "planning.write_spec", claimant: "stale-context", owner_pid: process.pid,
+      input: { ...specInput, fields: { ...specInput.fields, source_digest: "0".repeat(64) } },
+    }), /planning context/);
   }
+  await assert.rejects(startRun({ repository: root, kind: "planning", plan_digest: "f".repeat(64), task_mode: "split" }), /start input/);
 });
 
-test("support validation binds owner, active caller, stable call input, and artifact digests", async () => {
+test("implementation and commit receipts must match canonical change evidence", async () => {
   const root = await repository();
-  const snapshot = await startRun({ repository: root, kind: "coding", plan_digest: "a".repeat(64), task_mode: "single" });
-  const parent = await claimAction({ repository: root, run_id: snapshot.run_id, action_id: "coding.prepare", claimant: "parent", owner_pid: process.pid, input: await actionInput(root, snapshot, "coding.prepare") });
-  const input = await actionInput(root, snapshot, "support.research");
+  let snapshot = await startRun({ repository: root, kind: "coding", plan_digest: "2".repeat(64), task_mode: "single" });
+  snapshot = await finishReady(root, snapshot);
+  const implementInput = await actionInput(root, snapshot, "coding.implement");
+  const implementClaim = await claimAction({ repository: root, run_id: snapshot.run_id, action_id: "coding.implement", claimant: "implement", owner_pid: process.pid, input: implementInput });
+  const implementReceipt = await receipt(root, snapshot, implementClaim);
+  await assert.rejects(finishAction({ repository: root, receipt: {
+    ...implementReceipt, outputs: { ...implementReceipt.outputs, head_sha: "d".repeat(40) },
+  } }), /change_evidence/);
+  snapshot = (await finishAction({ repository: root, receipt: implementReceipt })).snapshot;
+  const commitInput = await actionInput(root, snapshot, "coding.commit");
+  const commitClaim = await claimAction({ repository: root, run_id: snapshot.run_id, action_id: "coding.commit", claimant: "commit", owner_pid: process.pid, input: commitInput });
+  const commitReceipt = await receipt(root, snapshot, commitClaim);
+  await assert.rejects(finishAction({ repository: root, receipt: {
+    ...commitReceipt, outputs: { ...commitReceipt.outputs, committed_paths: ["other.md"] },
+  } }), /PathChange/);
+});
+
+test("support validation derives owner from the active caller and rejects undelegated actions or artifact tampering", async () => {
+  const root = await repository();
+  let snapshot = await startRun({ repository: root, kind: "coding", plan_digest: "a".repeat(64), task_mode: "single" });
+  snapshot = await finishReady(root, snapshot);
+  const parent = await claimAction({ repository: root, run_id: snapshot.run_id, action_id: "coding.implement", claimant: "parent", owner_pid: process.pid, input: await actionInput(root, snapshot, "coding.implement") });
+  const input = await actionInput(root, snapshot, "support.locate");
   const support = {
     run_id: snapshot.run_id,
     caller_ref: parent.claim_id,
-    call_id: "research-call-001",
-    action_id: "support.research",
+    call_id: "location-call-001",
+    action_id: "support.locate",
     result: "completed",
-    summary: "research complete",
-    outputs: { report_path: "report.md", citation_urls: [], changed_paths: ["report.md"], checks: ["read-back"] },
+    summary: "location complete",
+    outputs: { entry_paths: ["README.md"], direct_dependencies: ["package.json"], facts: ["located"], open_decisions: [] },
     artifacts: [],
     checks: ["read-back"],
   };
-  assert.deepEqual(await validateSupportAction({ repository: root, caller_ref: parent.claim_id, owner: "researcher", input, receipt: support }), support);
-  assert.deepEqual(await validateSupportAction({ repository: root, caller_ref: parent.claim_id, owner: "researcher", input, receipt: support }), support);
-  await assert.rejects(validateSupportAction({ repository: root, caller_ref: parent.claim_id, owner: "document-maintainer", input, receipt: support }), /owner/);
-  await assert.rejects(validateSupportAction({ repository: root, caller_ref: parent.claim_id, owner: "researcher", input: { ...input, fields: { ...input.fields, report_path: "replacement.md" } }, receipt: support }), /different input/);
+  assert.deepEqual(await validateSupportAction({ repository: root, caller_ref: parent.claim_id, input, receipt: support }), support);
+  assert.deepEqual(await validateSupportAction({ repository: root, caller_ref: parent.claim_id, input, receipt: support }), support);
+  const researchInput = await actionInput(root, snapshot, "support.research");
+  const researchReceipt = {
+    ...support, call_id: "research-call-001", action_id: "support.research", summary: "research complete",
+    outputs: { report_path: researchInput.fields.report_path, citation_urls: ["https://example.com"], changed_paths: [researchInput.fields.report_path], checks: ["read-back"] },
+  };
+  await assert.rejects(validateSupportAction({ repository: root, caller_ref: parent.claim_id, input: researchInput, receipt: researchReceipt }), /not delegated/);
+  await assert.rejects(validateSupportAction({ repository: root, caller_ref: parent.claim_id, input: { ...input, fields: { ...input.fields, objective: "replacement" } }, receipt: support }), /different input/);
 
-  const packetRef = await artifact(root, snapshot.run_id, "review_packet");
-  const axisRef = await artifact(root, snapshot.run_id, "review_axis_result", { axis: "standards", packetRef });
+  const review = await reachReview(root, "1".repeat(64));
+  const reviewParent = await claimAction({ repository: root, run_id: review.run_id, action_id: "coding.review", claimant: "review-parent", owner_pid: process.pid, input: await actionInput(root, review, "coding.review") });
+  const packetRef = reviewParent.input.artifacts[0];
+  const axisRef = await artifact(root, review.run_id, "review_axis_result", { axis: "standards", packetRef });
   const axisInput = { fields: { review_packet_ref: packetRef, assigned_slices: ["slice-1"], axis: "standards" }, artifacts: [packetRef] };
   const tampered = { ...axisRef, sha256: "0".repeat(64) };
   const axisReceipt = {
-    run_id: snapshot.run_id, caller_ref: parent.claim_id, call_id: "axis-call-0001", action_id: "support.review_standards", result: "completed", summary: "axis complete",
-    outputs: { axis_result_ref: tampered, finding_ids: [], coverage: [] }, artifacts: [tampered], checks: [],
+    run_id: review.run_id, caller_ref: reviewParent.claim_id, call_id: "axis-call-0001", action_id: "support.review_standards", result: "completed", summary: "axis complete",
+    outputs: { axis_result_ref: tampered, finding_ids: [], coverage: ["slice-1"] }, artifacts: [tampered], checks: [],
   };
-  await assert.rejects(validateSupportAction({ repository: root, caller_ref: parent.claim_id, owner: "review-standards", input: axisInput, receipt: axisReceipt }), /digest/);
+  await assert.rejects(validateSupportAction({ repository: root, caller_ref: reviewParent.claim_id, input: axisInput, receipt: axisReceipt }), /digest/);
 });
 
 test("illegal finish and live-owner recovery perform no state write", async () => {
@@ -386,6 +530,9 @@ test("review artifacts require two axes, stable findings, aggregate coverage, an
   const started = await startRun({ repository: root, kind: "coding", plan_digest: "b".repeat(64), task_mode: "single" });
   const packetRef = await artifact(root, started.run_id, "review_packet");
   const finding = { id: "STD-slice-1-001", summary: "issue", observable_impact: "failure", slice_id: "slice-1", path: "README.md", hunk: "@@ -1 +1 @@", minimum_fix: "correct output" };
+  await assert.rejects(createArtifact({ repository: root, run_id: started.run_id, kind: "review_axis_result", content: {
+    axis: "standards", review_packet_ref: packetRef, findings: [], advisory_findings: [], coverage: ["wrong-slice"],
+  } }), /ReviewPacket slices/);
   const standards = await createArtifact({ repository: root, run_id: started.run_id, kind: "review_axis_result", content: {
     axis: "standards", review_packet_ref: packetRef, findings: [finding], advisory_findings: [], coverage: ["slice-1"],
   } });
@@ -405,6 +552,17 @@ test("review artifacts require two axes, stable findings, aggregate coverage, an
   await assert.rejects(createArtifact({ repository: root, run_id: started.run_id, kind: "review_result", content: {
     axis_result_refs: [{ ...standards, sha256: "0".repeat(64) }, spec], verdict: "blocking", finding_ids: [finding.id], coverage: ["slice-1"],
   } }), /digest/);
+});
+
+test("review receipt coverage must match the packet-bound aggregate result", async () => {
+  const root = await repository();
+  const snapshot = await reachReview(root, "6".repeat(64));
+  const input = await actionInput(root, snapshot, "coding.review");
+  const claim = await claimAction({ repository: root, run_id: snapshot.run_id, action_id: "coding.review", claimant: "coverage", owner_pid: process.pid, input });
+  const completed = await receipt(root, snapshot, claim);
+  await assert.rejects(finishAction({ repository: root, receipt: {
+    ...completed, outputs: { ...completed.outputs, coverage: ["wrong-slice"] },
+  } }), /review_result/);
 });
 
 test("review packets stay local, use current names, and reject tampering or Git drift", async () => {

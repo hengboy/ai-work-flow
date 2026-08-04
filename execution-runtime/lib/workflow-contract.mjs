@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { assertPathChange } from "./paths.mjs";
+
 const CONTRACT_PATH = resolve(import.meta.dirname, "..", "workflow-contract.json");
 let cached;
 
@@ -26,7 +28,7 @@ export async function loadWorkflowContract(path = CONTRACT_PATH) {
 }
 
 export function assertWorkflowContract(contract) {
-  if (!contract || !contract.workflows || !contract.actions || !contract.io_contracts || !contract.artifact_kinds) {
+  if (!contract || !contract.workflows || !contract.actions || !contract.io_contracts || !contract.artifact_kinds || !contract.support_delegations) {
     throw new Error("workflow contract is invalid");
   }
   if (!/^[0-9a-f]{64}$/.test(contract.digest)) throw new Error("workflow contract digest is invalid");
@@ -60,6 +62,11 @@ export function assertWorkflowContract(contract) {
       for (const id of ids) if (contract.actions[id]?.workflow !== kind) throw new Error(`workflow ${kind} references invalid action ${id}`);
     }
   }
+  for (const [owner, actionIds] of Object.entries(contract.support_delegations)) {
+    if (!owners.has(owner) || !duplicateFreeStrings(actionIds) || actionIds.some((id) => contract.actions[id]?.workflow !== "support")) {
+      throw new Error(`workflow support delegation is invalid: ${owner}`);
+    }
+  }
   return { contract, owners };
 }
 
@@ -81,9 +88,12 @@ function assertPayloadContract(value, label) {
   }
 }
 
-function nonEmpty(value) {
+const EMPTY_COLLECTION_FIELDS = new Set(["changed_paths", "decision_history", "deleted_paths", "finding_ids", "known_paths", "open_decisions"]);
+
+function nonEmpty(value, field) {
   if (typeof value === "string") return Boolean(value.trim());
-  if (Array.isArray(value) || isPlainObject(value)) return true;
+  if (Array.isArray(value)) return value.length > 0 || EMPTY_COLLECTION_FIELDS.has(field);
+  if (isPlainObject(value)) return Object.keys(value).length > 0;
   return value !== undefined && value !== null;
 }
 
@@ -91,8 +101,8 @@ function validateFields(fields, payloadContract, label, requireNonEmpty) {
   if (!isPlainObject(fields)) throw new Error(`${label} fields are invalid`);
   const allowed = [...payloadContract.required_fields, ...(payloadContract.optional_fields ?? [])];
   if (Object.keys(fields).some((field) => !allowed.includes(field))) throw new Error(`${label} contains an unsupported field`);
-  for (const field of payloadContract.required_fields) if (!Object.hasOwn(fields, field) || (requireNonEmpty && !nonEmpty(fields[field]))) throw new Error(`${label} requires${requireNonEmpty ? " non-empty" : ""} ${field}`);
-  if (requireNonEmpty) for (const [field, value] of Object.entries(fields)) if (!nonEmpty(value)) throw new Error(`${label} field ${field} must be non-empty`);
+  for (const field of payloadContract.required_fields) if (!Object.hasOwn(fields, field) || (requireNonEmpty && !nonEmpty(fields[field], field))) throw new Error(`${label} requires${requireNonEmpty ? " non-empty" : ""} ${field}`);
+  if (requireNonEmpty) for (const [field, value] of Object.entries(fields)) if (!nonEmpty(value, field)) throw new Error(`${label} field ${field} must be non-empty`);
 }
 
 function validateArtifactKinds(artifacts, requiredKinds, label) {
@@ -153,13 +163,13 @@ function validateError(error, resultContract, label) {
     return;
   }
   if (!isPlainObject(error) || Object.keys(error).some((field) => !required.includes(field))) throw new Error(`${label} error is invalid`);
-  for (const field of required) if (!Object.hasOwn(error, field) || !nonEmpty(error[field])) throw new Error(`${label} requires error.${field}`);
+  for (const field of required) if (!Object.hasOwn(error, field) || !nonEmpty(error[field], field)) throw new Error(`${label} requires error.${field}`);
 }
 
 function validateActionResult(receipt, contract, support) {
   const resultContract = actionIo(receipt.action_id, contract).result_contracts[receipt.result];
   if (!resultContract || (support && receipt.result === "retryable_failure")) throw new Error(`Result is not allowed for ${receipt.action_id}`);
-  validateFields(receipt.outputs, resultContract, support ? "SupportReceipt outputs" : "ActionReceipt outputs", false);
+  validateFields(receipt.outputs, resultContract, support ? "SupportReceipt outputs" : "ActionReceipt outputs", true);
   validateArtifactKinds(receipt.artifacts, resultContract.required_artifact_kinds, support ? "SupportReceipt" : "ActionReceipt");
   for (const [field, value] of Object.entries(receipt.outputs)) {
     if (!field.endsWith("_ref")) continue;
@@ -188,34 +198,54 @@ export function validateSupportReceipt(receipt, contract) {
   return receipt;
 }
 
-function assertObjectFields(content, required, label) {
+function assertObjectFields(content, required, label, exact = false) {
   if (!isPlainObject(content)) throw new Error(`${label} artifact content is invalid`);
   for (const field of required) if (!Object.hasOwn(content, field)) throw new Error(`${label} artifact requires ${field}`);
+  if (exact && Object.keys(content).some((field) => !required.includes(field))) throw new Error(`${label} artifact contains an unsupported field`);
+}
+
+function stringArray(value, allowEmpty = false) {
+  return Array.isArray(value) && (allowEmpty || value.length > 0) && value.every((entry) => typeof entry === "string" && entry.trim()) && new Set(value).size === value.length;
+}
+
+function evidenceArray(value, fields) {
+  return Array.isArray(value) && value.length > 0 && value.every((entry) => {
+    if (!isPlainObject(entry) || Object.keys(entry).sort().join() !== [...fields].sort().join()) return false;
+    return fields.every((field) => typeof entry[field] === "string" && entry[field].trim());
+  });
 }
 
 function validateFinding(finding, spec) {
   const fields = ["id", "summary", "observable_impact", "slice_id", "path", "hunk", "minimum_fix"];
   if (spec) fields.push("requirement");
-  assertObjectFields(finding, fields, "finding");
-  for (const field of fields) if (!nonEmpty(finding[field])) throw new Error(`finding requires non-empty ${field}`);
+  assertObjectFields(finding, fields, "finding", true);
+  for (const field of fields) if (!nonEmpty(finding[field], field)) throw new Error(`finding requires non-empty ${field}`);
 }
 
 export function validateArtifactContent(kind, content, contract) {
   const schema = contract.artifact_kinds[kind];
   if (!schema) return content;
-  assertObjectFields(content, schema.required_fields, kind);
+  assertObjectFields(content, schema.required_fields, kind, true);
   if (kind === "planning_context") {
-    if (content.version !== 1 || !["single", "split"].includes(content.task_mode) || !Array.isArray(content.decisions) || !Array.isArray(content.open_questions) || content.open_questions.length !== 0) {
+    if (content.version !== 1 || typeof content.plan_id !== "string" || !content.plan_id.trim() || !["single", "split"].includes(content.task_mode) ||
+      typeof content.goal !== "string" || !content.goal.trim() || !stringArray(content.users_consumers) || !stringArray(content.success_criteria) ||
+      !isPlainObject(content.scope) || Object.keys(content.scope).length === 0 || !stringArray(content.constraints, true) || !stringArray(content.assumptions, true) ||
+      !stringArray(content.acceptance_criteria) || !Array.isArray(content.decisions) || content.decisions.some((decision) => (
+        !isPlainObject(decision) || Object.keys(decision).sort().join() !== "code,revision,summary" || !Number.isSafeInteger(decision.revision) || decision.revision < 1 ||
+        typeof decision.code !== "string" || !decision.code.trim() || typeof decision.summary !== "string" || !decision.summary.trim()
+      )) || !Array.isArray(content.open_questions) || content.open_questions.length !== 0) {
       throw new Error("planning_context artifact is invalid");
     }
   }
   if (kind === "change_evidence") {
-    if (!/^[0-9a-f]{40,64}$/.test(content.base_sha) || !/^[0-9a-f]{40,64}$/.test(content.head_sha) || !Array.isArray(content.path_changes) || !Array.isArray(content.acceptance_evidence) || !Array.isArray(content.verification)) {
+    if (!/^[0-9a-f]{40,64}$/.test(content.base_sha) || !/^[0-9a-f]{40,64}$/.test(content.head_sha) || !Array.isArray(content.path_changes) || content.path_changes.length === 0 ||
+      !evidenceArray(content.acceptance_evidence, ["criterion", "evidence"]) || !evidenceArray(content.verification, ["command", "result"])) {
       throw new Error("change_evidence artifact is invalid");
     }
+    content.path_changes.forEach(assertPathChange);
   }
   if (kind === "review_axis_result") {
-    if (!["standards", "spec"].includes(content.axis) || !Array.isArray(content.findings) || !Array.isArray(content.advisory_findings) || !Array.isArray(content.coverage)) {
+    if (!["standards", "spec"].includes(content.axis) || !Array.isArray(content.findings) || !Array.isArray(content.advisory_findings) || !stringArray(content.coverage)) {
       throw new Error("review_axis_result artifact is invalid");
     }
     validateArtifactRef(content.review_packet_ref);
@@ -225,7 +255,7 @@ export function validateArtifactContent(kind, content, contract) {
     if (new Set(findingIds).size !== findingIds.length) throw new Error("review_axis_result finding IDs must be unique");
   }
   if (kind === "review_result") {
-    if (!Array.isArray(content.axis_result_refs) || content.axis_result_refs.length !== 2 || !["passed", "blocking"].includes(content.verdict) || !Array.isArray(content.finding_ids) || !Array.isArray(content.coverage)) {
+    if (!Array.isArray(content.axis_result_refs) || content.axis_result_refs.length !== 2 || !["passed", "blocking"].includes(content.verdict) || !stringArray(content.finding_ids, true) || !stringArray(content.coverage)) {
       throw new Error("review_result artifact is invalid");
     }
     content.axis_result_refs.forEach(validateArtifactRef);

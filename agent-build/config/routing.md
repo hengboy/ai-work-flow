@@ -70,7 +70,7 @@
 - ArtifactRef 指向 run 内完整证据并绑定 kind、digest 与大小。
 - ReviewPacketRef 是冻结审查上下文的专用 ArtifactRef。
 - support caller 生成稳定 call ID，并保存原始 support input。
-- support_validate 必须核对 owner、caller、call ID、I/O contract 与 artifact refs。
+- support_validate 必须从 active caller action 派生 owner，核对允许的委派关系、call ID、I/O contract 与 artifact refs；调用者不得提交 owner 声明。
 - support 的关键 refs、checks 和失败信息必须进入父 ActionReceipt。
 - ActionReceipt 的 outputs 是结构化交接，不得把关键 SHA 或 IDs 藏在 summary。
 - 重复 claim 返回 canonical input；调用者不得替换它。

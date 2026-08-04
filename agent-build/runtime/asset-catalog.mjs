@@ -166,6 +166,13 @@ function validateAssets(catalog, controlsDocument, policiesDocument, defaults, t
   }
   validateDelegateGraph(roles, errors);
   validateDelegateDepth(roles, errors);
+  for (const [callerOwner, supportActions] of Object.entries(contract.support_delegations ?? {})) {
+    const caller = roles.find((role) => role.id === callerOwner);
+    for (const actionId of supportActions) {
+      const supportOwner = contract.actions[actionId]?.owner;
+      if (!caller?.delegates.includes(supportOwner)) errors.push(`Support delegation ${callerOwner} -> ${actionId} is not allowed by roles.json.`);
+    }
+  }
   for (const id of Object.keys(contract.actions)) if (!referencedActions.has(id)) errors.push(`Action is not assigned to a role: ${id}.`);
   if (!isPlainObject(defaults?.roles)) errors.push("default-config.json must define roles.");
   for (const id of ids) for (const platform of PLATFORM_NAMES) if (!isPlainObject(defaults?.roles?.[id]?.[platform])) errors.push(`default-config.json is missing ${id}/${platform}.`);
@@ -196,10 +203,12 @@ function actionText(role, contract) {
 
 function controlsText(role, controls, policies) {
   const delegates = role.delegates.length ? role.delegates.map((id) => `\`${id}\``).join("、") : "无";
+  const skills = role.skills.length ? role.skills.map((name) => `\`$${name}\``).join("、") : "无；不得调用任何 managed Skill";
   const capabilities = Object.entries(policies[role.policy]).map(([key, value]) => `${key}=${value}`).join("; ");
   return [
     `- 能力请求：${capabilities}。`,
     `- 可委派角色：${delegates}。`,
+    `- Skill 所有权：${skills}。`,
     ...role.controls.map((id) => `- \`${id}\`：${controls[id].instruction}`),
   ].join("\n");
 }

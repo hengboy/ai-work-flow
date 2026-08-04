@@ -25,7 +25,7 @@ const OPERATION_FIELDS = Object.freeze({
   artifact_verify: ["operation", "repository", "run_id", "ref"],
   review_packet_create: ["operation", "repository", "run_id", "packet"],
   review_packet_verify: ["operation", "repository", "run_id", "ref"],
-  support_validate: ["operation", "repository", "caller_ref", "owner", "input", "receipt"],
+  support_validate: ["operation", "repository", "caller_ref", "input", "receipt"],
   contract: ["operation"],
 });
 
@@ -47,7 +47,6 @@ const TOOL = Object.freeze({
       receipt: { type: "object" },
       input: { type: "object" },
       caller_ref: { type: "string" },
-      owner: { type: "string" },
       decision: { type: "object" },
       content: {},
       ref: { type: "object" },
@@ -87,7 +86,7 @@ export async function dispatchWorkflowState(input, context = {}) {
     if (!input.packet || typeof input.packet !== "object" || Array.isArray(input.packet)) throw new Error("review packet input is required");
     return createReviewPacket({ ...input.packet, repository, run_id: input.run_id });
   }
-  if (input.operation === "support_validate") return validateSupportAction({ repository, caller_ref: input.caller_ref, owner: input.owner, input: input.input, receipt: input.receipt });
+  if (input.operation === "support_validate") return validateSupportAction({ repository, caller_ref: input.caller_ref, input: input.input, receipt: input.receipt });
   return verifyReviewPacket({ repository, run_id: input.run_id, ref: input.ref });
 }
 

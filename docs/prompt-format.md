@@ -12,7 +12,7 @@
 6. `决策条件`
 7. `结果回执`
 
-模板显式保留加粗角色名，并只写角色独有判断。`能力与控制` 由 roles、controls 和 policies 注入；`Actions 与输入` 由 workflow contract 的命名 I/O contract、owner 和结果分支注入；`结果回执` 按 workflow/support action 注入 `ActionReceipt` 或 `SupportReceipt`。需要写运行状态的只读角色使用 MCP `workflow_state`，不获得工作区写权限。`routing.md` 仅参与 digest 和治理说明，不复制进角色 prompt。Planning Writer 与 Task Planner 可在“执行循环”内用带 `markdown` info string 的 fenced code block 维护 `spec.md`、`plan.md` 和 task 文件的统一模板。
+模板显式保留加粗角色名，并只写角色独有判断。`能力与控制` 由 roles、controls、policies 和 `skills.json` 所有权注入；`Actions 与输入` 由 workflow contract 的命名 I/O contract、owner 和结果分支注入；`结果回执` 按 workflow/support action 注入 `ActionReceipt` 或 `SupportReceipt`。需要写运行状态的只读角色使用 MCP `workflow_state`，不获得工作区写权限。`routing.md` 仅参与 digest 和治理说明，不复制进角色 prompt。Planning Writer 与 Task Planner 可在“执行循环”内用带 `markdown` info string 的 fenced code block 维护 `spec.md`、`plan.md` 和 task 文件的统一模板。
 
 编译器必须验证：每个 contract action 恰有一个 owner；owner 的角色声明该 action；能力、工具和 control 一致；所有 action/结果字段有结构覆盖。禁止用中文短语、表格行或历史 marker 判断状态机完整性。
 
@@ -30,7 +30,7 @@
 
 每步使用祈使表达并以机器或人工可检查的完成标准结束。分支细节只放一级 `references/`；可重复、易错或解析型逻辑放 `scripts/`。正文不复制 Agent 的状态、Git、重试或交接协议，只引用 runtime action 和结果。
 
-单个 Skill 正文不超过 4,000 字符，五个总量不超过 12,000 字符。`skills.json` 确定 display name、25–64 字符短描述和 default prompt；`openai.yaml` 的所有字符串加引号，default prompt 显式包含 `$skill-name`。
+单个 Skill 正文不超过 4,000 字符，五个总量不超过 12,000 字符。`skills.json` 确定 owner、display name、25–64 字符短描述和 default prompt；Codex 用每角色 `skills.config`、Claude 用预加载列表且不开放通用 Skill 工具、OpenCode 用名称级 permission，只允许 owner 调用。`openai.yaml` 的所有字符串加引号，default prompt 显式包含 `$skill-name`。
 
 ## 交接
 

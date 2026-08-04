@@ -76,7 +76,13 @@ function codexSandbox(policy) {
   return policy.filesystem === 'none' || policy.filesystem === 'read' ? 'read-only' : 'workspace-write';
 }
 
-function codexRender(role, settings, body, policy) {
+function codexRender(role, settings, body, policy, context) {
+  const skillConfig = context.roles.flatMap((candidate) => candidate.skills).filter((name, index, names) => names.indexOf(name) === index).sort().flatMap((name) => [
+    '',
+    '[[skills.config]]',
+    `path = ${tomlString(resolve(context.paths.codexDir, 'skills', name, 'SKILL.md'))}`,
+    `enabled = ${role.skills.includes(name)}`,
+  ]);
   return [
     `name = ${tomlString(role.id)}`,
     `description = ${tomlString(agentDescription(role))}`,
@@ -84,6 +90,7 @@ function codexRender(role, settings, body, policy) {
     `model_reasoning_effort = ${tomlString(settings.reasoning)}`,
     `sandbox_mode = ${tomlString(codexSandbox(policy))}`,
     `developer_instructions = ${tomlString(body)}`,
+    ...skillConfig,
     ''
   ].join('\n');
 }
@@ -152,7 +159,7 @@ function claudePermission(policy) {
 }
 
 function claudeTools(role) {
-  return (role.tools.length ? role.tools : ['Task']).map((tool) => tool === 'WorkflowState' ? `mcp__${WORKFLOW_MCP_ID}__${WORKFLOW_TOOL}` : tool);
+  return (role.tools.length ? role.tools : ['Task']).filter((tool) => tool !== 'Skill').map((tool) => tool === 'WorkflowState' ? `mcp__${WORKFLOW_MCP_ID}__${WORKFLOW_TOOL}` : tool);
 }
 
 function yamlValue(value) {
@@ -167,6 +174,7 @@ function claudeRender(role, settings, body, policy) {
     `model: ${yamlValue(settings.model)}`,
     `effort: ${yamlValue(settings.effort)}`,
     `tools: ${yamlValue(claudeTools(role))}`,
+    `skills: ${yamlValue(role.skills)}`,
     `permissionMode: ${yamlValue(claudePermission(policy))}`
   ];
   return [
@@ -468,7 +476,7 @@ export function planGeneration({ platform, paths, roles, policies, config, bodie
   for (const role of roles) {
     const policy = policies?.[role.policy];
     if (!policy) fail(`Missing policy for role: ${role.id}`);
-    addWrite(resolve(agentDir, `${role.id}.${strategy.extension}`), strategy.render(role, config.roles[role.id][platform], bodies.get(role.id), policy));
+    addWrite(resolve(agentDir, `${role.id}.${strategy.extension}`), strategy.render(role, config.roles[role.id][platform], bodies.get(role.id), policy, { paths, roles }));
   }
   for (const legacyRoleId of [LEGACY_PRIMARY_AGENT_ID, LEGACY_GIT_OPERATOR_AGENT_ID]) {
     const legacyAgentPath = resolve(agentDir, `${legacyRoleId}.${strategy.extension}`);
@@ -495,7 +503,7 @@ export function generationStatus({ platforms, paths, roles, policies, config, bo
     const markerIsDrifted = markerDrift(strategy, paths);
     const configurationIsDrifted = configurationDrift(strategy, paths, roles);
     return roles.map((role) => {
-      const expected = strategy.render(role, config.roles[role.id][platform], bodies.get(role.id), policies[role.policy]);
+      const expected = strategy.render(role, config.roles[role.id][platform], bodies.get(role.id), policies[role.policy], { paths, roles });
       const target = agentFile(paths, platform, role.id);
       const reasons = [];
       let installedDigest;

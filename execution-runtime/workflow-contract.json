@@ -1,8 +1,9 @@
 {
-  "digest": "cf7411eee99c8e0237f22a1e9d2fce94adb5f21d067724c9347db6b21cdad575",
+  "digest": "90d7f7b1aa25e8f1f36477141917a75b3990103d7aaa01ba83b3b144d7fa2318",
   "snapshot_schema": {
     "required": ["run_id", "kind", "plan_digest", "task_mode", "revision", "phase", "ready_actions", "active_claims", "budgets", "decision_history"],
-    "decision_request_optional": true
+    "decision_request_optional": true,
+    "planning_context_ref_optional": true
   },
   "claim_input_schema": {
     "required": ["fields", "artifacts"]
@@ -52,7 +53,7 @@
       }
     },
     "planning_write": {
-      "input_contract": { "required_fields": ["target", "source_ref", "source_digest", "mode"], "optional_fields": ["deletion_decision_ref"], "required_artifact_kinds": [] },
+      "input_contract": { "required_fields": ["target", "source_ref", "source_digest", "mode"], "optional_fields": ["deletion_decision_ref"], "required_artifact_kinds": ["planning_context"] },
       "result_contracts": {
         "completed": { "required_fields": ["target", "sha256", "changed_paths", "mode"], "optional_fields": ["deleted_paths"], "required_artifact_kinds": [] },
         "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
@@ -60,7 +61,7 @@
       }
     },
     "local_commit": {
-      "input_contract": { "required_fields": ["base_sha", "path_changes", "checks", "evidence_ref"], "optional_fields": [], "required_artifact_kinds": [] },
+      "input_contract": { "required_fields": ["base_sha", "path_changes", "checks", "evidence_ref"], "optional_fields": [], "required_artifact_kinds": ["change_evidence"] },
       "result_contracts": {
         "completed": { "required_fields": ["commit_sha", "committed_paths", "clean_state"], "optional_fields": [], "required_artifact_kinds": [] },
         "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
@@ -84,7 +85,7 @@
       }
     },
     "finding_fix": {
-      "input_contract": { "required_fields": ["worktree", "base_sha", "finding_ids", "acceptance"], "optional_fields": ["review_result_ref"], "required_artifact_kinds": [] },
+      "input_contract": { "required_fields": ["worktree", "base_sha", "finding_ids", "acceptance", "review_result_ref"], "optional_fields": [], "required_artifact_kinds": ["review_result"] },
       "result_contracts": {
         "completed": { "required_fields": ["head_sha", "changed_paths", "change_evidence_ref", "fixed_finding_ids"], "optional_fields": [], "required_artifact_kinds": ["change_evidence"] },
         "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
@@ -105,7 +106,7 @@
         "completed": { "required_fields": ["review_result_ref", "finding_ids", "coverage"], "optional_fields": [], "required_artifact_kinds": ["review_result"] },
         "retryable_failure": { "required_fields": ["review_result_ref", "finding_ids", "coverage"], "optional_fields": [], "required_error_fields": ["code", "message", "finding_ids"], "required_artifact_kinds": ["review_result"] },
         "failed": { "required_fields": [], "optional_fields": ["review_result_ref"], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["review_result_ref", "finding_ids"], "optional_fields": [], "required_artifact_kinds": ["review_result"] }
+        "needs_decision": { "required_fields": ["review_result_ref", "finding_ids", "coverage"], "optional_fields": [], "required_artifact_kinds": ["review_result"] }
       }
     },
     "git_lifecycle": {
@@ -157,6 +158,11 @@
         "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [], "required_artifact_kinds": [] }
       }
     }
+  },
+  "support_delegations": {
+    "full-stack-coder": ["support.locate"],
+    "bug-fixer": ["support.locate", "support.research", "support.update_docs"],
+    "code-reviewer": ["support.review_standards", "support.review_spec"]
   },
   "budgets": {
     "transient_retries": 2,

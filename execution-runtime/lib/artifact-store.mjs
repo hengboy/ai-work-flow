@@ -67,11 +67,20 @@ export async function verifyArtifact({ repository, run_id, ref }) {
 }
 
 async function verifyNestedArtifacts({ repository, run_id, kind, content }) {
-  if (kind === "review_axis_result") await verifyArtifact({ repository, run_id, ref: content.review_packet_ref });
+  if (kind === "review_axis_result") {
+    const packet = await verifyArtifact({ repository, run_id, ref: content.review_packet_ref });
+    const expectedCoverage = packet.review_slices.map((slice) => slice.id).sort();
+    if (JSON.stringify([...content.coverage].sort()) !== JSON.stringify(expectedCoverage)) {
+      throw new Error("review_axis_result coverage does not match ReviewPacket slices");
+    }
+  }
   if (kind !== "review_result") return;
   const axes = await Promise.all(content.axis_result_refs.map((ref) => verifyArtifact({ repository, run_id, ref })));
   if (new Set(axes.map((axis) => axis.axis)).size !== 2 || !axes.some((axis) => axis.axis === "standards") || !axes.some((axis) => axis.axis === "spec")) {
     throw new Error("review_result must contain Standards and Spec axis results");
+  }
+  if (JSON.stringify(axes[0].review_packet_ref) !== JSON.stringify(axes[1].review_packet_ref)) {
+    throw new Error("review_result axes must use the same ReviewPacketRef");
   }
   const findingIds = [...new Set(axes.flatMap((axis) => axis.findings.map((finding) => finding.id)))].sort();
   if (JSON.stringify([...content.finding_ids].sort()) !== JSON.stringify(findingIds)) throw new Error("review_result finding IDs do not match axis results");

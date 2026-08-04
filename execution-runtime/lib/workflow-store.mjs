@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { loadWorkflowContract, validateActionInput, validateActionReceipt, validateSupportReceipt } from "./workflow-contract.mjs";
+import { pathChangesEqual } from "./paths.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -128,6 +129,7 @@ function snapshot(run, contract) {
     decision_history: structuredClone(run.decision_history),
   };
   if (run.decision_request) result.decision_request = structuredClone(run.decision_request);
+  if (run.planning_context_ref) result.planning_context_ref = structuredClone(run.planning_context_ref);
   return result;
 }
 
@@ -146,7 +148,8 @@ function runKey(kind, planDigest, taskMode) {
 
 export async function startRun({ repository, kind, plan_digest, task_mode }) {
   const contract = await loadWorkflowContract();
-  if (!contract.workflows[kind] || !/^[0-9a-f]{64}$/.test(plan_digest) || (kind === "coding" && !["single", "split"].includes(task_mode))) {
+  if (!contract.workflows[kind] || !/^[0-9a-f]{64}$/.test(plan_digest) ||
+    (kind === "coding" ? !["single", "split"].includes(task_mode) : task_mode !== undefined)) {
     throw new Error("start input is invalid");
   }
   const location = await paths(repository);
@@ -179,6 +182,7 @@ export async function startRun({ repository, kind, plan_digest, task_mode }) {
       budgets: initialBudgets(contract),
       decision_request: null,
       decision_history: [],
+      planning_context_ref: null,
       review_finding_ids: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -200,6 +204,89 @@ async function loadRun(repository, runId) {
   const run = await readJson(location.runFile);
   if (run.contract_digest !== contract.digest || run.run_id !== runId) throw new Error("run identity is invalid or drifted");
   return { contract, location, run };
+}
+
+function same(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function artifactRef(input, field, kind) {
+  const ref = input.fields[field];
+  if (!ref || ref.kind !== kind || !input.artifacts.some((candidate) => same(candidate, ref))) {
+    throw new Error(`${field} must reference the claimed ${kind} artifact`);
+  }
+  return ref;
+}
+
+function completedOutputs(run, actionId) {
+  const outputs = run.completed_actions[actionId]?.receipt?.outputs;
+  if (!outputs) throw new Error(`canonical receipt is missing for ${actionId}`);
+  return outputs;
+}
+
+function uniquePaths(pathChanges) {
+  return [...new Set(pathChanges.map((change) => change.path))].sort();
+}
+
+function planningSummary(run) {
+  return {
+    planning_context_ref: run.planning_context_ref,
+    task_mode: run.task_mode,
+    spec: completedOutputs(run, "planning.write_spec"),
+    plan: completedOutputs(run, "planning.write_plan"),
+    tasks: completedOutputs(run, "planning.write_tasks"),
+    commit: completedOutputs(run, "planning.commit"),
+  };
+}
+
+function validatePlanningSource(actionId, input, run) {
+  const contextRef = run.planning_context_ref;
+  if (!contextRef || !input.artifacts.some((ref) => same(ref, contextRef))) throw new Error(`${actionId} requires the canonical planning_context artifact`);
+  if (input.fields.mode !== run.task_mode) throw new Error(`${actionId} mode does not match planning context`);
+  if (actionId === "planning.write_spec") {
+    if (!same(input.fields.source_ref, contextRef) || input.fields.source_digest !== contextRef.sha256) throw new Error("planning.write_spec source does not match planning context");
+    return;
+  }
+  const previousId = actionId === "planning.write_plan" ? "planning.write_spec" : "planning.write_plan";
+  const previous = completedOutputs(run, previousId);
+  if (input.fields.source_ref !== previous.target || input.fields.source_digest !== previous.sha256 || input.fields.mode !== previous.mode) {
+    throw new Error(`${actionId} source does not match ${previousId}`);
+  }
+}
+
+function validateClaimSemantics({ action_id: actionId, input, run, verifiedArtifacts }) {
+  if (actionId === "coding.prepare" && (input.fields.plan_digest !== run.plan_digest || input.fields.task_mode !== run.task_mode)) {
+    throw new Error("coding.prepare input does not match run identity");
+  }
+  if (actionId === "planning.confirm") {
+    if (!same(input.fields.decision_history, run.decision_history)) throw new Error("planning.confirm decision history is stale");
+    if (!same(input.fields.discovery_receipt, run.completed_actions["planning.discover"]?.receipt)) throw new Error("planning.confirm discovery receipt is not canonical");
+  }
+  if (["planning.write_spec", "planning.write_plan", "planning.write_tasks"].includes(actionId)) validatePlanningSource(actionId, input, run);
+  if (actionId === "planning.complete" && !same(input.fields.refs, planningSummary(run))) throw new Error("planning.complete refs are not canonical");
+  if (["planning.commit", "coding.commit"].includes(actionId)) {
+    const ref = artifactRef(input, "evidence_ref", "change_evidence");
+    const evidence = verifiedArtifacts.get(ref.id);
+    if (input.fields.base_sha !== evidence.base_sha || !pathChangesEqual(input.fields.path_changes, evidence.path_changes)) {
+      throw new Error(`${actionId} input does not match change_evidence`);
+    }
+    if (actionId === "coding.commit" && !same(ref, completedOutputs(run, "coding.implement").change_evidence_ref)) {
+      throw new Error("coding.commit evidence is not the canonical implementation evidence");
+    }
+    if (actionId === "planning.commit") {
+      const expectedPaths = [...new Set(["planning.write_spec", "planning.write_plan", "planning.write_tasks"].flatMap((id) => {
+        const outputs = completedOutputs(run, id);
+        return [...outputs.changed_paths, ...(outputs.deleted_paths ?? [])];
+      }))].sort();
+      if (!same(uniquePaths(evidence.path_changes), expectedPaths)) throw new Error("planning.commit evidence does not cover canonical planning paths");
+    }
+  }
+  if (run.contract_digest && input.fields.review_packet_ref) artifactRef(input, "review_packet_ref", "review_packet");
+  if (["coding.fix_1", "coding.fix_2"].includes(actionId)) {
+    const ref = artifactRef(input, "review_result_ref", "review_result");
+    const review = verifiedArtifacts.get(ref.id);
+    if (!same([...input.fields.finding_ids].sort(), [...review.finding_ids].sort())) throw new Error(`${actionId} finding IDs do not match review_result`);
+  }
 }
 
 export async function statusRun({ repository, run_id, action_id }) {
@@ -225,10 +312,10 @@ export async function claimAction({ repository, run_id, action_id, claimant, own
     if (!(contract.workflows[run.kind].phase_actions[run.phase] ?? []).includes(action_id)) throw new Error(`action ${action_id} is not ready`);
     if (typeof claimant !== "string" || !claimant.trim() || !Number.isSafeInteger(owner_pid) || owner_pid <= 0) throw new Error("claim identity is invalid");
     validateActionInput(input, action_id, contract);
-    if (action_id === "coding.prepare" && (input.fields.plan_digest !== run.plan_digest || input.fields.task_mode !== run.task_mode)) throw new Error("coding.prepare input does not match run identity");
-    if (action_id === "planning.confirm" && JSON.stringify(input.fields.decision_history) !== JSON.stringify(run.decision_history)) throw new Error("planning.confirm decision history is stale");
     const { verifyArtifact } = await import("./artifact-store.mjs");
-    for (const ref of input.artifacts) await verifyArtifact({ repository, run_id, ref });
+    const verifiedArtifacts = new Map();
+    for (const ref of input.artifacts) verifiedArtifacts.set(ref.id, await verifyArtifact({ repository, run_id, ref }));
+    validateClaimSemantics({ action_id, input, run, verifiedArtifacts });
     const attempt = (run.attempts[action_id] ?? 0) + 1;
     const claim = {
       claim_id: `claim_${randomBytes(12).toString("hex")}`,
@@ -297,6 +384,61 @@ function applyReceipt(run, receipt, action, contract) {
   run.revision += 1;
 }
 
+function validateFinishedSemantics({ receipt, claim, action, run, verifiedArtifacts }) {
+  if (receipt.result !== "completed" && action.io_contract !== "dual_axis_review") return;
+  if (receipt.action_id === "planning.confirm") {
+    const context = verifiedArtifacts.get(receipt.outputs.planning_context_ref.id);
+    if (context.plan_id !== receipt.outputs.plan_id || context.task_mode !== receipt.outputs.task_mode || !same(context.decisions, run.decision_history)) {
+      throw new Error("planning_context does not match confirmation outputs or decision history");
+    }
+  }
+  if (["planning.write_spec", "planning.write_plan", "planning.write_tasks"].includes(receipt.action_id) && (
+    receipt.outputs.target !== claim.input.fields.target || receipt.outputs.mode !== claim.input.fields.mode || !/^[0-9a-f]{64}$/.test(receipt.outputs.sha256)
+  )) throw new Error(`${receipt.action_id} outputs do not match its canonical input`);
+  if (receipt.action_id === "planning.write_tasks" && (receipt.outputs.deleted_paths?.length ?? 0) > 0) {
+    const decision = claim.input.fields.deletion_decision_ref;
+    if (!decision || !run.decision_history.some((entry) => entry.revision === decision.revision && entry.code === decision.code)) {
+      throw new Error("planning.write_tasks deletion is not authorized by decision history");
+    }
+  }
+  if (receipt.action_id === "planning.complete" && !same(receipt.outputs.refs, claim.input.fields.refs)) {
+    throw new Error("planning.complete outputs do not match canonical refs");
+  }
+  if (["coding.implement", "coding.fix_1", "coding.fix_2"].includes(receipt.action_id) && receipt.result === "completed") {
+    const evidence = verifiedArtifacts.get(receipt.outputs.change_evidence_ref.id);
+    if (claim.input.fields.base_sha !== evidence.base_sha || receipt.outputs.head_sha !== evidence.head_sha || !same([...receipt.outputs.changed_paths].sort(), uniquePaths(evidence.path_changes))) {
+      throw new Error(`${receipt.action_id} outputs do not match change_evidence`);
+    }
+    if (receipt.action_id.startsWith("coding.fix_") && !same([...receipt.outputs.fixed_finding_ids].sort(), [...claim.input.fields.finding_ids].sort())) {
+      throw new Error(`${receipt.action_id} fixed finding IDs do not match its claim`);
+    }
+  }
+  if (action.io_contract === "local_commit" && receipt.result === "completed") {
+    if (!/^[0-9a-f]{40,64}$/.test(receipt.outputs.commit_sha) || !same([...receipt.outputs.committed_paths].sort(), uniquePaths(claim.input.fields.path_changes))) {
+      throw new Error(`${receipt.action_id} commit outputs do not match claimed PathChange`);
+    }
+  }
+  if (action.io_contract === "review_prepare" && receipt.result === "completed") {
+    const packet = verifiedArtifacts.get(receipt.outputs.review_packet_ref.id);
+    if (packet.review_base_commit !== claim.input.fields.base_sha || packet.review_commit !== claim.input.fields.review_sha ||
+      !same(packet.review_context, claim.input.fields.review_context) || !same(packet.review_slices, claim.input.fields.slices)) {
+      throw new Error("ReviewPacket does not match review prepare claim");
+    }
+  }
+  if (action.io_contract === "dual_axis_review" && ["completed", "retryable_failure", "needs_decision"].includes(receipt.result)) {
+    const result = verifiedArtifacts.get(receipt.outputs.review_result_ref.id);
+    const packetRef = claim.input.artifacts.find((ref) => ref.kind === "review_packet");
+    for (const axisRef of result.axis_result_refs) {
+      const axis = verifiedArtifacts.get(axisRef.id);
+      if (!axis || !same(axis.review_packet_ref, packetRef)) throw new Error("review axis result does not match claimed ReviewPacketRef");
+    }
+    if (!same([...receipt.outputs.finding_ids].sort(), [...result.finding_ids].sort()) || !same([...receipt.outputs.coverage].sort(), [...result.coverage].sort()) ||
+      (receipt.error?.finding_ids && !same([...receipt.error.finding_ids].sort(), [...result.finding_ids].sort()))) {
+      throw new Error("review receipt does not match review_result");
+    }
+  }
+}
+
 export async function finishAction({ repository, receipt }) {
   const loaded = await loadRun(repository, receipt?.run_id);
   return withLock(loaded.location.lock, async () => {
@@ -320,23 +462,14 @@ export async function finishAction({ repository, receipt }) {
     if (!claim || claim.attempt !== receipt.attempt) throw new Error(`action ${receipt.action_id} is not actively claimed for attempt ${receipt.attempt}`);
     const action = contract.actions[receipt.action_id];
     if (!action || action.workflow !== run.kind || action.from !== run.phase) throw new Error("receipt transition is illegal");
-    if (receipt.action_id === "planning.confirm" && receipt.result === "completed") {
-      const context = verifiedArtifacts.get(receipt.outputs.planning_context_ref.id);
-      if (context.plan_id !== receipt.outputs.plan_id || context.task_mode !== receipt.outputs.task_mode || JSON.stringify(context.decisions) !== JSON.stringify(run.decision_history)) {
-        throw new Error("planning_context does not match confirmation outputs or decision history");
-      }
-    }
     if (action.io_contract === "dual_axis_review" && ["completed", "retryable_failure", "needs_decision"].includes(receipt.result)) {
       const result = verifiedArtifacts.get(receipt.outputs.review_result_ref.id);
-      const packetRef = claim.input.artifacts.find((ref) => ref.kind === "review_packet");
-      for (const axisRef of result.axis_result_refs) {
-        const axis = await verifyArtifact({ repository, run_id: receipt.run_id, ref: axisRef });
-        if (JSON.stringify(axis.review_packet_ref) !== JSON.stringify(packetRef)) throw new Error("review axis result does not match claimed ReviewPacketRef");
-      }
-      if (JSON.stringify([...receipt.outputs.finding_ids].sort()) !== JSON.stringify([...result.finding_ids].sort()) ||
-        (receipt.error?.finding_ids && JSON.stringify([...receipt.error.finding_ids].sort()) !== JSON.stringify([...result.finding_ids].sort()))) {
-        throw new Error("review finding IDs do not match review_result");
-      }
+      for (const axisRef of result.axis_result_refs) verifiedArtifacts.set(axisRef.id, await verifyArtifact({ repository, run_id: receipt.run_id, ref: axisRef }));
+    }
+    validateFinishedSemantics({ receipt, claim, action, run, verifiedArtifacts });
+    if (receipt.action_id === "planning.confirm" && receipt.result === "completed") {
+      run.planning_context_ref = structuredClone(receipt.outputs.planning_context_ref);
+      run.task_mode = receipt.outputs.task_mode;
     }
     delete run.active_claims[receipt.action_id];
     applyReceipt(run, receipt, action, contract);
@@ -391,24 +524,38 @@ export async function resolveDecision({ repository, run_id, decision }) {
   });
 }
 
-export async function validateSupportAction({ repository, caller_ref, owner, input, receipt }) {
+export async function validateSupportAction({ repository, caller_ref, input, receipt }) {
   const loaded = await loadRun(repository, receipt?.run_id);
   return withLock(loaded.location.lock, async () => {
     const { contract, location } = await loadRun(repository, receipt.run_id);
     const run = await readJson(location.runFile);
     validateSupportReceipt(receipt, contract);
-    if (receipt.caller_ref !== caller_ref || contract.actions[receipt.action_id].owner !== owner) throw new Error("SupportReceipt caller or owner is invalid");
+    if (receipt.caller_ref !== caller_ref) throw new Error("SupportReceipt caller is invalid");
     const callerClaim = Object.values(run.active_claims).find((claim) => claim.claim_id === caller_ref);
     if (!callerClaim) throw new Error("SupportReceipt caller_ref is not an active claim");
+    const callerOwner = contract.actions[callerClaim.action_id]?.owner;
+    const owner = contract.actions[receipt.action_id].owner;
+    if (!contract.support_delegations[callerOwner]?.includes(receipt.action_id)) {
+      throw new Error(`Support action ${receipt.action_id} is not delegated by ${callerOwner}`);
+    }
     validateActionInput(input, receipt.action_id, contract);
     const { verifyArtifact } = await import("./artifact-store.mjs");
     const verified = new Map();
     for (const ref of [...input.artifacts, ...receipt.artifacts]) verified.set(ref.id, await verifyArtifact({ repository, run_id: receipt.run_id, ref }));
+    if (receipt.action_id === "support.research" && receipt.result === "completed" && (
+      receipt.outputs.report_path !== input.fields.report_path || !receipt.outputs.changed_paths.includes(input.fields.report_path)
+    )) throw new Error("research support result does not match its report target");
+    if (receipt.action_id === "support.update_docs" && receipt.result === "completed" && !receipt.outputs.changed_paths.includes(input.fields.target)) {
+      throw new Error("documentation support result does not include its target");
+    }
     if (["support.review_standards", "support.review_spec"].includes(receipt.action_id) && receipt.result === "completed") {
       const packetRef = input.artifacts.find((ref) => ref.kind === "review_packet");
       const axis = verified.get(receipt.outputs.axis_result_ref.id);
       const expectedAxis = receipt.action_id === "support.review_standards" ? "standards" : "spec";
-      if (axis.axis !== expectedAxis || input.fields.axis !== expectedAxis || JSON.stringify(axis.review_packet_ref) !== JSON.stringify(packetRef)) {
+      const findingIds = axis.findings.map((finding) => finding.id).sort();
+      if (axis.axis !== expectedAxis || input.fields.axis !== expectedAxis || !same(input.fields.review_packet_ref, packetRef) || !same(axis.review_packet_ref, packetRef) ||
+        !same([...input.fields.assigned_slices].sort(), [...axis.coverage].sort()) || !same([...receipt.outputs.coverage].sort(), [...axis.coverage].sort()) ||
+        !same([...receipt.outputs.finding_ids].sort(), findingIds)) {
         throw new Error("review support result does not match its axis or ReviewPacketRef");
       }
     }

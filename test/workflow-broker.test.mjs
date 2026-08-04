@@ -41,16 +41,23 @@ test("workflow broker validates support receipts without advancing the parent ph
   const planDigest = "d".repeat(64);
   const started = await dispatchWorkflowState({ operation: "start", repository: root, kind: "coding", plan_digest: planDigest, task_mode: "single" }, { cwd: root, pid: process.pid });
   const parentInput = { fields: { plan_digest: planDigest, task_mode: "single", target_base: "main" }, artifacts: [] };
-  const claim = await dispatchWorkflowState({ operation: "claim", repository: root, run_id: started.run_id, action_id: "coding.prepare", claimant: "caller", input: parentInput }, { cwd: root, pid: process.pid });
-  const supportInput = { fields: { report_path: ".ai-work-flow/research/report.md", questions: ["question"], allowed_sources: ["official"], as_of: "2026-08-04" }, artifacts: [] };
+  const prepare = await dispatchWorkflowState({ operation: "claim", repository: root, run_id: started.run_id, action_id: "coding.prepare", claimant: "caller", input: parentInput }, { cwd: root, pid: process.pid });
+  await dispatchWorkflowState({ operation: "finish", repository: root, receipt: {
+    run_id: started.run_id, action_id: "coding.prepare", attempt: prepare.attempt, result: "completed", summary: "prepared",
+    outputs: { worktree: root, branch: "main", base_sha: "a".repeat(40), initial_status: { clean: true } }, artifacts: [], checks: [],
+  } }, { cwd: root, pid: process.pid });
+  const claim = await dispatchWorkflowState({ operation: "claim", repository: root, run_id: started.run_id, action_id: "coding.implement", claimant: "caller", input: {
+    fields: { worktree: root, base_sha: "a".repeat(40), spec_or_task_ids: ["task"], acceptance: ["accepted"] }, artifacts: [],
+  } }, { cwd: root, pid: process.pid });
+  const supportInput = { fields: { objective: "locate implementation", terms: ["workflow"], known_paths: [] }, artifacts: [] };
   const receipt = {
-    run_id: started.run_id, caller_ref: claim.claim_id, call_id: "broker-support-001", action_id: "support.research", result: "completed", summary: "complete",
-    outputs: { report_path: ".ai-work-flow/research/report.md", citation_urls: [], changed_paths: [".ai-work-flow/research/report.md"], checks: ["read-back"] }, artifacts: [], checks: ["read-back"],
+    run_id: started.run_id, caller_ref: claim.claim_id, call_id: "broker-support-001", action_id: "support.locate", result: "completed", summary: "complete",
+    outputs: { entry_paths: ["execution-runtime/lib/workflow-store.mjs"], direct_dependencies: ["workflow-contract.mjs"], facts: ["located"], open_decisions: [] }, artifacts: [], checks: ["read-back"],
   };
-  assert.deepEqual(await dispatchWorkflowState({ operation: "support_validate", repository: root, caller_ref: claim.claim_id, owner: "researcher", input: supportInput, receipt }, { cwd: root, pid: process.pid }), receipt);
+  assert.deepEqual(await dispatchWorkflowState({ operation: "support_validate", repository: root, caller_ref: claim.claim_id, input: supportInput, receipt }, { cwd: root, pid: process.pid }), receipt);
   const status = await dispatchWorkflowState({ operation: "status", repository: root, run_id: started.run_id }, { cwd: root, pid: process.pid });
-  assert.equal(status.phase, "started");
-  assert.equal(status.revision, 0);
+  assert.equal(status.phase, "prepared");
+  assert.equal(status.revision, 1);
 });
 
 test("workflow broker writes only the current repository Git common workflow directory", async () => {
