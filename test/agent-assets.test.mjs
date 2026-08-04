@@ -78,6 +78,38 @@ test("Planning numbers requirement questions and explains each recommendation", 
   assert.match(planning, /每题列出推荐选项，并用已知事实解释推荐原因/);
 });
 
+test("primary agents only orchestrate delegated work and Coding uses verified startup metadata", () => {
+  const assets = loadAgentAssets();
+  const coding = assets.compiledBodies.get("coding");
+  const planning = assets.compiledBodies.get("planning");
+  assert.deepEqual(assets.roles.find((role) => role.id === "coding").actions, []);
+  assert.equal(Object.hasOwn(assets.contract.actions, "support.orchestrate"), false);
+  for (const prompt of [coding, planning]) {
+    assert.match(prompt, /不得自行读取|不得直接读取/);
+    assert.match(prompt, /File Explorer/);
+    assert.match(prompt, /不得.*联网/);
+  }
+  assert.match(coding, /计划启动预检|启动预检/);
+  assert.match(coding, /kind=coding/);
+  assert.match(coding, /plan_digest/);
+  assert.match(coding, /task_mode/);
+  assert.match(coding, /不得尝试 `task_mode=coding`/);
+  assert.match(coding, /support_orchestration/);
+  assert.match(planning, /Planning Writer/);
+  assert.match(planning, /Task Planner/);
+  assert.match(planning, /Git Operator/);
+  assert.match(planning, /support\.research/);
+  assert.ok(assets.roles.find((role) => role.id === "planning").delegates.includes("researcher"));
+  assert.ok(assets.contract.support_delegations.planning.includes("support.research"));
+  const roleNames = ["File Explorer", "Researcher", "Document Maintainer", "Planning Writer", "Task Planner", "Full Stack Coder", "Bug Fixer", "Git Operator", "Environment Operator", "Code Reviewer", "Review Standards", "Review Spec", "Planning", "Coding"];
+  for (const role of roleNames) {
+    assert.match(assets.routing, new RegExp(`\\*\\*${role}\\*\\*`));
+  }
+  let routingWithoutBoldRoles = assets.routing;
+  for (const role of [...roleNames].sort((left, right) => right.length - left.length)) routingWithoutBoldRoles = routingWithoutBoldRoles.replaceAll(`**${role}**`, "");
+  for (const role of roleNames) assert.equal(routingWithoutBoldRoles.includes(role), false, `unbolded role name: ${role}`);
+});
+
 test("review roles use enforced broker state while source and Git remain read-only", () => {
   const assets = loadAgentAssets();
   for (const id of ["code-reviewer", "review-standards", "review-spec"]) {
@@ -95,7 +127,7 @@ test("removing an action or required contract field makes asset validation fail"
   const { fixtureConfig, fixtureTemplates, fixtureContract } = fixtureAssets();
 
   const roles = JSON.parse(readFileSync(resolve(fixtureConfig, "roles.json"), "utf8"));
-  roles.roles.find((role) => role.id === "coding").actions = [];
+  roles.roles.find((role) => role.id === "planning").actions = [];
   writeFileSync(resolve(fixtureConfig, "roles.json"), JSON.stringify(roles));
   assert.throws(() => loadAgentAssets(fixtureConfig, fixtureTemplates, fixtureContract), /Action is not assigned/);
 

@@ -62,9 +62,9 @@ Agents 不获得运行这些写命令所需的工作区权限。安装器为 Cod
 
 ## 自动流程
 
-Planning 固定按事实发现、确认门禁、spec、plan、single/split tasks、规划提交、完成推进。决定记录在 snapshot 的 `decision_history`；确认后生成并持久化唯一 `planning_context` ref 和 task mode，后续 action 必须绑定前一 canonical receipt。Planning 不实施源码。
+Planning 在确认阶段完成需求事实与产品决定后、创建 `planning_context` 前确定 single/split 模式。两种模式都生成 spec 与 plan；split 随后生成 tasks，single 跳过 `planning.write_tasks` 直接进入规划提交。决定记录在 snapshot 的 `decision_history`，后续 action 必须绑定前一 canonical receipt。Planning 只负责调度和产品决定，不直接读取、检索或编辑文件，也不自行联网研究；这些工作分别委派给契约角色。
 
-Coding 在一次实施授权后自动推进：prepare、实现、本地提交、ReviewPacket、双轴审查、blocking finding 修复、完整复审、main 同步、fast-forward 整合和安全清理。修复与完整复审最多两轮；同一 finding 重现时立即产生一个用户决定。main 漂移最多自动 resync 两次，每次冻结新提交并重新审查。
+Coding 在一次实施授权后先将计划工件及当前字段元数据兼容性预检交给 File Explorer，再用验证后的 plan digest/task mode 启动 coding run；自身不直接检索或修改工作区。随后自动调度 prepare、实现、本地提交、ReviewPacket、双轴审查、blocking finding 修复、完整复审、main 同步、fast-forward 整合和安全清理。修复与完整复审最多两轮；同一 finding 重现时立即产生一个用户决定。main 漂移最多自动 resync 两次，每次冻结新提交并重新审查。
 
 Git mutation 仅由 Git Operator 串行执行。自动授权不包含 push、stash、reset、clean、amend、tag、PR 或远端修改。完成记录默认保留，只有显式 prune 才清理。
 

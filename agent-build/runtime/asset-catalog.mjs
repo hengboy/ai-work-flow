@@ -69,6 +69,14 @@ function validateContract(contract, errors) {
     if (action.workflow !== "support" && (!action.from || !action.completed_to || !contract.workflows[action.workflow]?.phase_actions?.[action.from]?.includes(id))) {
       errors.push(`Action ${id} has an invalid transition.`);
     }
+    if (action.completed_to_by_task_mode) {
+      const workflow = contract.workflows[action.workflow];
+      const branches = action.completed_to_by_task_mode;
+      const phases = new Set([...Object.keys(workflow?.phase_actions ?? {}), ...(workflow?.terminal_phases ?? [])]);
+      if (!isPlainObject(branches) || Object.keys(branches).sort().join() !== "single,split" || Object.values(branches).some((phase) => !phases.has(phase))) {
+        errors.push(`Action ${id} has an invalid task mode transition.`);
+      }
+    }
   }
 }
 
@@ -188,6 +196,7 @@ function validateAssets(catalog, controlsDocument, policiesDocument, defaults, t
 }
 
 function actionText(role, contract) {
+  if (role.actions.length === 0) return "- 不直接拥有 workflow 或 support action；只调度 snapshot 中 action 的契约 owner。";
   return role.actions.map((id) => {
     const action = contract.actions[id];
     const io = contract.io_contracts[action.io_contract];
@@ -214,6 +223,7 @@ function controlsText(role, controls, policies) {
 }
 
 function receiptText(role, contract) {
+  if (role.actions.length === 0) return "不伪造 `ActionReceipt` 或 `SupportReceipt`。只验证子代理交接与 broker 返回的 canonical receipt，并在终态报告已验证 refs；需要决定时只转交 snapshot 的 `decision_request`。";
   const supportOnly = role.actions.every((id) => contract.actions[id].workflow === "support");
   if (supportOnly) return "只返回一个 `SupportReceipt`：`run_id`、`caller_ref`、稳定 `call_id`、`action_id`、`result`、`summary`、`outputs`、`artifacts`、`checks`；需要决定时附 `decision_request`，失败时附契约要求的 `error`。调用者用原始 support input 执行 `support_validate`，并把重要 refs、checks 与失败写入父 `ActionReceipt`。";
   return "只返回一个 `ActionReceipt`：`run_id`、`action_id`、`attempt`、`result`、`summary`、必需 `outputs`、`artifacts`、`checks`；需要决定时附 `decision_request`，失败时附契约要求的 `error`。完整证据写入本地 artifact，聊天只传 `ArtifactRef`；响应损坏时用 `status(action_id)` 读取同一 canonical receipt。";

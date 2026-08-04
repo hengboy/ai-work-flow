@@ -10,7 +10,7 @@
       "controls": ["no-direct-workspace-operations", "coding-orchestration-only"],
       "delegates": ["file-explorer", "researcher", "document-maintainer", "planning-writer", "full-stack-coder", "bug-fixer", "git-operator", "environment-operator", "code-reviewer"],
       "tools": ["WorkflowState", "Task"],
-      "actions": ["support.orchestrate"]
+      "actions": []
     },
     {
       "id": "planning",
@@ -19,7 +19,7 @@
       "kind": "primary",
       "policy": "planning",
       "controls": ["no-direct-workspace-operations", "planning-no-implementation"],
-      "delegates": ["file-explorer", "planning-writer", "task-planner", "git-operator"],
+      "delegates": ["file-explorer", "researcher", "planning-writer", "task-planner", "git-operator"],
       "tools": ["WorkflowState", "Task"],
       "actions": ["planning.confirm", "planning.complete"]
     },

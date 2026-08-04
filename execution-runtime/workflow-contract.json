@@ -1,5 +1,5 @@
 {
-  "digest": "90d7f7b1aa25e8f1f36477141917a75b3990103d7aaa01ba83b3b144d7fa2318",
+  "digest": "26344c3a2daad579a890ab17b3860cbe730be11febb6b617a3843f84abe2ce1a",
   "snapshot_schema": {
     "required": ["run_id", "kind", "plan_digest", "task_mode", "revision", "phase", "ready_actions", "active_claims", "budgets", "decision_history"],
     "decision_request_optional": true,
@@ -160,6 +160,7 @@
     }
   },
   "support_delegations": {
+    "planning": ["support.research"],
     "full-stack-coder": ["support.locate"],
     "bug-fixer": ["support.locate", "support.research", "support.update_docs"],
     "code-reviewer": ["support.review_standards", "support.review_spec"]
@@ -228,7 +229,7 @@
     "planning.discover": { "owner": "file-explorer", "workflow": "planning", "from": "started", "completed_to": "facts_ready", "io_contract": "discovery_navigation" },
     "planning.confirm": { "owner": "planning", "workflow": "planning", "from": "facts_ready", "completed_to": "context_ready", "io_contract": "planning_confirmation" },
     "planning.write_spec": { "owner": "planning-writer", "workflow": "planning", "from": "context_ready", "completed_to": "spec_ready", "io_contract": "planning_write" },
-    "planning.write_plan": { "owner": "planning-writer", "workflow": "planning", "from": "spec_ready", "completed_to": "plan_ready", "io_contract": "planning_write" },
+    "planning.write_plan": { "owner": "planning-writer", "workflow": "planning", "from": "spec_ready", "completed_to": "plan_ready", "completed_to_by_task_mode": { "single": "tasks_ready", "split": "plan_ready" }, "io_contract": "planning_write" },
     "planning.write_tasks": { "owner": "task-planner", "workflow": "planning", "from": "plan_ready", "completed_to": "tasks_ready", "io_contract": "planning_write" },
     "planning.commit": { "owner": "git-operator", "workflow": "planning", "from": "tasks_ready", "completed_to": "planning_committed", "io_contract": "local_commit" },
     "planning.complete": { "owner": "planning", "workflow": "planning", "from": "planning_committed", "completed_to": "complete", "io_contract": "support_orchestration" },
@@ -261,7 +262,6 @@
     "support.research": { "owner": "researcher", "workflow": "support", "io_contract": "support_research" },
     "support.update_docs": { "owner": "document-maintainer", "workflow": "support", "io_contract": "support_docs" },
     "support.review_standards": { "owner": "review-standards", "workflow": "support", "io_contract": "support_review_axis" },
-    "support.review_spec": { "owner": "review-spec", "workflow": "support", "io_contract": "support_review_axis" },
-    "support.orchestrate": { "owner": "coding", "workflow": "support", "io_contract": "support_orchestration" }
+    "support.review_spec": { "owner": "review-spec", "workflow": "support", "io_contract": "support_review_axis" }
   }
 }

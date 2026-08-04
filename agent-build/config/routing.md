@@ -14,28 +14,32 @@
 
 ## 2. 主代理边界
 
-- Coding 与 Planning 都是主代理。
+- **Coding** 与 **Planning** 都是主代理。
 - 两者互不作为子代理，也不彼此委派。
-- Planning 负责发现、确认、规划工件、任务模式与规划提交。
-- Planning 不实施源码、不进入 Coding 流程，也不预授权实现。
-- Coding 消费已批准计划并持续调度实施 workflow。
-- Coding 不修改规划决定，不以实现便利重写规格。
+- **Planning** 负责发现、确认、规划工件、任务模式与规划提交。
+- **Planning** 不实施源码、不进入 **Coding** 流程，也不预授权实现。
+- **Coding** 消费已批准计划并持续调度实施 workflow。
+- **Coding** 不修改规划决定，不以实现便利重写规格。
 - 主代理只通过 workflow broker 读写 run 状态。
-- 主代理不得直接执行工作区、Shell、Skill 或 Git 操作。
+- 主代理不得直接读取、搜索、枚举或编辑工作区，不得执行 Shell、Skill、Git、浏览器或网络检索。
+- **Planning** 将仓库事实发现交给 **File Explorer**，将 spec/plan、tasks 和本地提交分别交给 **Planning Writer**、**Task Planner** 和 **Git Operator**。
+- **Planning** 在 confirm 阶段完成事实与产品决定后、创建 planning context 前确定 `task_mode`；single 跳过 `planning.write_tasks`，split 才委派 **Task Planner**。
+- **Coding** 在启动前将计划工件与当前流程/字段元数据兼容性预检交给 **File Explorer**；启动后只调度 snapshot 中 action 的契约 owner。
+- **Coding** 启动预检只消费 **File Explorer** 返回的真实 `plan_digest` 与 `task_mode`，并调用 `start(kind=coding)`；support action 和 I/O contract 名称都不是 run kind。
 - 主代理遇到决定门禁时只转交 snapshot 中的唯一决定。
 
 ## 3. 角色选择
 
-- 仓库事实发现与精确入口定位交给 File Explorer。
-- 官方一手资料研究与单一报告交给 Researcher。
-- 指定普通文档维护交给 Document Maintainer。
-- spec 与 plan 分别交给 Planning Writer 的对应分支。
-- split/single task 集合交给 Task Planner。
-- 实施与项目初始化交给 Full Stack Coder 的不同 action 分支。
-- 当前 blocking finding 的最小修复交给 Bug Fixer。
-- 本地 Git 生命周期交给 Git Operator，并始终串行。
-- Agent 生成与环境切换交给 Environment Operator。
-- 双轴审查编排交给 Code Reviewer，叶子轴交给对应 Reviewer。
+- 仓库事实发现与精确入口定位交给 **File Explorer**。
+- 官方一手资料研究与单一报告交给 **Researcher**。
+- 指定普通文档维护交给 **Document Maintainer**。
+- spec 与 plan 分别交给 **Planning Writer** 的对应分支。
+- split/single task 集合交给 **Task Planner**。
+- 实施与项目初始化交给 **Full Stack Coder** 的不同 action 分支。
+- 当前 blocking finding 的最小修复交给 **Bug Fixer**。
+- 本地 Git 生命周期交给 **Git Operator**，并始终串行。
+- Agent 生成与环境切换交给 **Environment Operator**。
+- 双轴审查编排交给 **Code Reviewer**，叶子轴分别交给 **Review Standards** 和 **Review Spec**。
 - 角色选择以 contract owner 为准，类别说明只帮助理解。
 
 ## 4. ActionDispatch
@@ -57,7 +61,7 @@
 - 所有 Git mutation 始终串行，不与其他 Git action 重叠。
 - 只有 snapshot 同时列出且写入范围互斥的 ready actions 才可并行。
 - 共享规划工件、同一 worktree 或同一 artifact 目录视为相交范围。
-- Review Standards 与 Review Spec 可用同一 packet 并行执行。
+- **Review Standards** 与 **Review Spec** 可用同一 packet 并行执行。
 - active claim 存在时等待并重读状态，不重复 dispatch。
 - recover 只在 runtime 明确允许且 owner 已确认失活时调用。
 - 每次 finish 后重新读取 snapshot，再决定下一 action。
@@ -79,12 +83,12 @@
 ## 7. 授权边界
 
 - 分析、发现、研究或审查不等于修改授权。
-- Planning 授权不等于 Coding 实施授权。
+- **Planning** 授权不等于 **Coding** 实施授权。
 - 实施授权只覆盖已批准范围与本地验证。
 - 自动流程不包含 push、tag、发布、PR 或任何远端修改。
 - 自动流程不包含 stash、reset、clean、amend 或跳过 hook。
-- Git Operator 不进行实现编辑或环境生成。
-- Environment Operator 不进行项目实现编辑或 Git mutation。
+- **Git Operator** 不进行实现编辑或环境生成。
+- **Environment Operator** 不进行项目实现编辑或 Git mutation。
 - support action 不扩大父 action 的写入、网络或 Git 权限。
 - 需要新产品决定、删除授权或远端操作时必须停止并请求明确授权。
 - 平台无法强制的边界仍作为角色必须遵守的契约。

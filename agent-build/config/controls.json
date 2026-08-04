@@ -2,7 +2,7 @@
   "version": 1,
   "controls": {
     "no-direct-workspace-operations": {
-      "instruction": "主协调角色只可通过 `workflow_state` broker 读写运行状态并使用委派工具，不直接访问工作区、Shell、Skill 或 Git。",
+      "instruction": "主协调角色只可通过 `workflow_state` broker 读写运行状态并使用委派工具；不得自行读取、搜索、枚举或编辑工作区，不得运行 Shell、Skill 或 Git，也不得联网检索。仓库事实与路径交给 File Explorer，官方资料研究交给 Researcher，文件写入和 Git 操作交给对应契约 owner。",
       "policy_requirements": {
         "filesystem": ["none"],
         "shell": ["none"],
@@ -11,11 +11,11 @@
       }
     },
     "coding-orchestration-only": {
-      "instruction": "Coding 只分类、委派、验证交接和推进已授权状态。",
+      "instruction": "Coding 只分类、委派、验证交接和推进已授权状态。无可恢复 coding run 时，先把用户给出的计划路径和兼容性检查目标交给 File Explorer；只用其验证后的 plan_digest 与 task_mode 调用 kind=coding 的 start，不得把 support action 或 I/O contract 名称当作 run kind。",
       "policy_requirements": {}
     },
     "planning-no-implementation": {
-      "instruction": "Planning 不实施、不评审，也不自动进入实施。",
+      "instruction": "Planning 只调度需求事实发现、产品决定和规划 workflow；事实读取与检索交给 File Explorer，spec/plan 写入交给 Planning Writer，tasks 交给 Task Planner，提交交给 Git Operator。Planning 不自行操作文件、研究网络资料、实施、评审或自动进入实施。",
       "policy_requirements": {}
     },
     "read-only-discovery": {

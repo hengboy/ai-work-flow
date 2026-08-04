@@ -122,7 +122,8 @@ async function actionInput(root, snapshot, actionId) {
     }
   }
   if (actionId === "planning.commit") {
-    const planningOutputs = await Promise.all(["planning.write_spec", "planning.write_plan", "planning.write_tasks"].map(async (id) => (
+    const planningActionIds = ["planning.write_spec", "planning.write_plan", ...(snapshot.task_mode === "split" ? ["planning.write_tasks"] : [])];
+    const planningOutputs = await Promise.all(planningActionIds.map(async (id) => (
       await statusRun({ repository: root, run_id: snapshot.run_id, action_id: id })
     ).result_receipt.outputs));
     const paths = [...new Set(planningOutputs.flatMap((outputs) => [...outputs.changed_paths, ...(outputs.deleted_paths ?? [])]))].sort();
@@ -163,10 +164,13 @@ async function actionInput(root, snapshot, actionId) {
   }
   if (actionId === "planning.complete") {
     const outputs = {};
-    for (const [name, id] of Object.entries({ spec: "planning.write_spec", plan: "planning.write_plan", tasks: "planning.write_tasks", commit: "planning.commit" })) {
+    for (const [name, id] of Object.entries({ spec: "planning.write_spec", plan: "planning.write_plan", commit: "planning.commit" })) {
       outputs[name] = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: id })).result_receipt.outputs;
     }
-    fields.refs = { planning_context_ref: snapshot.planning_context_ref, task_mode: snapshot.task_mode, ...outputs };
+    outputs.tasks = snapshot.task_mode === "split"
+      ? (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: "planning.write_tasks" })).result_receipt.outputs
+      : null;
+    fields.refs = { planning_context_ref: snapshot.planning_context_ref, task_mode: snapshot.task_mode, spec: outputs.spec, plan: outputs.plan, tasks: outputs.tasks, commit: outputs.commit };
   }
   return {
     fields,
@@ -722,6 +726,23 @@ test("planning and coding happy paths reach terminal state without duplicate act
     planning = await finishReady(root, planning);
   }
   assert.equal(new Set(planningActions).size, planningActions.length);
+  assert.equal(planningActions.includes("planning.write_tasks"), false);
+
+  let splitPlanning = await startRun({ repository: root, kind: "planning", plan_digest: "5".repeat(64) });
+  splitPlanning = await finishReady(root, splitPlanning);
+  const confirmInput = await actionInput(root, splitPlanning, "planning.confirm");
+  const confirmClaim = await claimAction({ repository: root, run_id: splitPlanning.run_id, action_id: "planning.confirm", claimant: "split-driver", owner_pid: process.pid, input: confirmInput });
+  const contextRef = await artifact(root, splitPlanning.run_id, "planning_context", { taskMode: "split", decisions: splitPlanning.decision_history });
+  splitPlanning = (await finishAction({ repository: root, receipt: await receipt(root, splitPlanning, confirmClaim, "completed", {
+    outputs: { plan_id: "plan", task_mode: "split", planning_context_ref: contextRef },
+    artifacts: [contextRef],
+  }) })).snapshot;
+  const splitPlanningActions = ["planning.discover", "planning.confirm"];
+  while (splitPlanning.phase !== "complete") {
+    splitPlanningActions.push(splitPlanning.ready_actions[0]);
+    splitPlanning = await finishReady(root, splitPlanning);
+  }
+  assert.equal(splitPlanningActions.includes("planning.write_tasks"), true);
 
   let coding = await startRun({ repository: root, kind: "coding", plan_digest: "4".repeat(64), task_mode: "split" });
   const codingActions = [];

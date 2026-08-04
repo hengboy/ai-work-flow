@@ -234,7 +234,7 @@ function planningSummary(run) {
     task_mode: run.task_mode,
     spec: completedOutputs(run, "planning.write_spec"),
     plan: completedOutputs(run, "planning.write_plan"),
-    tasks: completedOutputs(run, "planning.write_tasks"),
+    tasks: run.task_mode === "split" ? completedOutputs(run, "planning.write_tasks") : null,
     commit: completedOutputs(run, "planning.commit"),
   };
 }
@@ -274,7 +274,8 @@ function validateClaimSemantics({ action_id: actionId, input, run, verifiedArtif
       throw new Error("coding.commit evidence is not the canonical implementation evidence");
     }
     if (actionId === "planning.commit") {
-      const expectedPaths = [...new Set(["planning.write_spec", "planning.write_plan", "planning.write_tasks"].flatMap((id) => {
+      const planningActionIds = ["planning.write_spec", "planning.write_plan", ...(run.task_mode === "split" ? ["planning.write_tasks"] : [])];
+      const expectedPaths = [...new Set(planningActionIds.flatMap((id) => {
         const outputs = completedOutputs(run, id);
         return [...outputs.changed_paths, ...(outputs.deleted_paths ?? [])];
       }))].sort();
@@ -351,8 +352,9 @@ export async function claimAction({ repository, run_id, action_id, claimant, own
 
 function applyReceipt(run, receipt, action, contract) {
   if (receipt.result === "completed") {
-    if (!action.completed_to || action.completed_to === run.phase) throw new Error("WORKFLOW_STALLED: completed action did not advance phase");
-    run.phase = action.completed_to;
+    const completedTo = action.completed_to_by_task_mode?.[run.task_mode] ?? action.completed_to;
+    if (!completedTo || completedTo === run.phase) throw new Error("WORKFLOW_STALLED: completed action did not advance phase");
+    run.phase = completedTo;
     if (action.budget === "review_fix_rounds") run.budgets.review_fix_rounds_remaining -= 1;
   } else if (receipt.result === "retryable_failure") {
     const findingIds = Array.isArray(receipt.error?.finding_ids) ? [...new Set(receipt.error.finding_ids)].sort() : [];

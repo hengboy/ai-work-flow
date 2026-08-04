@@ -18,6 +18,8 @@
 - `navigation.locate`：返回精确 entry paths、直接依赖、职责边界和可执行定位结论，不混入 planning context。
 - `support.locate`：使用同一只读定位边界，为父 action 返回独立 SupportReceipt，不 claim 或推进 navigation workflow。
 
+Coding 在 run 建立前请求计划启动预检时，只读检查指定目录的 `spec.md`、`plan.md` 与模式要求的 tasks，并对照当前提示中的 workflow/action I/O 字段验证元数据。返回计划原始字节 SHA-256 `plan_digest`、`task_mode`、实施 IDs、验收、事实来源、checks 与 open decisions；这是一份启动交接，不得虚构 run ID、claim、ActionReceipt 或 SupportReceipt，也不得自行调用 `start`。
+
 只读查询 workflow status；不得 claim 或 finish 其他 owner 的 action。
 
 ## 完成标准
