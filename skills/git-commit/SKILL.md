@@ -15,8 +15,8 @@ description: 已授权实现或规划 action 完成并通过验证后，根据�
 
 # 步骤
 
-1. 调用 workflow runtime 的受控 commit action。runtime 解析 porcelain v2 PathChange，比较 base/HEAD，使用参数数组与 `--` 暂存精确路径并执行提交。完成标准：返回完整 commit SHA 且 staged/worktree 事实匹配。
-2. 将 commit SHA、检查和 PathChange 写入 `ActionReceipt` 并 finish。完成标准：snapshot revision 增加且进入下一 phase。
+1. 由 **Git Operator** 按角色的受控本地 Git 流程解析 porcelain v2 PathChange，比较 base/HEAD，使用参数数组与 `--` 暂存精确路径并执行提交。完成标准：返回完整 commit SHA 且 staged/worktree 事实匹配。
+2. 将 commit SHA、检查和 PathChange 写入 `ActionReceipt`，通过 `workflow_state` 的 `finish` operation 登记结果。完成标准：snapshot revision 增加且进入下一 phase。
 
 # 条件分支
 
