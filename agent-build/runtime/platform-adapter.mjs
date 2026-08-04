@@ -137,7 +137,7 @@ function codexBrokerConfig(source, path, paths) {
   const block = `${begin}\n[mcp_servers.${WORKFLOW_MCP_ID}]\ncommand = "node"\nargs = [${tomlString(brokerPath(paths))}]\n${end}`;
   const start = source.indexOf(begin);
   const finish = source.indexOf(end);
-  if ((start === -1) !== (finish === -1) || source.indexOf(begin, start + 1) !== -1 || source.indexOf(end, finish + 1) !== -1) {
+  if ((start === -1) !== (finish === -1) || (start !== -1 && start >= finish) || source.indexOf(begin, start + 1) !== -1 || source.indexOf(end, finish + 1) !== -1) {
     fail(`Cannot safely update workflow broker block in ${path}.`);
   }
   if (start !== -1) return `${source.slice(0, start)}${block}${source.slice(finish + end.length)}`;

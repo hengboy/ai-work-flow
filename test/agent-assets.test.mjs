@@ -199,6 +199,10 @@ test("broker configuration preserves unrelated entries, rejects collisions, and 
 
   writeFileSync(configPaths.codex, "[mcp_servers.ai-work-flow]\ncommand = \"user\"\n");
   assert.throws(() => planGeneration({ platform: "codex", paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies }), /Unmanaged/);
+  const reversedMarkers = "# ai-work-flow:workflow-broker:end\n[user]\nvalue = \"keep\"\n# ai-work-flow:workflow-broker:begin\n";
+  writeFileSync(configPaths.codex, reversedMarkers);
+  assert.throws(() => planGeneration({ platform: "codex", paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies }), /Cannot safely update workflow broker block/);
+  assert.equal(readFileSync(configPaths.codex, "utf8"), reversedMarkers);
   writeFileSync(configPaths.claude, JSON.stringify({ mcpServers: { "ai-work-flow": { command: "user" } } }));
   assert.throws(() => planGeneration({ platform: "claude", paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies }), /Unmanaged/);
   writeFileSync(configPaths.opencode, JSON.stringify({ mcp: { "ai-work-flow": { type: "local", command: ["user"] } } }));
