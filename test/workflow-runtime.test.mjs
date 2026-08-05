@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -22,7 +22,15 @@ async function repository() {
   await writeFile(join(root, "README.md"), "baseline\n");
   await run("git", ["add", "README.md"], { cwd: root });
   await run("git", ["commit", "-m", "baseline"], { cwd: root });
-  return root;
+  await writeFile(join(root, ".git", "info", "exclude"), "/.worktrees/\n", { flag: "a" });
+  return realpath(root);
+}
+
+async function linkedWorktree(root, name) {
+  const worktree = join(root, ".worktrees", name);
+  await mkdir(join(root, ".worktrees"), { recursive: true });
+  await run("git", ["worktree", "add", "--detach", worktree, "HEAD"], { cwd: root });
+  return worktree;
 }
 
 async function planFixture(root, taskMode = "single") {
@@ -100,13 +108,36 @@ test("completion rejects extra fields without advancing state", async () => {
   assert.equal((await dispatchWorkflowTool("workflow_resume", { run_id: started.run_id }, { cwd: root })).phase, "direct_started");
 });
 
-test("completion creates internal artifacts without exposing refs", async () => {
+test("prepare accepts only registered direct children of the managed worktree directory", async () => {
   const root = await repository();
   const fixture = await planFixture(root);
   const started = await dispatchWorkflowTool("coding_start_plan", { plan_path: fixture.directory }, { cwd: root });
   const prepare = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
+  const complete = (worktree) => dispatchWorkflowTool(prepare.completion_tool, {
+    lease_id: prepare.lease_id, result: "completed", summary: "prepared", worktree, branch: "feature/example",
+    base_sha: "a".repeat(40), initial_status: { clean: true },
+  }, { cwd: root });
+
+  await assert.rejects(complete(root), /\.worktrees/);
+  await assert.rejects(complete(join(root, "..", "sibling-worktree")), /\.worktrees/);
+  await assert.rejects(complete(join(root, ".worktrees", "nested", "child")), /direct child/);
+  const unregistered = join(root, ".worktrees", "unregistered");
+  await mkdir(unregistered, { recursive: true });
+  await assert.rejects(complete(unregistered), /registered, ignored worktree/);
+
+  const worktree = await linkedWorktree(root, "managed");
+  const completed = await complete(worktree);
+  assert.equal(completed.phase, "prepared");
+});
+
+test("completion creates internal artifacts without exposing refs", async () => {
+  const root = await repository();
+  const worktree = await linkedWorktree(root, "implementation");
+  const fixture = await planFixture(root);
+  const started = await dispatchWorkflowTool("coding_start_plan", { plan_path: fixture.directory }, { cwd: root });
+  const prepare = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
   await dispatchWorkflowTool(prepare.completion_tool, {
-    lease_id: prepare.lease_id, result: "completed", summary: "prepared", worktree: root, branch: "main",
+    lease_id: prepare.lease_id, result: "completed", summary: "prepared", worktree, branch: "feature/example",
     base_sha: "a".repeat(40), initial_status: { clean: true },
   }, { cwd: root });
   const implementation = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
@@ -190,11 +221,12 @@ test("review fixes are committed before rereview preparation", async () => {
 
 test("implementation infrastructure failures remain retryable", async () => {
   const root = await repository();
+  const worktree = await linkedWorktree(root, "retryable");
   const fixture = await planFixture(root);
   const started = await dispatchWorkflowTool("coding_start_plan", { plan_path: fixture.directory }, { cwd: root });
   const prepare = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
   await dispatchWorkflowTool(prepare.completion_tool, {
-    lease_id: prepare.lease_id, result: "completed", summary: "prepared", worktree: root, branch: "main",
+    lease_id: prepare.lease_id, result: "completed", summary: "prepared", worktree, branch: "feature/retryable",
     base_sha: "a".repeat(40), initial_status: { clean: true },
   }, { cwd: root });
   const implementation = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });

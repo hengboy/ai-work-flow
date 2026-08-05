@@ -23,6 +23,12 @@ const WORKFLOW_TOOLS = [
 ];
 const OPENCODE_WORKFLOW_TOOLS = WORKFLOW_TOOLS.map((tool) => `${WORKFLOW_MCP_ID}_${tool}`);
 const OPENCODE_PERMISSION_KEYS = ['read', 'edit', 'glob', 'grep', 'bash', 'task', 'skill', 'webfetch', 'websearch', 'question', 'external_directory', ...OPENCODE_WORKFLOW_TOOLS];
+const OPENCODE_EXTERNAL_WORKTREE_CONTROLS = new Set(['read-only-discovery', 'implementation-worktree-only', 'safe-local-git-only', 'review-read-only']);
+const OPENCODE_READ_ONLY_BASH_COMMANDS = [
+  'git branch --show-current', 'git diff', 'git grep', 'git log', 'git ls-files', 'git rev-parse', 'git show', 'git status',
+  'git -C * branch --show-current', 'git -C * diff', 'git -C * grep', 'git -C * log', 'git -C * ls-files',
+  'git -C * rev-parse', 'git -C * show', 'git -C * status', 'pwd', 'rg',
+];
 const OPENCODE_TOOL_KEYS = {
   Read: 'read',
   Edit: 'edit',
@@ -37,6 +43,17 @@ const OPENCODE_TOOL_KEYS = {
   Question: 'question',
   ExternalDirectory: 'external_directory'
 };
+
+function opencodeReadOnlyBashPermission() {
+  const permission = { '*': 'deny' };
+  const unsafeSuffixes = ['*&&*', '*||*', '*;*', '*|*', '*>*', '*<*', '*$(*', '*`*', '*\n*'];
+  for (const command of OPENCODE_READ_ONLY_BASH_COMMANDS) {
+    permission[command] = 'allow';
+    permission[`${command} *`] = 'allow';
+    for (const suffix of unsafeSuffixes) permission[`${command}${suffix}`] = 'deny';
+  }
+  return permission;
+}
 
 function brokerPath(paths) {
   return resolve(paths.dir, 'execution-runtime', 'workflow-broker.mjs');
@@ -221,7 +238,8 @@ export function opencodePermission(role, policy) {
     permission.grep = 'deny';
     permission.bash = 'deny';
   }
-  if (role.controls.includes('read-only-discovery')) permission.external_directory = 'allow';
+  if (role.controls.includes('read-only-discovery')) permission.bash = opencodeReadOnlyBashPermission();
+  if (role.controls.some((control) => OPENCODE_EXTERNAL_WORKTREE_CONTROLS.has(control))) permission.external_directory = 'allow';
   if (role.tools.includes('WorkflowRuntime')) for (const tool of OPENCODE_WORKFLOW_TOOLS) permission[tool] = 'allow';
   if (policy.delegation === 'allowed') permission.task = 'allow';
   if (policy.delegation === 'none') permission.task = 'deny';

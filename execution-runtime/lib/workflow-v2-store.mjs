@@ -438,6 +438,34 @@ function validateCompletion(action, result, fields, contract) {
   return resultContract;
 }
 
+async function validatePreparedWorktree(location, action, result, fields) {
+  if (!["coding.prepare", "coding.prepare_direct_bug"].includes(action) || result !== "completed") return;
+  if (typeof fields.worktree !== "string" || !isAbsolute(fields.worktree) || resolve(fields.worktree) !== fields.worktree) {
+    throw new WorkflowBusinessError("correction_required", "worktree must be a canonical absolute path inside .worktrees");
+  }
+  const managedRoot = join(location.repository, ".worktrees");
+  const managedRelative = relative(managedRoot, fields.worktree);
+  if (!managedRelative || managedRelative === ".." || managedRelative.startsWith(`..${sep}`) || isAbsolute(managedRelative)) {
+    throw new WorkflowBusinessError("correction_required", "worktree must be inside the repository .worktrees directory");
+  }
+  if (managedRelative.split(sep).length !== 1) {
+    throw new WorkflowBusinessError("correction_required", "worktree must be a direct child of the repository .worktrees directory");
+  }
+  try {
+    const [rootEntry, worktreeEntry, canonicalWorktree] = await Promise.all([lstat(managedRoot), lstat(fields.worktree), realpath(fields.worktree)]);
+    if (rootEntry.isSymbolicLink() || !rootEntry.isDirectory() || worktreeEntry.isSymbolicLink() || !worktreeEntry.isDirectory() || canonicalWorktree !== fields.worktree) {
+      throw new Error("managed worktree path is not a canonical directory");
+    }
+    if (await gitRoot(fields.worktree) !== fields.worktree) throw new Error("managed worktree is not a Git worktree root");
+    const { stdout } = await execFileAsync("git", ["rev-parse", "--git-common-dir"], { cwd: fields.worktree, encoding: "utf8" });
+    const candidateCommon = await realpath(isAbsolute(stdout.trim()) ? stdout.trim() : resolve(fields.worktree, stdout.trim()));
+    if (candidateCommon !== location.common) throw new Error("managed worktree belongs to another repository");
+    await execFileAsync("git", ["check-ignore", "--quiet", "--no-index", "--", relative(location.repository, fields.worktree)], { cwd: location.repository });
+  } catch (error) {
+    throw new WorkflowBusinessError("correction_required", `worktree is not a registered, ignored worktree for this repository: ${error.message}`);
+  }
+}
+
 async function storeCompletionArtifacts(location, run, fields, resultContract, contract) {
   const artifacts = {};
   for (const kind of resultContract.required_artifact_kinds ?? []) {
@@ -487,6 +515,7 @@ export async function complete(cwd, contractName, input) {
     const fields = Object.fromEntries(Object.entries(input).filter(([key]) => !["lease_id", "result", "summary"].includes(key)));
     if (typeof input.summary !== "string" || !input.summary.trim()) throw new WorkflowBusinessError("correction_required", "summary must be non-empty");
     const resultContract = validateCompletion(lease.action_id, input.result, fields, contract);
+    await validatePreparedWorktree(location, lease.action_id, input.result, fields);
     const runLocation = await locations(cwd, run.run_id);
     const artifacts = await storeCompletionArtifacts(runLocation, run, fields, resultContract, contract);
     const canonicalFields = Object.fromEntries(resultContract.required_fields.concat(resultContract.optional_fields ?? []).filter((field) => {

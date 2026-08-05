@@ -17,6 +17,7 @@
 - 仓库使用 Node.js ESM；测试入口为 `npm test`，资产校验入口为 `node agent-build/install.mjs validate` 和 `npm run validate:skills`。
 - v2 run、lease、receipt、decision 和内部 artifacts 只写 Git common dir 的 `.git/ai-work-flow/v2/`；v1 数据保留但忽略，不得迁移或删除。
 - 自动 Git 授权仅含本地 commit、worktree、fast-forward 整合和安全清理；不含 push、stash、reset、clean、amend、tag、PR 或远端修改。
+- 新受管 worktree 必须是仓库内已注册且由本地 exclude 忽略的 `.worktrees/<单层名称>`；runtime 拒绝 sibling、嵌套、符号链接或其他仓库的 worktree。
 - `skills/` 中的五个受管理 Skill 分发到三平台，但每个角色只能启用 `skills.json` 归属的 Skill；受管理片段之外的用户内容必须保留。
 - 根 `MEMORY.md` 是 committed standards source；职责、边界或入口变化时与导航索引同轮维护。
 
@@ -34,7 +35,7 @@
 | 模块 | 边界 |
 | --- | --- |
 | `execution-runtime/workflow-contract.json` | 唯一流程声明；提示词和测试不得复制状态表。 |
-| `execution-runtime/lib/workflow-v2-store.mjs` | Git common dir v2 原子持久化、PlanBundle、lease、completion、resume 和 decision；旧 store 不再由 broker 调用。 |
+| `execution-runtime/lib/workflow-v2-store.mjs` | Git common dir v2 原子持久化、PlanBundle、lease、completion、受管 worktree 校验、resume 和 decision；旧 store 不再由 broker 调用。 |
 | `execution-runtime/lib/workflow-broker.mjs` | 注册启动、恢复、claim、answer 和 contract completion 窄工具；仓库从 broker cwd 推导。 |
 | `execution-runtime/lib/review-packet.mjs` | 冻结 committed review context 并返回 ref；聊天不承载完整上下文。 |
 | `agent-build/runtime/asset-catalog.mjs` | 从 contract/roles/controls/policies 编译并校验七段 prompts。 |

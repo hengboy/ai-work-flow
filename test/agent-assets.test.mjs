@@ -78,6 +78,19 @@ test("OpenCode File Explorer can inspect external worktrees read-only", () => {
   assert.equal(evaluateOpenCodePermission(explorer, policy, "external_directory"), "allow");
   assert.equal(evaluateOpenCodePermission(explorer, policy, "read"), "allow");
   assert.equal(evaluateOpenCodePermission(explorer, policy, "edit"), "deny");
+  assert.equal(evaluateOpenCodePermission(explorer, policy, "bash", "rg --files"), "allow");
+  assert.equal(evaluateOpenCodePermission(explorer, policy, "bash", "git status --short"), "allow");
+  assert.equal(evaluateOpenCodePermission(explorer, policy, "bash", "rm README.md"), "deny");
+  assert.equal(evaluateOpenCodePermission(explorer, policy, "bash", "git status && rm README.md"), "deny");
+});
+
+test("OpenCode worktree actors can access legacy external worktrees", () => {
+  const assets = loadAgentAssets();
+  const allowed = new Set(["file-explorer", "full-stack-coder", "bug-fixer", "git-operator", "code-reviewer", "review-standards", "review-spec"]);
+  for (const role of assets.roles) {
+    const policy = assets.policies[role.policy];
+    assert.equal(evaluateOpenCodePermission(role, policy, "external_directory"), allowed.has(role.id) ? "allow" : "deny", role.id);
+  }
 });
 
 test("workflow runtime capability reports platform enforcement honestly", () => {

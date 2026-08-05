@@ -2,7 +2,7 @@
 | --- | --- | --- |
 | 安装、生成、环境管理 | `agent-build/install.mjs` -> `agent-build/runtime/workflow.mjs` | 事务式安装配置、runtime、Skills 和三平台 Agents；清理明确列出的旧受管理文件。 |
 | Workflow 契约与公共结构 | `execution-runtime/workflow-contract.json`、`execution-runtime/lib/workflow-contract.mjs` | 唯一声明 workflow、phase、action owner、转换、预算、决策代码和结构校验。 |
-| v2 Run、PlanBundle、lease、completion、恢复与决策 | `execution-runtime/workflow-broker.mjs`、`execution-runtime/lib/workflow-broker.mjs` -> `execution-runtime/lib/workflow-v2-store.mjs` | broker 只注册启动、恢复、claim、answer 和 contract completion 窄工具；store 推导仓库/action/input、创建内部 artifacts，并持久化到 `.git/ai-work-flow/v2/`。 |
+| v2 Run、PlanBundle、lease、completion、受管 worktree、恢复与决策 | `execution-runtime/workflow-broker.mjs`、`execution-runtime/lib/workflow-broker.mjs` -> `execution-runtime/lib/workflow-v2-store.mjs` | broker 只注册窄工具；store 推导仓库/action/input、校验 `.worktrees/` prepare 结果、创建内部 artifacts，并持久化到 `.git/ai-work-flow/v2/`。 |
 | 旧 runtime 与 runtime identity | `execution-runtime/lib/workflow-store.mjs`、`execution-runtime/lib/artifact-store.mjs`、`execution-runtime/lib/review-packet.mjs`、`execution-runtime/lib/runtime-identity.mjs`、`execution-runtime/runtime-identity.json` | v1 store/artifact 实现不再由 broker 注册；旧数据保留但忽略。runtime identity 覆盖一次性安装的新 broker catalog。 |
 | Agent 角色与七段 prompt 编译 | `agent-build/config/{roles,controls,policies}.json`、`agent-build/templates/*.md`、`agent-build/runtime/{asset-catalog,platform-adapter}.mjs` | 只有 Planning/Coding 获得窄状态工具；子代理返回 TaskResult；三平台工具 allowlist 与 Skill allowlist 确定性生成。 |
 | Skills 元数据与生成 | `agent-build/config/skills.json`、`agent-build/runtime/skill-catalog.mjs`、`agent-build/generate-skill-metadata.mjs` | 五个 Skills、frontmatter 和 `agents/openai.yaml` 的单一元数据来源与确定性校验。 |
