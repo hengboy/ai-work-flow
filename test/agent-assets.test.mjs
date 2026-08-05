@@ -121,6 +121,13 @@ test("primary agents only orchestrate delegated work and Coding uses verified st
   assert.match(planning, /Git Operator/);
   assert.match(planning, /support\.research/);
   assert.match(planning, /kind: "planning", request: \{objective: <用户原文>\}/);
+  assert.match(planning, /source_run_id: <coding run id>/);
+  assert.match(planning, /不得调用 `decide`/);
+  assert.match(planning, /不得把 Coding 的 `plan_digest` 或 `task_mode` 用于 Planning start/);
+  assert.match(planning, /claim `planning\.confirm` 时传 `input: \{\}`/);
+  assert.match(planning, /broker 会在锁内绑定 canonical discovery receipt/);
+  assert.match(planning, /operation: "decide".*answer: <用户原文>/);
+  assert.match(planning, /不得猜测或构造嵌套 decision 对象/);
   assert.match(planning, /不得为尚不存在的 plan 伪造 `plan_digest`/);
   assert.ok(assets.roles.find((role) => role.id === "planning").delegates.includes("researcher"));
   assert.ok(assets.contract.support_delegations.planning.includes("support.research"));

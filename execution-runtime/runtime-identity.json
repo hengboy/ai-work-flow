@@ -2,7 +2,7 @@
   "type": "execution-runtime-identity",
   "source": {
     "identity": "ai-work-flow/execution-runtime",
-    "revision": "3b78bbd3add9fda30edf60bb69d8b1833a8ff9f1456f02c1077f2e6b1325ccd0"
+    "revision": "96414c52afc5d923c93d33f0ceb24570869826684682377d421b93413e7c9962"
   },
   "managed_files": [
     {
@@ -27,7 +27,7 @@
     },
     {
       "path": "lib/workflow-broker.mjs",
-      "digest": "1fdf87a7dd328e69df548bdf337bc1cec28f545dcfe8b195c0b12fcfe3ab416b"
+      "digest": "24cdc0ceb4d5d50cff5ae3fa280e924c751ff1c87a82113829f9714789856ba3"
     },
     {
       "path": "lib/workflow-contract.mjs",
@@ -35,7 +35,7 @@
     },
     {
       "path": "lib/workflow-store.mjs",
-      "digest": "882e22c6bb884669a5f3e5f9fcc2db82ccca545e94c533f3f3aaac51c4268628"
+      "digest": "84a6f60f138bedacb92c0c67891fd9601f0cf5d22f7b1db997300d703fe6aeb6"
     },
     {
       "path": "workflow-broker.mjs",
@@ -50,6 +50,6 @@
       "digest": "c01da8e0f50fedb5520f41a90803c62dd8721a6121b1f096615081adf0143bcf"
     }
   ],
-  "files_digest": "3b78bbd3add9fda30edf60bb69d8b1833a8ff9f1456f02c1077f2e6b1325ccd0",
-  "identity_digest": "0d8679a87b3e1d7b0435b73c083f06cdc88001a6e9aece0988dbb533dbf05914"
+  "files_digest": "96414c52afc5d923c93d33f0ceb24570869826684682377d421b93413e7c9962",
+  "identity_digest": "8a8050441bac31a963cc786d7bf28aae0ab56aaf4ef0b3399d023cb84e20d4f3"
 }

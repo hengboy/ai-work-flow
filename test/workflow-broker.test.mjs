@@ -32,16 +32,25 @@ test("workflow broker exposes one fixed MCP tool and no command execution surfac
   assert.ok(schema.properties.operation.enum.includes("support_validate"));
   assert.ok(schema.properties.input);
   assert.deepEqual(schema.properties.request.required, ["objective"]);
-  assert.equal(constraint("start").anyOf.length, 4);
+  assert.equal(constraint("start").anyOf.length, 5);
   assert.equal(constraint("status").anyOf.length, 2);
   assert.match(listed.result.tools[0].description, /contract takes exactly/);
   assert.match(listed.result.tools[0].description, /run_id and action_id belong inside the ActionReceipt/);
+  assert.match(listed.result.tools[0].description, /recover only releases a stale active claim/);
   assert.match(listed.result.tools[0].description, /must never validate pre-run discovery/);
   assert.equal(constraint("contract").maxProperties, 1);
   assert.deepEqual(constraint("support_validate").required, ["operation", "repository", "caller_ref", "input", "receipt"]);
   assert.deepEqual(constraint("finish").required, ["operation", "repository", "receipt"]);
   assert.deepEqual(constraint("finish").propertyNames.enum, ["operation", "repository", "receipt"]);
   assert.deepEqual(constraint("finish").properties.receipt.required, ["run_id", "action_id", "attempt", "result", "summary", "outputs", "artifacts", "checks"]);
+  assert.deepEqual(constraint("decide").properties.decision.required, ["code", "summary"]);
+  assert.equal(constraint("decide").properties.decision.additionalProperties, false);
+  assert.equal(constraint("decide").anyOf.length, 2);
+  assert.match(schema.properties.answer.description, /Preferred flat decide input/);
+  assert.match(constraint("decide").properties.decision.properties.code.description, /active snapshot decision_request/);
+  assert.match(constraint("decide").properties.decision.properties.summary.description, /Verbatim user answer/);
+  assert.match(schema.properties.source_run_id.description, /PLANNING_REQUIRED/);
+  assert.ok(constraint("start").anyOf.some((branch) => branch.required?.includes("source_run_id")));
   assert.equal(JSON.stringify(listed).includes("command"), false);
   const unknown = await handleBrokerRequest({
     jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "shell", arguments: {} },

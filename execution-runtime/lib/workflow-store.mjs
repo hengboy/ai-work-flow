@@ -132,6 +132,7 @@ function snapshot(run, contract) {
   if (run.decision_request) result.decision_request = structuredClone(run.decision_request);
   if (run.planning_context_ref) result.planning_context_ref = structuredClone(run.planning_context_ref);
   if (run.direct_request) result.direct_request = structuredClone(run.direct_request);
+  if (run.source_run_id) result.source_run_id = run.source_run_id;
   if (run.direct_kind) result.direct_kind = run.direct_kind;
   return result;
 }
@@ -145,11 +146,23 @@ function initialBudgets(contract) {
   };
 }
 
-function runKey(kind, sourceType, planDigest, taskMode) {
-  return createHash("sha256").update(`${kind}\0${sourceType}\0${planDigest}\0${taskMode ?? ""}`).digest("hex");
+function runKey(kind, sourceType, planDigest, taskMode, sourceRunId) {
+  const source = sourceRunId ? `\0${sourceRunId}` : "";
+  return createHash("sha256").update(`${kind}\0${sourceType}\0${planDigest}\0${taskMode ?? ""}${source}`).digest("hex");
 }
 
-export async function startRun({ repository, kind, plan_digest, task_mode, request }) {
+export async function startRun({ repository, kind, plan_digest, task_mode, request, source_run_id }) {
+  if (source_run_id !== undefined) {
+    if (kind !== "planning" || request !== undefined || plan_digest !== undefined || task_mode !== undefined) {
+      throw new Error("planning handoff start requires exactly kind=planning and source_run_id");
+    }
+    const { run: sourceRun } = await loadRun(repository, source_run_id);
+    if (sourceRun.kind !== "coding" || sourceRun.source_type !== "direct" || sourceRun.phase !== "awaiting_decision" ||
+      sourceRun.decision_request?.code !== "PLANNING_REQUIRED" || typeof sourceRun.direct_request?.objective !== "string") {
+      throw new Error("source_run_id is not a terminal PLANNING_REQUIRED direct coding run");
+    }
+    request = structuredClone(sourceRun.direct_request);
+  }
   const contract = await loadWorkflowContract();
   const requestBased = request !== undefined;
   const validRequest = request && typeof request === "object" && !Array.isArray(request) &&
@@ -158,6 +171,9 @@ export async function startRun({ repository, kind, plan_digest, task_mode, reque
   const validPlanStart = kind !== "planning" && /^[0-9a-f]{64}$/.test(plan_digest ?? "") &&
     (kind === "coding" ? ["single", "split"].includes(task_mode) : task_mode === undefined);
   if (!contract.workflows[kind] || !(requestBased ? validRequestStart : validPlanStart)) {
+    if (kind === "planning") {
+      throw new Error("planning start requires exactly one of request={objective:<verbatim user request>} or source_run_id=<PLANNING_REQUIRED coding run_id>");
+    }
     throw new Error("start input is invalid");
   }
   const sourceType = requestBased ? "direct" : "plan";
@@ -167,7 +183,7 @@ export async function startRun({ repository, kind, plan_digest, task_mode, reque
   const location = await paths(repository);
   await ensureDirectoryChain(location.common, location.runs);
   await assertPathChain(location.common, location.runs);
-  const key = runKey(kind, sourceType, runDigest, runTaskMode);
+  const key = runKey(kind, sourceType, runDigest, runTaskMode, source_run_id);
   const indexPath = join(location.base, "plan-index", `${key}.json`);
   const startLock = join(location.base, "start-locks", key);
   await ensureDirectoryChain(location.common, dirname(startLock));
@@ -202,6 +218,7 @@ export async function startRun({ repository, kind, plan_digest, task_mode, reque
       decision_history: [],
       planning_context_ref: null,
       direct_request: directRequest,
+      source_run_id: source_run_id ?? null,
       direct_kind: null,
       review_finding_ids: [],
       created_at: new Date().toISOString(),
@@ -391,6 +408,15 @@ export async function claimAction({ repository, run_id, action_id, claimant, own
     if (run.active_claims[action_id]) return { claim_status: "existing_claim", ...run.active_claims[action_id] };
     if (!(contract.workflows[run.kind].phase_actions[run.phase] ?? []).includes(action_id)) throw new Error(`action ${action_id} is not ready`);
     if (typeof claimant !== "string" || !claimant.trim() || !Number.isSafeInteger(owner_pid) || owner_pid <= 0) throw new Error("claim identity is invalid");
+    if (action_id === "planning.confirm") {
+      input = {
+        fields: {
+          discovery_receipt: structuredClone(run.completed_actions["planning.discover"]?.receipt),
+          decision_history: structuredClone(run.decision_history),
+        },
+        artifacts: [],
+      };
+    }
     validateActionInput(input, action_id, contract);
     const { verifyArtifact } = await import("./artifact-store.mjs");
     const verifiedArtifacts = new Map();
@@ -599,13 +625,25 @@ export async function recoverAction({ repository, run_id, action_id }) {
   });
 }
 
-export async function resolveDecision({ repository, run_id, decision }) {
+export async function resolveDecision({ repository, run_id, answer, decision }) {
   const loaded = await loadRun(repository, run_id);
   return withLock(loaded.location.lock, async () => {
     const { contract, location } = await loadRun(repository, run_id);
     const run = await readJson(location.runFile);
+    if (run.phase === "awaiting_decision" && run.decision_request?.code === "PLANNING_REQUIRED" && !run.decision_request.resume_phase) {
+      throw new Error(`PLANNING_HANDOFF_REQUIRED: call start with {operation:"start",repository:${JSON.stringify(repository)},kind:"planning",source_run_id:${JSON.stringify(run_id)}}`);
+    }
     if (run.phase !== "awaiting_decision" || !run.decision_request?.resume_phase) throw new Error("run has no resumable decision request");
-    if (!decision || decision.code !== run.decision_request.code || typeof decision.summary !== "string" || !decision.summary.trim()) throw new Error("decision does not match the active request");
+    if (answer !== undefined) {
+      if (decision !== undefined || typeof answer !== "string" || !answer.trim()) throw new Error("decide requires exactly one non-empty answer or decision object");
+      decision = { code: run.decision_request.code, summary: answer };
+    }
+    const validDecision = decision && typeof decision === "object" && !Array.isArray(decision) &&
+      Object.keys(decision).sort().join() === "code,summary" && decision.code === run.decision_request.code &&
+      typeof decision.summary === "string" && decision.summary.trim();
+    if (!validDecision) {
+      throw new Error(`decision must be exactly {code:${JSON.stringify(run.decision_request.code)},summary:<verbatim user answer>}`);
+    }
     const historyEntry = { revision: run.revision + 1, code: decision.code, summary: decision.summary };
     run.phase = run.decision_request.resume_phase;
     run.decision_request = null;

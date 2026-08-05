@@ -467,12 +467,26 @@ test("planning confirmation persists zero, one, or multiple decisions and binds 
     let snapshot = await startRun({ repository: root, kind: "planning", request: { objective: `Plan decision case ${count}` } });
     snapshot = await finishReady(root, snapshot);
     for (let index = 0; index < count; index += 1) {
-      const input = await actionInput(root, snapshot, "planning.confirm");
-      const claim = await claimAction({ repository: root, run_id: snapshot.run_id, action_id: "planning.confirm", claimant: `decision-${index}`, owner_pid: process.pid, input });
+      const canonicalInput = await actionInput(root, snapshot, "planning.confirm");
+      const claim = await claimAction({
+        repository: root,
+        run_id: snapshot.run_id,
+        action_id: "planning.confirm",
+        claimant: `decision-${index}`,
+        owner_pid: process.pid,
+        input: { discovery_receipt: { summary: "non-canonical caller copy" } },
+      });
+      assert.deepEqual(claim.input, canonicalInput);
       const pending = await receipt(root, snapshot, claim, "needs_decision", { decision_request: { code: "PRODUCT_DECISION_REQUIRED", summary: `question ${index + 1}` } });
       snapshot = (await finishAction({ repository: root, receipt: pending })).snapshot;
       assert.equal(snapshot.phase, "awaiting_decision");
-      snapshot = await resolveDecision({ repository: root, run_id: snapshot.run_id, decision: { code: "PRODUCT_DECISION_REQUIRED", summary: `answer ${index + 1}` } });
+      await assert.rejects(resolveDecision({
+        repository: root,
+        run_id: snapshot.run_id,
+        decision: { decision_id: `question-${index + 1}`, answer: `answer ${index + 1}` },
+      }), /decision must be exactly \{code:"PRODUCT_DECISION_REQUIRED",summary:<verbatim user answer>\}/);
+      assert.equal((await statusRun({ repository: root, run_id: snapshot.run_id })).revision, snapshot.revision);
+      snapshot = await resolveDecision({ repository: root, run_id: snapshot.run_id, answer: `answer ${index + 1}` });
       assert.equal(snapshot.phase, "facts_ready");
       assert.equal(snapshot.decision_history.length, index + 1);
       assert.deepEqual((await statusRun({ repository: root, run_id: snapshot.run_id })).decision_history, snapshot.decision_history);
@@ -488,8 +502,8 @@ test("planning confirmation persists zero, one, or multiple decisions and binds 
       input: { ...specInput, fields: { ...specInput.fields, source_digest: "0".repeat(64) } },
     }), /planning context/);
   }
-  await assert.rejects(startRun({ repository: root, kind: "planning", plan_digest: "e".repeat(64) }), /start input/);
-  await assert.rejects(startRun({ repository: root, kind: "planning", plan_digest: "f".repeat(64), task_mode: "split" }), /start input/);
+  await assert.rejects(startRun({ repository: root, kind: "planning", plan_digest: "e".repeat(64) }), /planning start requires/);
+  await assert.rejects(startRun({ repository: root, kind: "planning", plan_digest: "f".repeat(64), task_mode: "split" }), /planning start requires/);
 });
 
 test("implementation and commit receipts must match canonical change evidence", async () => {
@@ -883,7 +897,13 @@ test("large direct features terminate with a non-resumable Planning handoff", as
   assert.equal(Object.hasOwn(snapshot.decision_request, "resume_phase"), false);
   await assert.rejects(resolveDecision({
     repository: root, run_id: snapshot.run_id, decision: { code: "PLANNING_REQUIRED", summary: "continue directly" },
-  }), /no resumable decision/);
+  }), new RegExp(`PLANNING_HANDOFF_REQUIRED.*source_run_id:"${snapshot.run_id}"`));
+  const planning = await startRun({ repository: root, kind: "planning", source_run_id: snapshot.run_id });
+  assert.equal(planning.kind, "planning");
+  assert.equal(planning.source_run_id, snapshot.run_id);
+  assert.deepEqual(planning.direct_request, snapshot.direct_request);
+  assert.deepEqual(planning.ready_actions, ["planning.discover"]);
+  assert.deepEqual(await startRun({ repository: root, kind: "planning", source_run_id: snapshot.run_id }), planning);
 });
 
 test("maintenance Skill workflows use the same claim and receipt contract", async () => {

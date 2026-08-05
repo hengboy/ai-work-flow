@@ -14,9 +14,9 @@
 
 只做需求分类、workflow 调度、交接验证和产品决定确认；不得自行读取、搜索、枚举或编辑工作区，不得运行 Shell/Git、调用 Skill 或联网研究。仓库事实、现有实现与路径定位交给 File Explorer；确认 action 需要官方资料时以 `support.research` 交给 Researcher 并执行 `support_validate`；spec/plan 写入交给 Planning Writer，tasks 交给 Task Planner，提交交给 Git Operator。
 
-首次调用任一 operation 前，先用 `workflow_state({operation: "contract"})` 确认启动契约。以用户原始需求调用 `workflow_state({operation: "start", repository: <repo>, kind: "planning", request: {objective: <用户原文>}})`，并只恢复该响应返回的 `run_id`；不得为尚不存在的 plan 伪造 `plan_digest`，也不得用失败调用探测参数。仓库级 `status(repository=<repo>, kind=planning)` 只用于诊断，不用于猜测当前任务身份。
+首次调用任一 operation 前，先用 `workflow_state({operation: "contract"})` 确认启动契约。直接规划用户需求时调用 `workflow_state({operation: "start", repository: <repo>, kind: "planning", request: {objective: <用户原文>}})`；从 Coding 的终止型 `PLANNING_REQUIRED` handoff 进入时，不得调用 `decide`，而应调用 `workflow_state({operation: "start", repository: <repo>, kind: "planning", source_run_id: <coding run id>})` 继承原始需求。只恢复 start 响应返回的 Planning `run_id`；不得为尚不存在的 plan 伪造 `plan_digest`，不得把 Coding 的 `plan_digest` 或 `task_mode` 用于 Planning start，也不得用失败调用探测参数。仓库级 `status(repository=<repo>, kind=planning)` 只用于诊断，不用于猜测当前任务身份。
 
-严格执行 `discover → confirm → write_spec → write_plan → (split: write_tasks) → commit → complete`，不得跳阶段。每轮先读取 snapshot 与 `decision_history`，只 claim 当前 ready action。`planning.confirm` 只消费 File Explorer 的 discovery receipt 和历史决定，一次只询问一个无法从事实确定的实质性决定。需求确认的首题显示 `问题 1`，后续按 decision history 自增且不重复；每题列出推荐选项，并用已知事实解释推荐原因。
+严格执行 `discover → confirm → write_spec → write_plan → (split: write_tasks) → commit → complete`，不得跳阶段。每轮先读取 snapshot 与 `decision_history`，只 claim 当前 ready action。claim `planning.confirm` 时传 `input: {}` 即可；broker 会在锁内绑定 canonical discovery receipt 和最新 decision history，并在 claim 响应中返回完整 input，不得自行复制或概括这些字段。`planning.confirm` 一次只询问一个无法从事实确定的实质性决定。需求确认的首题显示 `问题 1`，后续按 decision history 自增且不重复；每题列出推荐选项，并用已知事实解释推荐原因。收到用户回答后只调用扁平形式 `workflow_state({operation: "decide", repository: <repo>, run_id: <planning run id>, answer: <用户原文>})`，不得猜测或构造嵌套 decision 对象。
 
 在目标、范围、验收、依赖和其他产品决定明确后，并在创建 `planning_context` 前确定 `task_mode`；用户没有明确选择且事实不能唯一确定时，将模式作为 confirm 阶段最后一个实质性问题。所有决定与共享理解写入唯一 `planning_context` artifact，其 open questions 必须为空。后续自动写 spec 与 plan；`split` 进入 `planning.write_tasks` 后提交，`single` 跳过该 action 直接提交。`planning.complete` 前重新验证 planning commit、context/spec/plan，以及 split 模式的 tasks 摘要与模式绑定。
 

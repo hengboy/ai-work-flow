@@ -15,12 +15,12 @@ const OPERATIONS = new Set([
   "support_validate",
 ]);
 const OPERATION_FIELDS = Object.freeze({
-  start: ["operation", "repository", "kind", "plan_digest", "task_mode", "request"],
+  start: ["operation", "repository", "kind", "plan_digest", "task_mode", "request", "source_run_id"],
   status: ["operation", "repository", "run_id", "action_id", "kind"],
   claim: ["operation", "repository", "run_id", "action_id", "claimant", "input"],
   finish: ["operation", "repository", "receipt"],
   recover: ["operation", "repository", "run_id", "action_id"],
-  decide: ["operation", "repository", "run_id", "decision"],
+  decide: ["operation", "repository", "run_id", "answer", "decision"],
   artifact_create: ["operation", "repository", "run_id", "kind", "content"],
   artifact_verify: ["operation", "repository", "run_id", "ref"],
   review_packet_create: ["operation", "repository", "run_id", "packet"],
@@ -34,7 +34,7 @@ const OPERATION_REQUIRED_FIELDS = Object.freeze({
   claim: ["operation", "repository", "run_id", "action_id", "claimant", "input"],
   finish: ["operation", "repository", "receipt"],
   recover: ["operation", "repository", "run_id", "action_id"],
-  decide: ["operation", "repository", "run_id", "decision"],
+  decide: ["operation", "repository", "run_id"],
   artifact_create: ["operation", "repository", "run_id", "kind", "content"],
   artifact_verify: ["operation", "repository", "run_id", "ref"],
   review_packet_create: ["operation", "repository", "run_id", "packet"],
@@ -80,6 +80,17 @@ const SUPPORT_RECEIPT_SCHEMA = Object.freeze({
   additionalProperties: false,
 });
 
+const DECISION_SCHEMA = Object.freeze({
+  type: "object",
+  description: "Resolution for the active snapshot decision_request. Copy its code exactly and put the verbatim user answer in summary.",
+  required: ["code", "summary"],
+  properties: {
+    code: { type: "string", minLength: 1, description: "Exact code from the active snapshot decision_request." },
+    summary: { type: "string", minLength: 1, description: "Verbatim user answer, including an option ID or custom answer when applicable." },
+  },
+  additionalProperties: false,
+});
+
 function operationConstraint(operation) {
   const constraint = {
     if: { properties: { operation: { const: operation } }, required: ["operation"] },
@@ -105,7 +116,12 @@ function operationConstraint(operation) {
       {
         properties: { kind: { const: "planning" } },
         required: ["request"],
-        ...without("plan_digest", "task_mode"),
+        ...without("plan_digest", "task_mode", "source_run_id"),
+      },
+      {
+        properties: { kind: { const: "planning" } },
+        required: ["source_run_id"],
+        ...without("plan_digest", "task_mode", "request"),
       },
       {
         properties: { kind: { not: { enum: ["coding", "planning"] } }, plan_digest: { pattern: "^[0-9a-f]{64}$" } },
@@ -121,13 +137,20 @@ function operationConstraint(operation) {
     ];
   }
   if (operation === "finish") constraint.then.properties = { receipt: ACTION_RECEIPT_SCHEMA };
+  if (operation === "decide") {
+    constraint.then.properties = { decision: DECISION_SCHEMA };
+    constraint.then.anyOf = [
+      { required: ["answer"], not: { required: ["decision"] } },
+      { required: ["decision"], not: { required: ["answer"] } },
+    ];
+  }
   if (operation === "support_validate") constraint.then.properties = { receipt: SUPPORT_RECEIPT_SCHEMA };
   return constraint;
 }
 
 const TOOL = Object.freeze({
   name: TOOL_NAME,
-  description: "Read or update AI Work Flow state through fixed operations. finish takes exactly {operation:'finish', repository, receipt}; run_id and action_id belong inside the ActionReceipt, never at the top level. status with repository and optional kind lists repository runs; add run_id for one canonical snapshot. contract takes exactly {operation:'contract'} with no repository or kind. support_validate requires repository, caller_ref, input, and receipt tied to an active parent claim; it must never validate pre-run discovery. Planning start requires repository, kind='planning', and request={objective:<verbatim user request>}. Plan-based coding start requires repository, kind='coding', plan_digest, and task_mode. Direct Bug or small-feature coding start instead requires repository, kind='coding', and request={objective:<verbatim user request>}; do not mix request with plan fields.",
+  description: "Read or update AI Work Flow state through fixed operations. finish takes exactly {operation:'finish', repository, receipt}; run_id and action_id belong inside the ActionReceipt, never at the top level. status with repository and optional kind lists repository runs; add run_id for one canonical snapshot. Prefer the flat decide form with answer=<verbatim user answer>; the legacy decision={code:<exact active code>,summary:<verbatim user answer>} form remains supported. A terminal PLANNING_REQUIRED is not decidable: start planning with kind='planning' and source_run_id=<coding run_id>. recover only releases a stale active claim; never use it for a finished action awaiting a decision. contract takes exactly {operation:'contract'} with no repository or kind. support_validate requires repository, caller_ref, input, and receipt tied to an active parent claim; it must never validate pre-run discovery. Planning start requires repository, kind='planning', and exactly one of request={objective:<verbatim user request>} or source_run_id=<PLANNING_REQUIRED coding run>. Plan-based coding start requires repository, kind='coding', plan_digest, and task_mode. Direct Bug or small-feature coding start instead requires repository, kind='coding', and request={objective:<verbatim user request>}; do not mix request with plan fields.",
   inputSchema: {
     type: "object",
     required: ["operation"],
@@ -140,6 +163,7 @@ const TOOL = Object.freeze({
       kind: { type: "string", description: "Workflow kind for start or repository-level status filtering, such as coding; never a role, support action, or I/O contract name." },
       plan_digest: { type: "string", description: "Verified lowercase SHA-256 plan digest for start." },
       task_mode: { type: "string", enum: ["single", "split"], description: "Required only by plan-based coding start." },
+      source_run_id: { type: "string", pattern: "^run_[0-9a-f]{24}$", description: "For planning start only: a terminal direct coding run whose decision_request code is PLANNING_REQUIRED. The planning objective is inherited from that run." },
       request: {
         type: "object",
         description: "Verbatim user request. Required for planning start and for direct Bug or small-feature coding start; do not mix with plan_digest/task_mode.",
@@ -150,7 +174,8 @@ const TOOL = Object.freeze({
       receipt: { type: "object", description: "ActionReceipt for finish or SupportReceipt for support_validate; the operation-specific schema defines its fields." },
       input: { type: "object", description: "Canonical claim input, or the original support input for support_validate." },
       caller_ref: { type: "string", description: "Active parent claim ID for support_validate only." },
-      decision: { type: "object" },
+      answer: { type: "string", minLength: 1, description: "Preferred flat decide input: the verbatim user answer to the active decision_request, such as an option ID or custom answer." },
+      decision: DECISION_SCHEMA,
       content: {},
       ref: { type: "object" },
       packet: { type: "object" },
@@ -181,7 +206,7 @@ export async function dispatchWorkflowState(input, context = {}) {
     return { ...contract, broker: { tool_name: TOOL_NAME, input_schema: structuredClone(TOOL.inputSchema) } };
   }
   const repository = await trustedRepository(input.repository, context.cwd ?? process.cwd());
-  if (input.operation === "start") return startRun({ repository, kind: input.kind, plan_digest: input.plan_digest, task_mode: input.task_mode, request: input.request });
+  if (input.operation === "start") return startRun({ repository, kind: input.kind, plan_digest: input.plan_digest, task_mode: input.task_mode, request: input.request, source_run_id: input.source_run_id });
   if (input.operation === "status") {
     if (!input.run_id) {
       if (input.action_id) throw new Error("repository status does not accept action_id without run_id");
@@ -193,7 +218,7 @@ export async function dispatchWorkflowState(input, context = {}) {
   if (input.operation === "claim") return claimAction({ repository, run_id: input.run_id, action_id: input.action_id, claimant: input.claimant, owner_pid: context.pid ?? process.pid, input: input.input });
   if (input.operation === "finish") return finishAction({ repository, receipt: input.receipt });
   if (input.operation === "recover") return recoverAction({ repository, run_id: input.run_id, action_id: input.action_id });
-  if (input.operation === "decide") return resolveDecision({ repository, run_id: input.run_id, decision: input.decision });
+  if (input.operation === "decide") return resolveDecision({ repository, run_id: input.run_id, answer: input.answer, decision: input.decision });
   if (input.operation === "artifact_create") return createArtifact({ repository, run_id: input.run_id, kind: input.kind, content: input.content });
   if (input.operation === "artifact_verify") return verifyArtifact({ repository, run_id: input.run_id, ref: input.ref });
   if (input.operation === "review_packet_create") {
