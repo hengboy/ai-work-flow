@@ -93,6 +93,10 @@ test("primary agents only orchestrate delegated work and Coding uses verified st
   assert.match(coding, /kind=coding/);
   assert.match(coding, /plan_digest/);
   assert.match(coding, /task_mode/);
+  assert.ok(coding.indexOf("启动预检") < coding.indexOf("start(repository"));
+  assert.match(coding, /只恢复这个响应返回的 `run_id`/);
+  assert.match(coding, /其他 run 的 claim 不阻塞本 run/);
+  assert.doesNotMatch(coding, /先用 `status` 恢复当前 coding run/);
   assert.match(coding, /不得尝试 `task_mode=coding`/);
   assert.match(coding, /support_orchestration/);
   assert.match(planning, /Planning Writer/);

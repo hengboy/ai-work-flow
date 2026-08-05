@@ -157,7 +157,8 @@ export async function startRun({ repository, kind, plan_digest, task_mode }) {
   await assertPathChain(location.common, location.runs);
   const key = runKey(kind, plan_digest, task_mode);
   const indexPath = join(location.base, "plan-index", `${key}.json`);
-  const startLock = join(location.base, ".start-lock");
+  const startLock = join(location.base, "start-locks", key);
+  await ensureDirectoryChain(location.common, dirname(startLock));
   return withLock(startLock, async () => {
     try {
       const existing = await readJson(indexPath);

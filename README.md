@@ -54,7 +54,7 @@ node execution-runtime/workflow-cli.mjs artifact-create --repository <repo> --ru
 node execution-runtime/workflow-cli.mjs artifact-verify --repository <repo> --run-id <run_id> < artifact-ref.json
 ```
 
-`start` 对同一计划摘要和任务模式幂等。`claim` 接收 `{fields, artifacts}`，按 action 的命名 I/O contract 校验非空值后完整持久化；重复 claim 返回原 input，调用者不能替换。`finish` 校验必需 `outputs`、error 字段、artifact kind/run/digest，并交叉核对 canonical 上游 receipt、SHA、PathChange、finding IDs 与 coverage；状态不一致时不推进 phase。损坏或截断的响应通过 `status --action-id` 恢复，不重新执行 action。
+`start` 对同一计划摘要和任务模式幂等，不同计划创建独立 run。同一仓库可用不同 `run_id` 和 worktree 并行执行多个 Coding 任务；claim、锁和 recover 预算均按 run 隔离。`claim` 接收 `{fields, artifacts}`，按 action 的命名 I/O contract 校验非空值后完整持久化；重复 claim 返回原 input，调用者不能替换。`finish` 校验必需 `outputs`、error 字段、artifact kind/run/digest，并交叉核对 canonical 上游 receipt、SHA、PathChange、finding IDs 与 coverage；状态不一致时不推进 phase。损坏或截断的响应通过 `status --action-id` 恢复，不重新执行 action。
 
 Agents 不获得运行这些写命令所需的工作区权限。安装器为 Codex、Claude Code 和 OpenCode 注册 `execution-runtime/workflow-broker.mjs` 提供的 MCP `workflow_state` 工具；broker 只接受固定 operation，只允许当前启动仓库，并直接调用 runtime API。它没有命令执行接口，写入范围由 store 固定为 Git common dir 的 `.git/ai-work-flow/`。
 
@@ -64,7 +64,7 @@ Agents 不获得运行这些写命令所需的工作区权限。安装器为 Cod
 
 Planning 在确认阶段完成需求事实与产品决定后、创建 `planning_context` 前确定 single/split 模式。两种模式都生成 spec 与 plan；split 随后生成 tasks，single 跳过 `planning.write_tasks` 直接进入规划提交。决定记录在 snapshot 的 `decision_history`，后续 action 必须绑定前一 canonical receipt。Planning 只负责调度和产品决定，不直接读取、检索或编辑文件，也不自行联网研究；这些工作分别委派给契约角色。
 
-Coding 在一次实施授权后先将计划工件及当前字段元数据兼容性预检交给 File Explorer，再用验证后的 plan digest/task mode 启动 coding run；自身不直接检索或修改工作区。随后自动调度 prepare、实现、本地提交、ReviewPacket、双轴审查、blocking finding 修复、完整复审、main 同步、fast-forward 整合和安全清理。修复与完整复审最多两轮；同一 finding 重现时立即产生一个用户决定。main 漂移最多自动 resync 两次，每次冻结新提交并重新审查。
+Coding 在一次实施授权后先将本次任务的计划工件及当前字段元数据兼容性预检交给 File Explorer，再用验证后的 plan digest/task mode 幂等选择该任务的 coding run；自身不直接检索或修改工作区，也不因其他任务的 active claim 等待。随后自动调度 prepare、实现、本地提交、ReviewPacket、双轴审查、blocking finding 修复、完整复审、main 同步、fast-forward 整合和安全清理。修复与完整复审最多两轮；同一 finding 重现时立即产生一个用户决定。main 漂移最多自动 resync 两次，每次冻结新提交并重新审查。
 
 Git mutation 仅由 Git Operator 串行执行。自动授权不包含 push、stash、reset、clean、amend、tag、PR 或远端修改。完成记录默认保留，只有显式 prune 才清理。
 

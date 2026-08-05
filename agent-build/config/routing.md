@@ -62,7 +62,8 @@
 - 只有 snapshot 同时列出且写入范围互斥的 ready actions 才可并行。
 - 共享规划工件、同一 worktree 或同一 artifact 目录视为相交范围。
 - **Review Standards** 与 **Review Spec** 可用同一 packet 并行执行。
-- active claim 存在时等待并重读状态，不重复 dispatch。
+- 不同任务使用各自 `run_id`、worktree 和预算，可在同一仓库并行推进；同一任务由幂等 start 恢复同一 run。
+- active claim 只阻塞所属 run；等待并重读该 run 状态，不重复 dispatch，也不 recover 其他 run 的 claim。
 - recover 只在 runtime 明确允许且 owner 已确认失活时调用。
 - 每次 finish 后重新读取 snapshot，再决定下一 action。
 - 不根据历史 phase 表、对话记忆或预计结果预取下一 action。

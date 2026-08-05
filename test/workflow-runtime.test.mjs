@@ -269,6 +269,32 @@ test("start is idempotent for one plan version and persists outside the worktree
   assert.equal(JSON.parse(await readFile(runFile, "utf8")).run_id, first.run_id);
 });
 
+test("different coding plans can hold active claims without sharing recovery state", async () => {
+  const root = await repository();
+  const [first, second] = await Promise.all([
+    startRun({ repository: root, kind: "coding", plan_digest: "1".repeat(64), task_mode: "single" }),
+    startRun({ repository: root, kind: "coding", plan_digest: "2".repeat(64), task_mode: "single" }),
+  ]);
+
+  assert.notEqual(first.run_id, second.run_id);
+  const [firstClaim, secondClaim] = await Promise.all([first, second].map(async (snapshot, index) => claimAction({
+    repository: root,
+    run_id: snapshot.run_id,
+    action_id: "coding.prepare",
+    claimant: `session-${index + 1}`,
+    owner_pid: process.pid,
+    input: await actionInput(root, snapshot, "coding.prepare"),
+  })));
+
+  assert.equal(firstClaim.claim_status, "claimed");
+  assert.equal(secondClaim.claim_status, "claimed");
+  const [firstStatus, secondStatus] = await Promise.all([first, second].map((snapshot) => statusRun({ repository: root, run_id: snapshot.run_id })));
+  assert.equal(firstStatus.active_claims[0].claim_id, firstClaim.claim_id);
+  assert.equal(secondStatus.active_claims[0].claim_id, secondClaim.claim_id);
+  assert.equal(firstStatus.budgets.recover_remaining, 1);
+  assert.equal(secondStatus.budgets.recover_remaining, 1);
+});
+
 test("workflow storage rejects a symbolic-link path before writing outside Git common dir", async () => {
   const root = await repository();
   const outside = await mkdtemp(join(tmpdir(), "workflow-outside-"));
