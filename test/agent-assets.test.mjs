@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
@@ -96,4 +97,22 @@ test("all three platforms register the same broker without exposing the retired 
     assert.ok(plan.some((step) => step.path.includes(platform === "opencode" ? "opencode" : platform)));
     assert.equal(JSON.stringify(plan).includes(retiredTool), false);
   }
+});
+
+test("generate restores the managed routing file", () => {
+  const fixture = mkdtempSync(resolve(tmpdir(), "agent-v2-routing-"));
+  const home = resolve(fixture, "home");
+  const configHome = resolve(fixture, "config");
+  mkdirSync(home, { recursive: true });
+  mkdirSync(configHome, { recursive: true });
+  const environment = { ...process.env, HOME: home, XDG_CONFIG_HOME: configHome };
+  const options = { cwd: resolve(import.meta.dirname, ".."), env: environment, stdio: "ignore" };
+  execFileSync(process.execPath, ["agent-build/install.mjs", "init"], options);
+  const routing = resolve(configHome, "ai-work-flow", "routing.md");
+  rmSync(routing);
+  execFileSync(process.execPath, ["agent-build/install.mjs", "generate", "--platform", "codex"], options);
+  assert.equal(readFileSync(routing, "utf8"), loadAgentAssets().routing);
+  rmSync(routing);
+  execFileSync(process.execPath, ["agent-build/install.mjs", "generate", "--platform", "codex"], options);
+  assert.equal(readFileSync(routing, "utf8"), loadAgentAssets().routing);
 });

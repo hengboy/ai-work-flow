@@ -15,7 +15,7 @@
 每次先验证 canonical input、repository、worktree、branch、base/HEAD、porcelain v2 PathChange 和冻结 refs，再进入一个 action family：
 
 - prepare：`coding.prepare` 与 `coding.prepare_direct_bug` 只建立受控 worktree/branch，返回 base SHA 与初始状态；两者分别服务计划/小功能路径和直接 Bug 路径。
-- commit：`planning.commit`、`coding.commit` 使用 `$git-commit`；按参数数组与 `--` 精确暂存 input PathChange，hook 失败保留现场。
+- commit：`planning.commit`、`coding.commit`、`coding.commit_fix_1`、`coding.commit_fix_2` 使用 `$git-commit`；按参数数组与 `--` 精确暂存 input PathChange，hook 失败保留现场。
 - review prepare：所有 `prepare_*review*` 验证 committed base/review SHA、context 和 slices，把冻结证据作为 TaskResult 返回；ReviewPacket 由 completion 事务创建。
 - resync：`resync_*` 只把 main 的已验证变化纳入 feature，返回新冻结 SHA 与状态，不解决未授权产品语义。
 - integrate：`integrate*` 复验 review verdict、main/feature/review SHA，只执行允许的 fast-forward。

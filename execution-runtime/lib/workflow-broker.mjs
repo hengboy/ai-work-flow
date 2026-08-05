@@ -1,4 +1,4 @@
-import { loadWorkflowContract } from "./workflow-contract.mjs";
+import { artifactContentSchema, loadWorkflowContract } from "./workflow-contract.mjs";
 import {
   WorkflowBusinessError, answer, claimNext, complete, resume,
   startDirect, startPlan, startPlanning, startPlanningHandoff,
@@ -49,11 +49,13 @@ function schema(fields, optional = []) {
   return { type: "object", required: Object.keys(fields).filter((name) => !optional.includes(name)), properties: fields, additionalProperties: false };
 }
 
-function payloadFieldSchema(name) {
-  if (name.endsWith("_ids") || ["acceptance", "scope_evidence", "changed_paths", "checks", "coverage", "refs", "entry_paths", "direct_dependencies", "facts", "open_decisions", "committed_paths", "fixed_finding_ids", "deleted_paths"].includes(name)) {
+function payloadFieldSchema(name, contract) {
+  if (contract.artifact_kinds[name]) return artifactContentSchema(name, contract);
+  if (name.endsWith("_ids") || ["acceptance", "scope_evidence", "changed_paths", "checks", "coverage", "refs", "paths", "entry_paths", "direct_dependencies", "facts", "open_decisions", "committed_paths", "fixed_finding_ids", "deleted_paths"].includes(name)) {
     return { type: "array" };
   }
   if (name.endsWith("_ref") || ["open_decision", "drift", "state", "status", "cleanup_evidence", "initial_status", "clean_state", "verification"].includes(name)) return { type: "object" };
+  if (name === "task_mode" || name === "mode") return { type: "string", enum: ["single", "split"] };
   return {};
 }
 
@@ -79,12 +81,19 @@ async function completionTools() {
       lease_id: { type: "string", pattern: "^lease_[0-9a-f]{32}$" },
       result: { type: "string", enum: Object.keys(io.result_contracts) },
       summary: { type: "string", minLength: 1 },
-      ...Object.fromEntries(payloadFields.map((field) => [field, payloadFieldSchema(field)])),
+      ...Object.fromEntries(payloadFields.map((field) => [field, payloadFieldSchema(field, contract)])),
     };
+    const resultRequirements = Object.entries(io.result_contracts).map(([result, resultContract]) => ({
+      if: { properties: { result: { const: result } }, required: ["result"] },
+      then: { required: [
+        ...resultContract.required_fields.map((field) => publicResultField(field, resultContract)),
+        ...(resultContract.required_error_fields ?? []),
+      ] },
+    }));
     return {
       name: `workflow_complete_${name}`,
       description: `Complete the leased ${name} action. Run, action, attempt, upstream refs, receipts, and artifacts are derived by the runtime.`,
-      inputSchema: schema(properties, payloadFields),
+      inputSchema: { ...schema(properties, payloadFields), allOf: resultRequirements },
     };
   });
 }

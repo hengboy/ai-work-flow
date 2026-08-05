@@ -202,7 +202,8 @@ export async function parsePlanBundle(cwd, planPath) {
     if (!/^[0-9a-f]{64}$/.test(sourcePlanDigest) || sourcePlanDigest !== digest(planBytes)) throw new WorkflowBusinessError("correction_required", `task ${name} does not match the current plan`);
     tasks.push({ id: name.replace(/\.md$/, ""), path: relative(location.repository, path), sha256: digest(bytes) });
   }
-  const acceptance = [...new Set([...sectionItems(spec, "Acceptance Criteria"), ...sectionItems(plan, "Acceptance Criteria")])];
+  const acceptanceHeadings = ["Acceptance Criteria", "验收标准"];
+  const acceptance = [...new Set(acceptanceHeadings.flatMap((heading) => [...sectionItems(spec, heading), ...sectionItems(plan, heading)]))];
   if (acceptance.length === 0) throw new WorkflowBusinessError("correction_required", "plan bundle has no acceptance criteria");
   return {
     version: 2, plan_id: planId, task_mode: taskMode,
@@ -215,11 +216,23 @@ export async function parsePlanBundle(cwd, planPath) {
 function runKey(kind, source) { return digest({ kind, source }); }
 function runSummary(run) { return { run_id: run.run_id, kind: run.kind, phase: run.phase, updated_at: run.updated_at }; }
 
-async function allRuns(location) {
+function recoverRunPhase(run, contract) {
+  if (typeof run.phase === "string" && run.phase) return run;
+  const receipt = Object.values(run.receipts ?? {}).at(-1);
+  const phase = receipt && transition(run, receipt.action_id, receipt.result, receipt.visible_fields ?? receipt.fields, contract);
+  if (!phase) throw new WorkflowBusinessError("correction_required", "run phase is missing and cannot be recovered from its last receipt");
+  run.phase = phase;
+  return run;
+}
+
+async function allRuns(location, contract) {
   await ensureDirectory(location.common, location.runs);
   const names = await readdir(location.runs);
   const runs = [];
-  for (const name of names.filter((entry) => /^run_[0-9a-f]{24}$/.test(entry))) runs.push(await readJson(join(location.runs, name, "run.json")));
+  for (const name of names.filter((entry) => /^run_[0-9a-f]{24}$/.test(entry))) {
+    const run = await readJson(join(location.runs, name, "run.json"));
+    runs.push(contract && run.version === 2 && run.contract_digest === contract.digest ? recoverRunPhase(run, contract) : run);
+  }
   return runs;
 }
 
@@ -227,14 +240,15 @@ async function start(cwd, kind, source, initialPhase) {
   const location = await locations(cwd);
   return withLock(location, async () => {
     const contract = await loadWorkflowContract();
-    const existing = (await allRuns(location)).find((run) => run.key === runKey(kind, source));
-    if (existing) {
+    const existing = (await allRuns(location, contract)).filter((run) => run.key === runKey(kind, source)).sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0];
+    if (existing && existing.phase !== "failed") {
       if (existing.contract_digest !== contract.digest) throw new WorkflowBusinessError("correction_required", "run contract digest does not match the installed runtime");
       return { ...runSummary(existing), status: TERMINAL.has(existing.phase) ? existing.phase : existing.decision ? "decision_required" : "claimed" };
     }
     const now = new Date().toISOString();
     const run = {
       version: 2, contract_digest: contract.digest, run_id: `run_${randomBytes(12).toString("hex")}`, key: runKey(kind, source), kind, source,
+      retry_of: existing?.run_id,
       phase: initialPhase, revision: 0, leases: {}, superseded_leases: {}, completed: {}, receipts: {}, decision: null,
       created_at: now, updated_at: now,
     };
@@ -272,8 +286,9 @@ async function getRun(cwd, runId) {
   const location = await locations(cwd, runId);
   try {
     const run = await readJson(location.runFile);
-    if (run.version !== 2 || run.contract_digest !== (await loadWorkflowContract()).digest) throw new WorkflowBusinessError("correction_required", "run contract digest does not match the installed runtime");
-    return run;
+    const contract = await loadWorkflowContract();
+    if (run.version !== 2 || run.contract_digest !== contract.digest) throw new WorkflowBusinessError("correction_required", "run contract digest does not match the installed runtime");
+    return recoverRunPhase(run, contract);
   }
   catch (error) { if (error.code === "ENOENT") throw new WorkflowBusinessError("correction_required", "run does not exist"); throw error; }
 }
@@ -284,8 +299,9 @@ export async function resume(cwd, runId) {
     const run = await getRun(cwd, runId);
     return { ...runSummary(run), status: TERMINAL.has(run.phase) ? run.phase : run.decision ? "decision_required" : "claimed", decision: run.decision ?? undefined };
   }
-  const active = (await allRuns(location)).filter((run) => !TERMINAL.has(run.phase)).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-  const contractDigest = (await loadWorkflowContract()).digest;
+  const contract = await loadWorkflowContract();
+  const active = (await allRuns(location, contract)).filter((run) => !TERMINAL.has(run.phase)).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  const contractDigest = contract.digest;
   if (active.some((run) => run.version !== 2 || run.contract_digest !== contractDigest)) throw new WorkflowBusinessError("correction_required", "an unfinished run does not match the installed runtime contract");
   if (active.length === 0) return { status: "complete", message: "no unfinished workflow run" };
   if (active.length > 1) return { status: "selection_required", candidates: active.map(runSummary) };
@@ -299,6 +315,9 @@ function dispatchInput(run, action, contract) {
   const upstream = Object.values(run.receipts).map((receipt) => ({ action_id: receipt.action_id, result: receipt.result, fields: receipt.visible_fields ?? receipt.fields }));
   const flattened = Object.assign({}, ...upstream.map((receipt) => receipt.fields));
   const bundle = run.source.plan_bundle;
+  const latestEvidence = flattened.change_evidence;
+  const latestPacket = flattened.review_packet;
+  const latestReview = flattened.review_result;
   const aliases = {
     objective: run.source.objective,
     request_digest: run.source.request_digest,
@@ -315,6 +334,20 @@ function dispatchInput(run, action, contract) {
     evidence_ref: flattened.change_evidence,
     review_packet_ref: flattened.review_packet,
     review_result_ref: flattened.review_result,
+    path_changes: latestEvidence?.path_changes,
+    checks: run.kind === "planning" ? ["planning metadata and source digests are valid", "task mode matches generated planning artifacts"] : latestEvidence?.verification,
+    review_sha: latestPacket?.review_sha ?? flattened.commit_sha,
+    review_context: {
+      worktree: flattened.worktree,
+      branch: flattened.branch,
+      verification: latestEvidence?.verification ?? [],
+    },
+    slices: latestEvidence?.path_changes?.map((change) => ({ id: change.path, paths: [change.path] })),
+    assigned_axes: ["standards", "spec"],
+    main_sha: flattened.resulting_sha ?? flattened.base_sha,
+    feature_sha: latestPacket?.review_sha ?? flattened.commit_sha,
+    frozen_state: latestReview,
+    paths: [...new Set(upstream.filter((receipt) => receipt.action_id.startsWith("planning.write_")).flatMap((receipt) => receipt.fields.changed_paths ?? []))],
     refs: Object.fromEntries(upstream.map((receipt) => [receipt.action_id, receipt.fields])),
   };
   const declaration = contract.io_contracts[contract.actions[action].io_contract].input_contract;
@@ -373,7 +406,10 @@ function transition(run, action, result, fields, contract) {
   if (result === "completed") {
     const branch = declaration.completed_to_by_output;
     if (branch) return branch.values[fields[branch.field]] ?? declaration.completed_to;
-    if (declaration.completed_to_by_task_mode) return declaration.completed_to_by_task_mode[run.source.plan_bundle?.task_mode ?? fields.task_mode];
+    if (declaration.completed_to_by_task_mode) {
+      const taskMode = run.source.plan_bundle?.task_mode ?? fields.task_mode ?? fields.mode;
+      return declaration.completed_to_by_task_mode[taskMode] ?? declaration.completed_to;
+    }
     return declaration.completed_to;
   }
   if (result === "retryable_failure") return declaration.retryable_to ?? declaration.from;
@@ -396,6 +432,9 @@ function validateCompletion(action, result, fields, contract) {
   const extra = Object.keys(fields).filter((field) => !allowed.includes(field));
   const missing = required.filter((field) => fields[field] === undefined);
   if (extra.length || missing.length) throw new WorkflowBusinessError("correction_required", "completion fields do not match the I/O contract", { extra, missing });
+  for (const field of ["task_mode", "mode"]) {
+    if (fields[field] !== undefined && !["single", "split"].includes(fields[field])) throw new WorkflowBusinessError("correction_required", `${field} must be single or split`);
+  }
   return resultContract;
 }
 
@@ -403,7 +442,13 @@ async function storeCompletionArtifacts(location, run, fields, resultContract, c
   const artifacts = {};
   for (const kind of resultContract.required_artifact_kinds ?? []) {
     if (fields[kind] === undefined) continue;
-    validateArtifactContent(kind, fields[kind], contract);
+    try { validateArtifactContent(kind, fields[kind], contract); }
+    catch (error) {
+      throw new WorkflowBusinessError("correction_required", error.message, { artifact_kind: kind });
+    }
+    if (kind === "planning_context" && (fields.plan_id !== fields[kind].plan_id || fields.task_mode !== fields[kind].task_mode)) {
+      throw new WorkflowBusinessError("correction_required", "planning_context must match plan_id and task_mode", { artifact_kind: kind });
+    }
     const body = Buffer.from(`${JSON.stringify(fields[kind], null, 2)}\n`);
     const sha256 = digest(body);
     const directory = join(location.run, "artifacts");
@@ -424,20 +469,20 @@ async function storeCompletionArtifacts(location, run, fields, resultContract, c
 export async function complete(cwd, contractName, input) {
   const location = await locations(cwd);
   return withLock(location, async () => {
-    const runs = await allRuns(location);
+    const contract = await loadWorkflowContract();
+    const runs = await allRuns(location, contract);
     const matches = [];
     for (const run of runs) for (const lease of Object.values(run.leases)) if (lease.lease_id === input.lease_id) matches.push({ run, lease });
     for (const run of runs) if (run.completed[input.lease_id]) {
-      if (run.version !== 2 || run.contract_digest !== (await loadWorkflowContract()).digest) throw new WorkflowBusinessError("correction_required", "run contract digest does not match the installed runtime");
+      if (run.version !== 2 || run.contract_digest !== contract.digest) throw new WorkflowBusinessError("correction_required", "run contract digest does not match the installed runtime");
       return { ...runSummary(run), status: TERMINAL.has(run.phase) ? run.phase : run.decision ? "decision_required" : "claimed", receipt: visibleReceipt(run.completed[input.lease_id]) };
     }
     for (const run of runs) if (run.superseded_leases?.[input.lease_id]) return { status: "superseded", run_id: run.run_id, ...run.superseded_leases[input.lease_id] };
     if (matches.length !== 1) throw new WorkflowBusinessError("correction_required", "lease_id is unknown");
     const { run, lease } = matches[0];
-    if (run.version !== 2 || run.contract_digest !== (await loadWorkflowContract()).digest) throw new WorkflowBusinessError("correction_required", "run contract digest does not match the installed runtime");
+    if (run.version !== 2 || run.contract_digest !== contract.digest) throw new WorkflowBusinessError("correction_required", "run contract digest does not match the installed runtime");
     const current = run.leases[lease.action_id];
     if (current.lease_id !== lease.lease_id) return { status: "superseded", run_id: run.run_id, action_id: lease.action_id };
-    const contract = await loadWorkflowContract();
     if (contract.actions[lease.action_id].io_contract !== contractName) throw new WorkflowBusinessError("correction_required", "wrong completion tool for this lease", { completion_tool: completionTool(lease.action_id, contract) });
     const fields = Object.fromEntries(Object.entries(input).filter(([key]) => !["lease_id", "result", "summary"].includes(key)));
     if (typeof input.summary !== "string" || !input.summary.trim()) throw new WorkflowBusinessError("correction_required", "summary must be non-empty");

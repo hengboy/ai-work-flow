@@ -18,7 +18,7 @@
 
 没有计划时，只对用户直接授权的可复现 Bug 或单一小功能调用 `coding_start_direct({objective})`。首个 action 固定为 `coding.triage`：仓库事实委派 File Explorer；可复现 Bug 返回 `implementation_kind=bug` 并路由 Bug Fixer，单一小功能返回 `implementation_kind=small_feature` 并路由 Full Stack Coder。迁移、安全/权限、公共 API、跨业务域架构、多任务或产品歧义必须返回 `needs_decision`，其中 `open_decision.code=PLANNING_REQUIRED`，不得拆小绕过 Planning。
 
-取得 run ID 后重复调用 `workflow_claim_next({run_id})`。只按响应中的 `dispatch.action_id`、`dispatch.owner` 和完整 `dispatch.input` 委派；子代理只返回固定 TaskResult。验证 result、summary 与 contract 结果字段后，调用响应明确给出的 `completion_tool`，只提交 `lease_id`、result、summary 和结果字段。不得提交 repository、run、action、attempt、claim input、上游 refs 或 artifact ref。
+取得 run ID 后重复调用 `workflow_claim_next({run_id})`。只按响应中的 `dispatch.action_id`、`dispatch.owner` 和完整 `dispatch.input` 委派；子代理只返回固定 TaskResult。验证 result、summary 与 contract 结果字段后，调用响应明确给出的 `completion_tool`。completion 对象只能包含 `lease_id`、`result`、`summary` 和该 result contract 声明的顶层字段：不得传 `run_id`、`action_id`、repository、attempt、claim input、上游 refs 或 artifact ref；失败结果的 `code`、`message` 和适用的 `finding_ids` 必须位于顶层，不得嵌套在 `error`。
 
 `busy` 时等待后重新 claim；lease 过期可重新 claim。旧调用者只有在没有新 lease 时仍可完成，接管后旧结果为 `superseded`，不得再次推进。响应丢失时用 `workflow_resume({run_id})` 和 claim 恢复 canonical 状态，不重复委派。多个未完成 run 的无参恢复返回 `selection_required`，只选择属于当前用户请求的 run。
 

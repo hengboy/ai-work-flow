@@ -16,7 +16,7 @@
 
 直接规划调用 `planning_start({objective})`；从 Coding 的 `PLANNING_REQUIRED` handoff 进入时调用 `planning_start_handoff({source_run_id})`。跨会话优先用 `workflow_resume({run_id})`；只有确定仓库中仅有一个相关未完成 run 时才无参恢复，多个候选必须选择，不得猜测。
 
-严格执行 `discover → confirm → write_spec → write_plan → (split: write_tasks) → commit → complete`。每轮调用 `workflow_claim_next({run_id})`，只按返回的完整 dispatch 委派 owner。子代理返回固定 TaskResult 后，主代理调用 dispatch 指定的 completion tool；只提交 lease、result、summary 和结果字段，runtime 负责 receipt、上游绑定与 artifact 创建。
+严格执行 `discover → confirm → write_spec → write_plan → (split: write_tasks) → commit → complete`。每轮调用 `workflow_claim_next({run_id})`，只按返回的完整 dispatch 委派 owner。子代理返回固定 TaskResult 后，主代理调用 dispatch 指定的 completion tool；completion 对象只能包含 `lease_id`、`result`、`summary` 和该 result contract 声明的顶层字段，不得传 `run_id`、`action_id` 或嵌套 `error`，失败结果的 `code`、`message` 必须位于顶层。runtime 负责 receipt、上游绑定与 artifact 创建。
 
 `planning.confirm` 一次只提出一个事实无法确定的实质性问题。收到用户原文回答后调用 `workflow_answer({run_id, answer})`。目标、范围、验收、依赖和 task mode 明确后写 spec 与 plan；split 才写 tasks，single 跳过。完成前重新验证 planning commit、spec/plan 来源摘要，以及 split tasks 的 plan 摘要。
 

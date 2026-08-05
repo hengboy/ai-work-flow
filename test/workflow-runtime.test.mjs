@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { dispatchWorkflowTool } from "../execution-runtime/lib/workflow-broker.mjs";
+import { loadWorkflowContract } from "../execution-runtime/lib/workflow-contract.mjs";
 import { parsePlanBundle, workflowLeaseMilliseconds } from "../execution-runtime/lib/workflow-v2-store.mjs";
 
 const run = promisify(execFile);
@@ -49,6 +50,17 @@ test("plan start deterministically derives and validates the PlanBundle", async 
   assert.equal(started.phase, "started");
   await writeFile(join(fixture.directory, "spec.md"), fixture.spec + "tampered\n");
   await assert.rejects(dispatchWorkflowTool("coding_start_plan", { plan_path: fixture.directory }, { cwd: root }), /digest/);
+});
+
+test("plan start accepts the managed Chinese acceptance heading", async () => {
+  const root = await repository();
+  const fixture = await planFixture(root);
+  const chineseSpec = fixture.spec.replace("## Acceptance Criteria", "## 验收标准");
+  await writeFile(join(fixture.directory, "spec.md"), chineseSpec);
+  const chinesePlan = fixture.plan.replace(sha(fixture.spec), sha(chineseSpec)).replace("## Acceptance Criteria\n\n- Tests pass\n", "");
+  await writeFile(join(fixture.directory, "plan.md"), chinesePlan);
+  const started = await dispatchWorkflowTool("coding_start_plan", { plan_path: fixture.directory }, { cwd: root });
+  assert.equal(started.phase, "started");
 });
 
 test("claim uses a fixed 30-minute lease and reports busy", async () => {
@@ -114,6 +126,87 @@ test("completion creates internal artifacts without exposing refs", async () => 
   assert.equal((await readdir(artifactDirectory)).length, 1);
   const stored = JSON.parse(await readFile(join(root, ".git", "ai-work-flow", "v2", "runs", started.run_id, "run.json"), "utf8"));
   assert.equal(stored.receipts["coding.implement"].fields.change_evidence_ref.kind, "change_evidence");
+
+  const commit = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
+  assert.deepEqual(commit.dispatch.input.path_changes, evidence.path_changes);
+  assert.deepEqual(commit.dispatch.input.checks, evidence.verification);
+  assert.deepEqual(commit.dispatch.input.change_evidence, evidence);
+  await dispatchWorkflowTool(commit.completion_tool, {
+    lease_id: commit.lease_id, result: "completed", summary: "committed", commit_sha: "c".repeat(40),
+    committed_paths: ["README.md"], clean_state: { clean: true },
+  }, { cwd: root });
+
+  const prepareReview = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
+  assert.equal(prepareReview.dispatch.input.base_sha, "a".repeat(40));
+  assert.equal(prepareReview.dispatch.input.review_sha, "c".repeat(40));
+  assert.equal(prepareReview.dispatch.input.slices.length, 1);
+  const packet = {
+    base_sha: "a".repeat(40), review_sha: "c".repeat(40),
+    review_context: prepareReview.dispatch.input.review_context, slices: prepareReview.dispatch.input.slices,
+  };
+  await dispatchWorkflowTool(prepareReview.completion_tool, {
+    lease_id: prepareReview.lease_id, result: "completed", summary: "review prepared", review_packet: packet,
+  }, { cwd: root });
+
+  const review = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
+  assert.deepEqual(review.dispatch.input.assigned_axes, ["standards", "spec"]);
+  assert.deepEqual(review.dispatch.input.review_packet, packet);
+  const reviewResult = {
+    axis_results: [
+      { axis: "standards", findings: [], advisory_findings: [], coverage: ["all"] },
+      { axis: "spec", findings: [], advisory_findings: [], coverage: ["all"] },
+    ],
+    verdict: "passed", finding_ids: [], coverage: ["all"],
+  };
+  await dispatchWorkflowTool(review.completion_tool, {
+    lease_id: review.lease_id, result: "completed", summary: "review passed", review_result: reviewResult,
+    finding_ids: [], coverage: ["all"],
+  }, { cwd: root });
+
+  const integrate = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
+  assert.deepEqual(integrate.dispatch.input, {
+    main_sha: "a".repeat(40), feature_sha: "c".repeat(40), review_sha: "c".repeat(40), frozen_state: reviewResult,
+  });
+  await dispatchWorkflowTool(integrate.completion_tool, {
+    lease_id: integrate.lease_id, result: "completed", summary: "integrated", resulting_sha: "c".repeat(40),
+    state: { integrated: true }, cleanup_evidence: { performed: false },
+  }, { cwd: root });
+
+  const cleanup = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
+  assert.deepEqual(cleanup.dispatch.input, {
+    main_sha: "c".repeat(40), feature_sha: "c".repeat(40), review_sha: "c".repeat(40), frozen_state: reviewResult,
+  });
+});
+
+test("review fixes are committed before rereview preparation", async () => {
+  const contract = await loadWorkflowContract();
+  assert.deepEqual(contract.workflows.coding.phase_actions.fixed_1, ["coding.commit_fix_1"]);
+  assert.equal(contract.actions["coding.commit_fix_1"].completed_to, "fixed_committed_1");
+  assert.deepEqual(contract.workflows.coding.phase_actions.fixed_committed_1, ["coding.prepare_rereview_1"]);
+  assert.deepEqual(contract.workflows.coding.phase_actions.fixed_2, ["coding.commit_fix_2"]);
+  assert.equal(contract.actions["coding.commit_fix_2"].completed_to, "fixed_committed_2");
+  assert.deepEqual(contract.workflows.coding.phase_actions.fixed_committed_2, ["coding.prepare_rereview_2"]);
+});
+
+test("implementation infrastructure failures remain retryable", async () => {
+  const root = await repository();
+  const fixture = await planFixture(root);
+  const started = await dispatchWorkflowTool("coding_start_plan", { plan_path: fixture.directory }, { cwd: root });
+  const prepare = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
+  await dispatchWorkflowTool(prepare.completion_tool, {
+    lease_id: prepare.lease_id, result: "completed", summary: "prepared", worktree: root, branch: "main",
+    base_sha: "a".repeat(40), initial_status: { clean: true },
+  }, { cwd: root });
+  const implementation = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
+  const retried = await dispatchWorkflowTool(implementation.completion_tool, {
+    lease_id: implementation.lease_id, result: "retryable_failure", summary: "browser unavailable",
+    code: "BROWSER_UNAVAILABLE", message: "No browser backend is available",
+  }, { cwd: root });
+  assert.equal(retried.phase, "prepared");
+  assert.equal(retried.status, "claimed");
+  const next = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
+  assert.equal(next.dispatch.action_id, "coding.implement");
+  assert.notEqual(next.lease_id, implementation.lease_id);
 });
 
 test("a broker restart recovers a lock owned by a dead process", async () => {

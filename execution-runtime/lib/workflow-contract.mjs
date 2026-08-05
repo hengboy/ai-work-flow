@@ -195,7 +195,8 @@ export function validateSupportReceipt() {
 
 function assertObjectFields(content, required, label, exact = false) {
   if (!isPlainObject(content)) throw new Error(`${label} artifact content is invalid`);
-  for (const field of required) if (!Object.hasOwn(content, field)) throw new Error(`${label} artifact requires ${field}`);
+  const missing = required.filter((field) => !Object.hasOwn(content, field));
+  if (missing.length) throw new Error(`${label} artifact requires fields: ${missing.join(", ")}`);
   if (exact && Object.keys(content).some((field) => !required.includes(field))) throw new Error(`${label} artifact contains an unsupported field`);
 }
 
@@ -208,6 +209,41 @@ function evidenceArray(value, fields) {
     if (!isPlainObject(entry) || Object.keys(entry).sort().join() !== [...fields].sort().join()) return false;
     return fields.every((field) => typeof entry[field] === "string" && entry[field].trim());
   });
+}
+
+const nonEmptyStringSchema = Object.freeze({ type: "string", minLength: 1 });
+const stringArraySchema = (minItems = 1) => ({ type: "array", items: nonEmptyStringSchema, minItems, uniqueItems: true });
+
+export function artifactContentSchema(kind, contract) {
+  const required = contract.artifact_kinds[kind]?.required_fields;
+  if (!required) return {};
+  const schemas = {
+    planning_context: {
+      version: { type: "integer", const: 1 }, plan_id: nonEmptyStringSchema, task_mode: { type: "string", enum: ["single", "split"] },
+      goal: nonEmptyStringSchema, users_consumers: stringArraySchema(), success_criteria: stringArraySchema(),
+      scope: { type: "object", minProperties: 1 }, constraints: stringArraySchema(0), assumptions: stringArraySchema(0),
+      acceptance_criteria: stringArraySchema(),
+      decisions: { type: "array", items: { type: "object", required: ["code", "revision", "summary"], properties: {
+        code: nonEmptyStringSchema, revision: { type: "integer", minimum: 1 }, summary: nonEmptyStringSchema,
+      }, additionalProperties: false } },
+      open_questions: { type: "array", maxItems: 0 },
+    },
+    change_evidence: {
+      base_sha: { type: "string", pattern: "^[0-9a-f]{40,64}$" }, head_sha: { type: "string", pattern: "^[0-9a-f]{40,64}$" },
+      path_changes: { type: "array", minItems: 1 }, acceptance_evidence: { type: "array", minItems: 1 }, verification: { type: "array", minItems: 1 },
+    },
+    review_packet: {
+      base_sha: { type: "string", pattern: "^[0-9a-f]{40,64}$" }, review_sha: { type: "string", pattern: "^[0-9a-f]{40,64}$" },
+      review_context: { type: "object", minProperties: 1 }, slices: { type: "array", minItems: 1 },
+    },
+    review_axis_result: {
+      axis: { type: "string", enum: ["standards", "spec"] }, findings: { type: "array" }, advisory_findings: { type: "array" }, coverage: stringArraySchema(),
+    },
+    review_result: {
+      axis_results: { type: "array", minItems: 2, maxItems: 2 }, verdict: { type: "string", enum: ["passed", "blocking"] }, finding_ids: stringArraySchema(0), coverage: stringArraySchema(),
+    },
+  };
+  return { type: "object", required, properties: schemas[kind] ?? {}, additionalProperties: false };
 }
 
 function validateFinding(finding, spec) {
@@ -238,6 +274,12 @@ export function validateArtifactContent(kind, content, contract) {
       throw new Error("change_evidence artifact is invalid");
     }
     content.path_changes.forEach(assertPathChange);
+  }
+  if (kind === "review_packet") {
+    if (!/^[0-9a-f]{40,64}$/.test(content.base_sha) || !/^[0-9a-f]{40,64}$/.test(content.review_sha) || !isPlainObject(content.review_context) ||
+      Object.keys(content.review_context).length === 0 || !Array.isArray(content.slices) || content.slices.length === 0 || content.slices.some((slice) => !isPlainObject(slice))) {
+      throw new Error("review_packet artifact is invalid");
+    }
   }
   if (kind === "review_axis_result") {
     if (!["standards", "spec"].includes(content.axis) || !Array.isArray(content.findings) || !Array.isArray(content.advisory_findings) || !stringArray(content.coverage)) {

@@ -512,7 +512,11 @@ function generate(platforms, dryRun, assets, config = loadConfig(assets, dryRun,
   const result = planGenerationFor(platforms, assets, config);
   const lifecycle = planInstallLifecycle();
   const managed = [...new Set([...previousPlatforms, ...platforms])];
-  const plan = [...planManagedSkills(lifecycle, result.paths, platforms), ...planExecutionRuntime(result.paths), ...planObsoleteManagedContent(result.paths), ...result.plan, managedPlatformsStep(result.paths, managed)].filter(Boolean);
+  const plan = [...planManagedSkills(lifecycle, result.paths, platforms), ...planExecutionRuntime(result.paths), ...planObsoleteManagedContent(result.paths)];
+  addWriteStep(plan, result.paths.routing, assets.routing);
+  plan.push(...result.plan);
+  const manifest = managedPlatformsStep(result.paths, managed);
+  if (manifest) plan.push(manifest);
   return { ...result, changed: applyGenerationTransaction(plan, result.paths, dryRun) };
 }
 

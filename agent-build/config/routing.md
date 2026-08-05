@@ -75,7 +75,7 @@
 ## 6. Receipt 与恢复
 
 - 子代理只返回固定 TaskResult，不读写 run 元数据。
-- 主代理只提交 lease、result、summary 和 completion contract 的结果字段。
+- 主代理只提交 `lease_id`、`result`、`summary` 和 completion contract 声明的顶层结果字段；不得提交 `run_id`、`action_id` 或嵌套 `error`，失败结果的 `code`、`message` 与适用的 `finding_ids` 必须位于顶层。
 - runtime 在单次事务中校验结果、创建证据或 ReviewPacket、登记 receipt 并推进 phase。
 - 重复 completion 返回同一 canonical receipt；响应损坏通过 `workflow_resume` 与 `workflow_claim_next` 恢复，不重复执行。
 - 无参恢复只自动选择唯一未完成 run；多个候选返回 `selection_required`。
