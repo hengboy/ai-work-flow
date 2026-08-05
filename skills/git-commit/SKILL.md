@@ -9,19 +9,19 @@ description: 已授权实现或规划 action 完成并通过验证后，根据�
 
 # 必要前置条件
 
-- 当前 snapshot 的 ready action 归 Git Operator，claim 已存在。
+- 主代理 dispatch 的当前 action 归 Git Operator，且包含完整 canonical input。
 - action 输入包含 base commit、完整 PathChange、检查和验收证据。
 - 提交格式见 `references/commit-message.md`。
 
 # 步骤
 
 1. 由 **Git Operator** 按角色的受控本地 Git 流程解析 porcelain v2 PathChange，比较 base/HEAD，使用参数数组与 `--` 暂存精确路径并执行提交。完成标准：返回完整 commit SHA 且 staged/worktree 事实匹配。
-2. 将 commit SHA、检查和 PathChange 写入 `ActionReceipt`，通过 `workflow_state` 的 `finish` operation 登记结果。完成标准：snapshot revision 增加且进入下一 phase。
+2. 将 commit SHA、检查和 PathChange 作为固定 TaskResult 返回主代理，由主代理调用 dispatch 指定的 completion tool。完成标准：runtime 返回 canonical receipt 并进入下一 phase。
 
 # 条件分支
 
 - hook 或检查失败：保留 index/worktree 现场，返回真实错误，不 reset、clean 或自动重试。
-- 范围、HEAD 或已有 claim 漂移：停止并从 `status` 读取 canonical 状态。
+- 范围、HEAD 或 lease 漂移：停止并向主代理返回真实错误，不自行读取或修改 workflow 状态。
 
 # 最终验收
 

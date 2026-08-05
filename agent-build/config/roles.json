@@ -9,7 +9,7 @@
       "policy": "coding",
       "controls": ["no-direct-workspace-operations", "coding-orchestration-only"],
       "delegates": ["file-explorer", "researcher", "document-maintainer", "planning-writer", "full-stack-coder", "bug-fixer", "git-operator", "environment-operator", "code-reviewer"],
-      "tools": ["WorkflowState", "Task"],
+      "tools": ["WorkflowRuntime", "Task"],
       "actions": ["coding.triage"]
     },
     {
@@ -20,7 +20,7 @@
       "policy": "planning",
       "controls": ["no-direct-workspace-operations", "planning-no-implementation"],
       "delegates": ["file-explorer", "researcher", "planning-writer", "task-planner", "git-operator"],
-      "tools": ["WorkflowState", "Task"],
+      "tools": ["WorkflowRuntime", "Task"],
       "actions": ["planning.confirm", "planning.complete"]
     },
     {
@@ -32,7 +32,7 @@
       "controls": ["read-only-discovery"],
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash", "Skill"],
-      "actions": ["planning.discover", "navigation.locate", "support.locate"]
+      "actions": ["planning.discover"]
     },
     {
       "id": "researcher",
@@ -43,7 +43,7 @@
       "controls": ["official-research-only", "research-report-path-only", "single-research-report-only"],
       "delegates": [],
       "tools": ["Read", "WebSearch", "WebFetch", "Write"],
-      "actions": ["support.research"]
+      "actions": []
     },
     {
       "id": "document-maintainer",
@@ -54,7 +54,7 @@
       "controls": ["ordinary-docs-only", "no-git-mutation"],
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
-      "actions": ["support.update_docs"]
+      "actions": []
     },
     {
       "id": "planning-writer",
@@ -86,8 +86,8 @@
       "policy": "write-code",
       "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "no-git-mutation"],
       "delegates": ["file-explorer"],
-      "tools": ["Read", "Edit", "Write", "Bash", "Skill", "Task", "WorkflowState"],
-      "actions": ["coding.implement", "project.initialize"]
+      "tools": ["Read", "Edit", "Write", "Bash", "Skill", "Task"],
+      "actions": ["coding.implement"]
     },
     {
       "id": "bug-fixer",
@@ -97,7 +97,7 @@
       "policy": "write-code",
       "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "authorized-bug-or-finding-only", "no-git-mutation"],
       "delegates": ["file-explorer", "researcher", "document-maintainer"],
-      "tools": ["Read", "Edit", "Write", "Bash", "Task", "WorkflowState"],
+      "tools": ["Read", "Edit", "Write", "Bash", "Task"],
       "actions": ["coding.fix_direct", "coding.fix_1", "coding.fix_2"]
     },
     {
@@ -108,7 +108,7 @@
       "policy": "commit",
       "controls": ["safe-local-git-only"],
       "delegates": [],
-      "tools": ["Read", "Bash", "Skill", "WorkflowState"],
+      "tools": ["Read", "Bash", "Skill"],
       "actions": ["planning.commit", "coding.prepare", "coding.prepare_direct_bug", "coding.commit", "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2", "coding.integrate", "coding.resync_1", "coding.prepare_resync_review_1", "coding.integrate_1", "coding.resync_2", "coding.prepare_resync_review_2", "coding.integrate_2", "coding.cleanup"]
     },
     {
@@ -119,18 +119,18 @@
       "policy": "environment",
       "controls": ["managed-environment-only", "no-git-mutation"],
       "delegates": [],
-      "tools": ["Bash", "Skill", "WorkflowState"],
-      "actions": ["agents.generate", "env.use"]
+      "tools": ["Bash", "Skill"],
+      "actions": []
     },
     {
       "id": "code-reviewer",
       "name": "Code Reviewer",
-      "description": "验证 ReviewPacketRef，编排并聚合完整双轴审查。",
+      "description": "验证 runtime 冻结的 ReviewPacket，编排并聚合完整双轴审查。",
       "kind": "subagent",
       "policy": "review",
-      "controls": ["review-read-only", "workflow-state-only", "fixed-review-range-only", "review-orchestration-only"],
+      "controls": ["review-read-only", "fixed-review-range-only", "review-orchestration-only"],
       "delegates": ["review-standards", "review-spec"],
-      "tools": ["Read", "Glob", "Grep", "Bash", "Task", "WorkflowState"],
+      "tools": ["Read", "Glob", "Grep", "Bash", "Task"],
       "actions": ["coding.review", "coding.rereview_1", "coding.rereview_2", "coding.resync_review_1", "coding.resync_review_2"]
     },
     {
@@ -139,10 +139,10 @@
       "description": "依据冻结标准和 committed review slices 审查。",
       "kind": "reviewer",
       "policy": "review",
-      "controls": ["review-read-only", "workflow-state-only", "fixed-review-range-only", "review-leaf-no-delegation"],
+      "controls": ["review-read-only", "fixed-review-range-only", "review-leaf-no-delegation"],
       "delegates": [],
-      "tools": ["Read", "Glob", "Grep", "Bash", "WorkflowState"],
-      "actions": ["support.review_standards"]
+      "tools": ["Read", "Glob", "Grep", "Bash"],
+      "actions": []
     },
     {
       "id": "review-spec",
@@ -150,10 +150,10 @@
       "description": "依据冻结规格、验收证据和 committed review slices 审查。",
       "kind": "reviewer",
       "policy": "review",
-      "controls": ["review-read-only", "workflow-state-only", "fixed-review-range-only", "review-leaf-no-delegation"],
+      "controls": ["review-read-only", "fixed-review-range-only", "review-leaf-no-delegation"],
       "delegates": [],
-      "tools": ["Read", "Glob", "Grep", "Bash", "WorkflowState"],
-      "actions": ["support.review_spec"]
+      "tools": ["Read", "Glob", "Grep", "Bash"],
+      "actions": []
     }
   ]
 }

@@ -1,28 +1,9 @@
 {
-  "digest": "3a168f409b4442170a28ac3c88f690512201e5a079bab1f359d94468e0d0e911",
-  "snapshot_schema": {
-    "required": ["run_id", "kind", "source_type", "plan_digest", "task_mode", "revision", "phase", "ready_actions", "active_claims", "budgets", "decision_history"],
-    "decision_request_optional": true,
-    "planning_context_ref_optional": true,
-    "direct_request_optional": true,
-    "direct_kind_optional": true
-  },
-  "claim_input_schema": {
-    "required": ["fields", "artifacts"]
-  },
-  "receipt_schema": {
-    "required": ["run_id", "action_id", "attempt", "result", "summary", "outputs", "artifacts", "checks"],
-    "results": ["completed", "retryable_failure", "needs_decision", "failed"]
-  },
-  "support_receipt_schema": {
-    "required": ["run_id", "caller_ref", "call_id", "action_id", "result", "summary", "outputs", "artifacts", "checks"],
-    "results": ["completed", "failed", "needs_decision"]
-  },
-  "artifact_ref_schema": {
-    "required": ["kind", "id", "sha256", "bytes"],
-    "review_packet_kind": "review_packet",
-    "max_inline_bytes": 1024
-  },
+  "digest": "4527ed98f78ba418d48a4b5b1062043fa03e50fd69b66e9e63ad30ad50f500cf",
+  "version": 2,
+  "lease_minutes": 30,
+  "business_statuses": ["claimed", "busy", "selection_required", "correction_required", "decision_required", "complete", "failed", "superseded"],
+  "completion_results": ["completed", "retryable_failure", "needs_decision", "failed"],
   "artifact_kinds": {
     "planning_context": {
       "required_fields": ["version", "plan_id", "task_mode", "goal", "users_consumers", "success_criteria", "scope", "constraints", "assumptions", "acceptance_criteria", "decisions", "open_questions"]
@@ -31,10 +12,10 @@
       "required_fields": ["base_sha", "head_sha", "path_changes", "acceptance_evidence", "verification"]
     },
     "review_axis_result": {
-      "required_fields": ["axis", "review_packet_ref", "findings", "advisory_findings", "coverage"]
+      "required_fields": ["axis", "findings", "advisory_findings", "coverage"]
     },
     "review_result": {
-      "required_fields": ["axis_result_refs", "verdict", "finding_ids", "coverage"]
+      "required_fields": ["axis_results", "verdict", "finding_ids", "coverage"]
     }
   },
   "io_contracts": {
@@ -128,39 +109,7 @@
         "needs_decision": { "required_fields": ["drift"], "optional_fields": [], "required_artifact_kinds": [] }
       }
     },
-    "maintenance": {
-      "input_contract": { "required_fields": ["platforms", "env_name", "project_root"], "optional_fields": [], "required_artifact_kinds": [] },
-      "result_contracts": {
-        "completed": { "required_fields": ["checks", "changed_paths", "status"], "optional_fields": [], "required_artifact_kinds": [] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [], "required_artifact_kinds": [] }
-      }
-    },
-    "support_research": {
-      "input_contract": { "required_fields": ["report_path", "questions", "allowed_sources", "as_of"], "optional_fields": [], "required_artifact_kinds": [] },
-      "result_contracts": {
-        "completed": { "required_fields": ["report_path", "citation_urls", "changed_paths", "checks"], "optional_fields": [], "required_artifact_kinds": [] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [], "required_artifact_kinds": [] }
-      }
-    },
-    "support_docs": {
-      "input_contract": { "required_fields": ["target", "fact_sources"], "optional_fields": [], "required_artifact_kinds": [] },
-      "result_contracts": {
-        "completed": { "required_fields": ["changed_paths", "checks"], "optional_fields": [], "required_artifact_kinds": [] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [], "required_artifact_kinds": [] }
-      }
-    },
-    "support_review_axis": {
-      "input_contract": { "required_fields": ["review_packet_ref", "assigned_slices", "axis"], "optional_fields": [], "required_artifact_kinds": ["review_packet"] },
-      "result_contracts": {
-        "completed": { "required_fields": ["axis_result_ref", "finding_ids", "coverage"], "optional_fields": [], "required_artifact_kinds": ["review_axis_result"] },
-        "failed": { "required_fields": [], "optional_fields": ["axis_result_ref"], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [], "required_artifact_kinds": [] }
-      }
-    },
-    "support_orchestration": {
+    "planning_complete": {
       "input_contract": { "required_fields": ["objective", "refs", "acceptance"], "optional_fields": [], "required_artifact_kinds": [] },
       "result_contracts": {
         "completed": { "required_fields": ["refs", "checks"], "optional_fields": [], "required_artifact_kinds": [] },
@@ -169,16 +118,8 @@
       }
     }
   },
-  "support_delegations": {
-    "planning": ["support.research"],
-    "coding": ["support.locate", "support.research"],
-    "full-stack-coder": ["support.locate"],
-    "bug-fixer": ["support.locate", "support.research", "support.update_docs"],
-    "code-reviewer": ["support.review_standards", "support.review_spec"]
-  },
   "budgets": {
     "transient_retries": 2,
-    "recoveries": 1,
     "main_resyncs": 2,
     "review_fix_rounds": 2
   },
@@ -234,11 +175,7 @@
         "review_passed_2": ["coding.integrate_2"],
         "integrated": ["coding.cleanup"]
       }
-    },
-    "agent_generation": { "initial_phase": "started", "terminal_phases": ["complete", "failed", "awaiting_decision"], "phase_actions": { "started": ["agents.generate"] } },
-    "environment_switch": { "initial_phase": "started", "terminal_phases": ["complete", "failed", "awaiting_decision"], "phase_actions": { "started": ["env.use"] } },
-    "project_initialization": { "initial_phase": "started", "terminal_phases": ["complete", "failed", "awaiting_decision"], "phase_actions": { "started": ["project.initialize"] } },
-    "navigation": { "initial_phase": "started", "terminal_phases": ["complete", "failed", "awaiting_decision"], "phase_actions": { "started": ["navigation.locate"] } }
+    }
   },
   "actions": {
     "planning.discover": { "owner": "file-explorer", "workflow": "planning", "from": "started", "completed_to": "facts_ready", "io_contract": "discovery_navigation" },
@@ -247,7 +184,7 @@
     "planning.write_plan": { "owner": "planning-writer", "workflow": "planning", "from": "spec_ready", "completed_to": "plan_ready", "completed_to_by_task_mode": { "single": "tasks_ready", "split": "plan_ready" }, "io_contract": "planning_write" },
     "planning.write_tasks": { "owner": "task-planner", "workflow": "planning", "from": "plan_ready", "completed_to": "tasks_ready", "io_contract": "planning_write" },
     "planning.commit": { "owner": "git-operator", "workflow": "planning", "from": "tasks_ready", "completed_to": "planning_committed", "io_contract": "local_commit" },
-    "planning.complete": { "owner": "planning", "workflow": "planning", "from": "planning_committed", "completed_to": "complete", "io_contract": "support_orchestration" },
+    "planning.complete": { "owner": "planning", "workflow": "planning", "from": "planning_committed", "completed_to": "complete", "io_contract": "planning_complete" },
     "coding.triage": { "owner": "coding", "workflow": "coding", "from": "direct_started", "completed_to": "started", "completed_to_by_output": { "field": "implementation_kind", "values": { "bug": "direct_bug_started", "small_feature": "started" } }, "io_contract": "direct_triage" },
     "coding.prepare_direct_bug": { "owner": "git-operator", "workflow": "coding", "from": "direct_bug_started", "completed_to": "direct_bug_prepared", "io_contract": "coding_prepare" },
     "coding.fix_direct": { "owner": "bug-fixer", "workflow": "coding", "from": "direct_bug_prepared", "completed_to": "implemented", "io_contract": "implementation" },
@@ -271,15 +208,6 @@
     "coding.prepare_resync_review_2": { "owner": "git-operator", "workflow": "coding", "from": "resynced_2", "completed_to": "resync_review_ready_2", "io_contract": "review_prepare" },
     "coding.resync_review_2": { "owner": "code-reviewer", "workflow": "coding", "from": "resync_review_ready_2", "completed_to": "review_passed_2", "retryable_to": "awaiting_decision", "decision_code": "REPEATED_REVIEW_FINDING", "io_contract": "dual_axis_review" },
     "coding.integrate_2": { "owner": "git-operator", "workflow": "coding", "from": "review_passed_2", "completed_to": "integrated", "retryable_to": "awaiting_decision", "decision_code": "MAIN_RESYNC_BUDGET_EXHAUSTED", "io_contract": "git_lifecycle" },
-    "coding.cleanup": { "owner": "git-operator", "workflow": "coding", "from": "integrated", "completed_to": "complete", "io_contract": "git_lifecycle" },
-    "agents.generate": { "owner": "environment-operator", "workflow": "agent_generation", "from": "started", "completed_to": "complete", "io_contract": "maintenance" },
-    "env.use": { "owner": "environment-operator", "workflow": "environment_switch", "from": "started", "completed_to": "complete", "io_contract": "maintenance" },
-    "project.initialize": { "owner": "full-stack-coder", "workflow": "project_initialization", "from": "started", "completed_to": "complete", "io_contract": "maintenance" },
-    "navigation.locate": { "owner": "file-explorer", "workflow": "navigation", "from": "started", "completed_to": "complete", "io_contract": "discovery_navigation" },
-    "support.locate": { "owner": "file-explorer", "workflow": "support", "io_contract": "discovery_navigation" },
-    "support.research": { "owner": "researcher", "workflow": "support", "io_contract": "support_research" },
-    "support.update_docs": { "owner": "document-maintainer", "workflow": "support", "io_contract": "support_docs" },
-    "support.review_standards": { "owner": "review-standards", "workflow": "support", "io_contract": "support_review_axis" },
-    "support.review_spec": { "owner": "review-spec", "workflow": "support", "io_contract": "support_review_axis" }
+    "coding.cleanup": { "owner": "git-operator", "workflow": "coding", "from": "integrated", "completed_to": "complete", "io_contract": "git_lifecycle" }
   }
 }

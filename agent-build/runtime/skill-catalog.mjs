@@ -59,7 +59,7 @@ export function loadSkillAssets(configRoot = resolve(import.meta.dirname, "..", 
     for (const field of ["owner", "runtime_action", "display_name", "short_description", "default_prompt"]) if (typeof skill[field] !== "string" || !skill[field]) errors.push(`Skill ${skill.name}.${field} must be a non-empty string.`);
     if (skill.short_description.length < 25 || skill.short_description.length > 64) errors.push(`Skill ${skill.name} short_description must contain 25-64 characters.`);
     if (!skill.default_prompt.includes(`$${skill.name}`)) errors.push(`Skill ${skill.name} default_prompt must explicitly contain $${skill.name}.`);
-    if (!roles.some((role) => role.id === skill.owner) || contract.actions[skill.runtime_action]?.owner !== skill.owner) errors.push(`Skill ${skill.name} runtime_action and owner must match workflow-contract.json.`);
+    if (!roles.some((role) => role.id === skill.owner) || (skill.runtime_action !== "direct" && contract.actions[skill.runtime_action]?.owner !== skill.owner)) errors.push(`Skill ${skill.name} runtime_action and owner must match workflow-contract.json or use direct execution.`);
     const source = readFileSync(resolve(skillsRoot, skill.name, "SKILL.md"), "utf8");
     try {
       const metadata = frontmatter(source);

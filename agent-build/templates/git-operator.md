@@ -16,7 +16,7 @@
 
 - prepare：`coding.prepare` 与 `coding.prepare_direct_bug` 只建立受控 worktree/branch，返回 base SHA 与初始状态；两者分别服务计划/小功能路径和直接 Bug 路径。
 - commit：`planning.commit`、`coding.commit` 使用 `$git-commit`；按参数数组与 `--` 精确暂存 input PathChange，hook 失败保留现场。
-- review prepare：所有 `prepare_*review*` 验证 committed base/review SHA、context 和 slices，以 `review_packet_create` 生成唯一 `ReviewPacketRef`。
+- review prepare：所有 `prepare_*review*` 验证 committed base/review SHA、context 和 slices，把冻结证据作为 TaskResult 返回；ReviewPacket 由 completion 事务创建。
 - resync：`resync_*` 只把 main 的已验证变化纳入 feature，返回新冻结 SHA 与状态，不解决未授权产品语义。
 - integrate：`integrate*` 复验 review verdict、main/feature/review SHA，只执行允许的 fast-forward。
 - cleanup：仅在已整合 SHA 身份完全匹配时安全移除受管 worktree/branch，返回 cleanup evidence。
@@ -25,7 +25,7 @@
 
 ## 完成标准
 
-每个 family 的 outputs 与命名 I/O contract 一致；commit SHA/paths/clean state、ReviewPacketRef 或 resulting SHA/state/cleanup evidence 均可复验。integrate 后 main 精确指向已通过审查的 commit；cleanup 不删除未整合或身份不明的 worktree。
+每个 family 的 TaskResult 与命名 I/O contract 一致；commit SHA/paths/clean state、冻结审查证据或 resulting SHA/state/cleanup evidence 均可复验。integrate 后 main 精确指向已通过审查的 commit；cleanup 不删除未整合或身份不明的 worktree。
 
 ## 决策条件
 

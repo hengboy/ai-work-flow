@@ -1,9 +1,5 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
-
-import { createArtifact, verifyArtifact } from "./lib/artifact-store.mjs";
-import { createReviewPacket, verifyReviewPacket } from "./lib/review-packet.mjs";
-import { claimAction, finishAction, recoverAction, resolveDecision, startRun, statusRun, validateSupportAction } from "./lib/workflow-store.mjs";
+import { dispatchWorkflowTool, workflowTools } from "./lib/workflow-broker.mjs";
 
 function options(argumentsList) {
   const parsed = {};
@@ -24,35 +20,15 @@ async function stdinJson() {
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  const input = options(rest);
-  let result;
-  if (command === "start") {
-    result = await startRun({ ...input, ...(input.request_json ? { request: JSON.parse(input.request_json) } : {}) });
-  } else if (command === "status") {
-    result = await statusRun(input);
-  } else if (command === "claim") {
-    result = await claimAction({ ...input, owner_pid: Number(input.owner_pid), input: JSON.parse(input.input_json) });
-  } else if (command === "finish") {
-    result = await finishAction({ repository: input.repository, receipt: await stdinJson() });
-  } else if (command === "recover") {
-    result = await recoverAction(input);
-  } else if (command === "decide") {
-    result = await resolveDecision({ repository: input.repository, run_id: input.run_id, decision: await stdinJson() });
-  } else if (command === "artifact-create") {
-    result = await createArtifact({ repository: input.repository, run_id: input.run_id, ...await stdinJson() });
-  } else if (command === "artifact-verify") {
-    result = await verifyArtifact({ repository: input.repository, run_id: input.run_id, ref: await stdinJson() });
-  } else if (command === "review-packet-create") {
-    result = await createReviewPacket({ repository: input.repository, run_id: input.run_id, ...await stdinJson() });
-  } else if (command === "review-packet-verify") {
-    result = await verifyReviewPacket({ repository: input.repository, run_id: input.run_id, ref: await stdinJson() });
-  } else if (command === "support-validate") {
-    result = await validateSupportAction({ repository: input.repository, ...await stdinJson() });
-  } else if (command === "contract") {
-    result = JSON.parse(await readFile(new URL("./workflow-contract.json", import.meta.url), "utf8"));
-  } else {
-    throw new Error("usage: workflow-cli <start|status|claim|finish|recover|decide|support-validate|artifact-create|artifact-verify|review-packet-create|review-packet-verify|contract> [options]");
+  if (command === "tools") {
+    process.stdout.write(`${JSON.stringify((await workflowTools()).map((tool) => tool.name))}\n`);
+    return;
   }
+  const name = command?.replaceAll("-", "_");
+  const declared = (await workflowTools()).some((tool) => tool.name === name);
+  if (!declared) throw new Error("usage: workflow-cli <narrow-tool-name|tools> [--field value]; completion tools read one JSON object from stdin");
+  const input = name.startsWith("workflow_complete_") ? await stdinJson() : options(rest);
+  const result = await dispatchWorkflowTool(name, input, { cwd: process.cwd() });
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

@@ -4,7 +4,7 @@
       "name": "generate-ai-work-flow-agents",
       "trigger_branches": ["环境配置或预设已修改", "需要重新生成全局 agents"],
       "owner": "environment-operator",
-      "runtime_action": "agents.generate",
+      "runtime_action": "direct",
       "display_name": "重新生成 AI Work Flow Agents",
       "short_description": "校验当前环境配置并一次性重新生成三平台受管理 Agents",
       "default_prompt": "使用 $generate-ai-work-flow-agents 根据当前环境配置重新生成受管理 Agents。"
@@ -13,7 +13,7 @@
       "name": "switch-ai-work-flow-env",
       "trigger_branches": ["切换到已存在的环境预设"],
       "owner": "environment-operator",
-      "runtime_action": "env.use",
+      "runtime_action": "direct",
       "display_name": "切换 AI Work Flow 环境",
       "short_description": "事务式切换环境并同步生成当前预设对应的受管理 Agents",
       "default_prompt": "使用 $switch-ai-work-flow-env 切换到指定环境并完成事务式生成。"
@@ -22,7 +22,7 @@
       "name": "init-ai-work-flow",
       "trigger_branches": ["项目首次使用代码导航", "项目首次进入目录式审查"],
       "owner": "full-stack-coder",
-      "runtime_action": "project.initialize",
+      "runtime_action": "direct",
       "display_name": "初始化项目 AI Work Flow",
       "short_description": "联合初始化项目记忆文件、代码导航索引与项目级维护约束",
       "default_prompt": "使用 $init-ai-work-flow 根据真实仓库结构初始化项目上下文和代码导航。"
@@ -31,7 +31,7 @@
       "name": "project-code-navigation",
       "trigger_branches": ["只读定位业务入口", "实施中入口或职责发生变化"],
       "owner": "file-explorer",
-      "runtime_action": "navigation.locate",
+      "runtime_action": "direct",
       "display_name": "项目代码导航",
       "short_description": "使用现有索引只读定位入口，或随已授权实现维护导航索引",
       "default_prompt": "使用 $project-code-navigation 精确定位目标代码，必要时随实现维护索引。"

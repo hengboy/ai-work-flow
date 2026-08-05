@@ -1,19 +1,17 @@
 import assert from "node:assert/strict";
-import { execFile, spawn } from "node:child_process";
-import { once } from "node:events";
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { dispatchWorkflowState, handleBrokerRequest } from "../execution-runtime/lib/workflow-broker.mjs";
+import { dispatchWorkflowTool, handleBrokerRequest, workflowTools } from "../execution-runtime/lib/workflow-broker.mjs";
 
 const run = promisify(execFile);
 
 async function repository() {
-  const root = await mkdtemp(join(tmpdir(), "workflow-broker-"));
+  const root = await mkdtemp(join(tmpdir(), "workflow-v2-broker-"));
   await run("git", ["init", "-b", "main"], { cwd: root });
   await run("git", ["config", "user.email", "test@example.com"], { cwd: root });
   await run("git", ["config", "user.name", "Test User"], { cwd: root });
@@ -23,180 +21,82 @@ async function repository() {
   return root;
 }
 
-test("workflow broker exposes one fixed MCP tool and no command execution surface", async () => {
-  const listed = await handleBrokerRequest({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
-  const schema = listed.result.tools[0].inputSchema;
-  const constraint = (operation) => schema.allOf.find((entry) => entry.if.properties.operation.const === operation).then;
-  assert.equal(listed.result.tools.length, 1);
-  assert.equal(listed.result.tools[0].name, "workflow_state");
-  assert.ok(schema.properties.operation.enum.includes("support_validate"));
-  assert.ok(schema.properties.input);
-  assert.deepEqual(schema.properties.request.required, ["objective"]);
-  assert.equal(constraint("start").anyOf.length, 5);
-  assert.equal(constraint("status").anyOf.length, 2);
-  assert.match(listed.result.tools[0].description, /contract takes exactly/);
-  assert.match(listed.result.tools[0].description, /run_id and action_id belong inside the ActionReceipt/);
-  assert.match(listed.result.tools[0].description, /recover only releases a stale active claim/);
-  assert.match(listed.result.tools[0].description, /must never validate pre-run discovery/);
-  assert.equal(constraint("contract").maxProperties, 1);
-  assert.deepEqual(constraint("support_validate").required, ["operation", "repository", "caller_ref", "input", "receipt"]);
-  assert.deepEqual(constraint("finish").required, ["operation", "repository", "receipt"]);
-  assert.deepEqual(constraint("finish").propertyNames.enum, ["operation", "repository", "receipt"]);
-  assert.deepEqual(constraint("finish").properties.receipt.required, ["run_id", "action_id", "attempt", "result", "summary", "outputs", "artifacts", "checks"]);
-  assert.deepEqual(constraint("decide").properties.decision.required, ["code", "summary"]);
-  assert.equal(constraint("decide").properties.decision.additionalProperties, false);
-  assert.equal(constraint("decide").anyOf.length, 2);
-  assert.match(schema.properties.answer.description, /Preferred flat decide input/);
-  assert.match(constraint("decide").properties.decision.properties.code.description, /active snapshot decision_request/);
-  assert.match(constraint("decide").properties.decision.properties.summary.description, /Verbatim user answer/);
-  assert.match(schema.properties.source_run_id.description, /PLANNING_REQUIRED/);
-  assert.ok(constraint("start").anyOf.some((branch) => branch.required?.includes("source_run_id")));
-  assert.equal(JSON.stringify(listed).includes("command"), false);
-  const unknown = await handleBrokerRequest({
-    jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "shell", arguments: {} },
-  });
-  assert.equal(unknown.error.code, -32602);
+function call(name, args, cwd) {
+  return handleBrokerRequest({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, { cwd });
+}
+
+test("broker exposes only narrow v2 tools", async () => {
+  const names = (await workflowTools()).map((tool) => tool.name);
+  assert.deepEqual(names.slice(0, 7), [
+    "coding_start_direct", "coding_start_plan", "planning_start", "planning_start_handoff",
+    "workflow_resume", "workflow_claim_next", "workflow_answer",
+  ]);
+  assert.ok(names.includes("workflow_complete_direct_triage"));
+  assert.equal(JSON.stringify(await workflowTools()).includes(["workflow", "state"].join("_")), false);
+  assert.equal(JSON.stringify(await workflowTools()).includes("repository"), false);
 });
 
-test("contract accepts no repository or workflow kind fields", async () => {
-  const contract = await dispatchWorkflowState({ operation: "contract" });
-  assert.ok(contract.actions["coding.prepare"]);
-  assert.equal(contract.broker.tool_name, "workflow_state");
-  const finish = contract.broker.input_schema.allOf.find((entry) => entry.if.properties.operation.const === "finish").then;
-  assert.deepEqual(finish.required, ["operation", "repository", "receipt"]);
-  assert.deepEqual(finish.propertyNames.enum, ["operation", "repository", "receipt"]);
-  await assert.rejects(dispatchWorkflowState({ operation: "contract", repository: "/tmp/repo" }), /unsupported field/);
-  await assert.rejects(dispatchWorkflowState({ operation: "contract", kind: "coding" }), /unsupported field/);
-});
-
-test("repository status discovers runs without requiring a run id", async () => {
+test("argument and state corrections are normal MCP results", async () => {
   const root = await repository();
-  const empty = await dispatchWorkflowState({ operation: "status", repository: root, kind: "coding" }, { cwd: root, pid: process.pid });
-  assert.deepEqual(empty.runs, []);
-  assert.equal(empty.kind, "coding");
-  const started = await dispatchWorkflowState({
-    operation: "start", repository: root, kind: "coding", plan_digest: "e".repeat(64), task_mode: "single",
-  }, { cwd: root, pid: process.pid });
-  await new Promise((resolve) => setTimeout(resolve, 2));
-  const latest = await dispatchWorkflowState({
-    operation: "start", repository: root, kind: "coding", plan_digest: "f".repeat(64), task_mode: "split",
-  }, { cwd: root, pid: process.pid });
-  const discovered = await dispatchWorkflowState({ operation: "status", repository: root, kind: "coding" }, { cwd: root, pid: process.pid });
-  assert.deepEqual(discovered.runs.map((run) => run.run_id), [latest.run_id, started.run_id]);
-  assert.deepEqual(await dispatchWorkflowState({ operation: "status", repository: root, run_id: started.run_id }, { cwd: root, pid: process.pid }), started);
-  await assert.rejects(dispatchWorkflowState({ operation: "status", repository: root, action_id: "coding.prepare" }, { cwd: root, pid: process.pid }), /without run_id/);
-  await assert.rejects(dispatchWorkflowState({ operation: "status", repository: root, run_id: started.run_id, kind: "planning" }, { cwd: root, pid: process.pid }), /does not accept kind/);
+  const missing = await call("coding_start_direct", {}, root);
+  assert.equal(missing.result.isError, false);
+  assert.equal(JSON.parse(missing.result.content[0].text).status, "correction_required");
+  const extra = await call("coding_start_direct", { objective: "Fix it", repository: root }, root);
+  assert.equal(extra.result.isError, false);
+  assert.equal(JSON.parse(extra.result.content[0].text).status, "correction_required");
 });
 
-test("broker starts direct coding requests without plan fields", async () => {
+test("direct Coding start is idempotent and persists only below v2", async () => {
   const root = await repository();
-  const request = { objective: "Fix the reproducible save crash" };
-  const started = await dispatchWorkflowState({ operation: "start", repository: root, kind: "coding", request }, { cwd: root, pid: process.pid });
-  assert.equal(started.source_type, "direct");
-  assert.deepEqual(started.direct_request, request);
-  assert.deepEqual(started.ready_actions, ["coding.triage"]);
-  await assert.rejects(dispatchWorkflowState({
-    operation: "start", repository: root, kind: "coding", request, plan_digest: "a".repeat(64), task_mode: "single",
-  }, { cwd: root, pid: process.pid }), /start input/);
+  const first = await dispatchWorkflowTool("coding_start_direct", { objective: "Fix the reproducible save crash" }, { cwd: root });
+  const again = await dispatchWorkflowTool("coding_start_direct", { objective: "Fix the reproducible save crash" }, { cwd: root });
+  assert.equal(again.run_id, first.run_id);
+  assert.equal(first.status, "claimed");
+  const stored = JSON.parse(await readFile(join(root, ".git", "ai-work-flow", "v2", "runs", first.run_id, "run.json"), "utf8"));
+  assert.equal(stored.source.type, "direct");
+  await assert.rejects(readFile(join(root, ".git", "ai-work-flow", "runs", first.run_id, "run.json")), /ENOENT/);
 });
 
-test("broker starts planning from the verbatim user request", async () => {
+test("claim derives action and completion tool and repeated completion is idempotent", async () => {
   const root = await repository();
-  const request = { objective: "Plan a snake game for this repository" };
-  const started = await dispatchWorkflowState({ operation: "start", repository: root, kind: "planning", request }, { cwd: root, pid: process.pid });
-  assert.equal(started.source_type, "direct");
-  assert.equal(started.task_mode, null);
-  assert.deepEqual(started.direct_request, request);
-  assert.deepEqual(started.ready_actions, ["planning.discover"]);
-  assert.deepEqual(await dispatchWorkflowState({ operation: "start", repository: root, kind: "planning", request }, { cwd: root, pid: process.pid }), started);
-});
-
-test("workflow broker validates support receipts without advancing the parent phase", async () => {
-  const root = await repository();
-  const planDigest = "d".repeat(64);
-  const started = await dispatchWorkflowState({ operation: "start", repository: root, kind: "coding", plan_digest: planDigest, task_mode: "single" }, { cwd: root, pid: process.pid });
-  const parentInput = { fields: { plan_digest: planDigest, task_mode: "single", target_base: "main" }, artifacts: [] };
-  const prepare = await dispatchWorkflowState({ operation: "claim", repository: root, run_id: started.run_id, action_id: "coding.prepare", claimant: "caller", input: parentInput }, { cwd: root, pid: process.pid });
-  await dispatchWorkflowState({ operation: "finish", repository: root, receipt: {
-    run_id: started.run_id, action_id: "coding.prepare", attempt: prepare.attempt, result: "completed", summary: "prepared",
-    outputs: { worktree: root, branch: "main", base_sha: "a".repeat(40), initial_status: { clean: true } }, artifacts: [], checks: [],
-  } }, { cwd: root, pid: process.pid });
-  const claim = await dispatchWorkflowState({ operation: "claim", repository: root, run_id: started.run_id, action_id: "coding.implement", claimant: "caller", input: {
-    fields: { worktree: root, base_sha: "a".repeat(40), spec_or_task_ids: ["task"], acceptance: ["accepted"] }, artifacts: [],
-  } }, { cwd: root, pid: process.pid });
-  const supportInput = { fields: { objective: "locate implementation", terms: ["workflow"], known_paths: [] }, artifacts: [] };
-  const receipt = {
-    run_id: started.run_id, caller_ref: claim.claim_id, call_id: "broker-support-001", action_id: "support.locate", result: "completed", summary: "complete",
-    outputs: { entry_paths: ["execution-runtime/lib/workflow-store.mjs"], direct_dependencies: ["workflow-contract.mjs"], facts: ["located"], open_decisions: [] }, artifacts: [], checks: ["read-back"],
+  const started = await dispatchWorkflowTool("coding_start_direct", { objective: "Fix the reproducible save crash" }, { cwd: root });
+  const claimed = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
+  assert.equal(claimed.dispatch.action_id, "coding.triage");
+  assert.equal(claimed.completion_tool, "workflow_complete_direct_triage");
+  assert.equal(Object.hasOwn(claimed.dispatch, "attempt"), false);
+  const payload = {
+    lease_id: claimed.lease_id, result: "completed", summary: "reproducible bug",
+    implementation_kind: "bug", objective: "Fix the reproducible save crash", implementation_ids: ["save"],
+    acceptance: ["saving does not crash"], scope_evidence: ["one save path"],
   };
-  assert.deepEqual(await dispatchWorkflowState({ operation: "support_validate", repository: root, caller_ref: claim.claim_id, input: supportInput, receipt }, { cwd: root, pid: process.pid }), receipt);
-  const status = await dispatchWorkflowState({ operation: "status", repository: root, run_id: started.run_id }, { cwd: root, pid: process.pid });
-  assert.equal(status.phase, "prepared");
-  assert.equal(status.revision, 1);
+  const completed = await dispatchWorkflowTool(claimed.completion_tool, payload, { cwd: root });
+  const repeated = await dispatchWorkflowTool(claimed.completion_tool, payload, { cwd: root });
+  assert.equal(completed.receipt.receipt_id, repeated.receipt.receipt_id);
+  assert.equal(completed.phase, "direct_bug_started");
+  const wrong = await call("workflow_complete_implementation", { ...payload, lease_id: "lease_" + "0".repeat(32) }, root);
+  assert.equal(JSON.parse(wrong.result.content[0].text).status, "correction_required");
 });
 
-test("workflow broker writes only the current repository Git common workflow directory", async () => {
+test("resume auto-selects one unfinished run and lists multiple candidates", async () => {
   const root = await repository();
-  const other = await repository();
-  const before = await readFile(join(root, "README.md"), "utf8");
-  const started = await dispatchWorkflowState({
-    operation: "start",
-    repository: root,
-    kind: "coding",
-    plan_digest: "a".repeat(64),
-    task_mode: "single",
-  }, { cwd: root, pid: process.pid });
-
-  assert.match(started.run_id, /^run_[0-9a-f]{24}$/);
-  assert.equal(await readFile(join(root, "README.md"), "utf8"), before);
-  const runFile = join(root, ".git", "ai-work-flow", "runs", started.run_id, "run.json");
-  assert.equal(JSON.parse(await readFile(runFile, "utf8")).run_id, started.run_id);
-  await assert.rejects(dispatchWorkflowState({
-    operation: "start", repository: other, kind: "planning", plan_digest: "b".repeat(64),
-  }, { cwd: root, pid: process.pid }), /current repository/);
-  await assert.rejects(dispatchWorkflowState({
-    operation: "execute", repository: root, command: "touch forbidden",
-  }, { cwd: root, pid: process.pid }), /operation/);
-  await assert.rejects(dispatchWorkflowState({
-    operation: "status", repository: root, run_id: started.run_id, command: "touch forbidden",
-  }, { cwd: root, pid: process.pid }), /unsupported field/);
+  const one = await dispatchWorkflowTool("coding_start_direct", { objective: "Fix one" }, { cwd: root });
+  assert.equal((await dispatchWorkflowTool("workflow_resume", {}, { cwd: root })).run_id, one.run_id);
+  await dispatchWorkflowTool("planning_start", { objective: "Plan two" }, { cwd: root });
+  const selection = await dispatchWorkflowTool("workflow_resume", {}, { cwd: root });
+  assert.equal(selection.status, "selection_required");
+  assert.equal(selection.candidates.length, 2);
 });
 
-test("workflow broker converts tool results and errors into MCP responses", async () => {
+test("Planning handoff inherits the direct objective", async () => {
   const root = await repository();
-  const response = await handleBrokerRequest({
-    jsonrpc: "2.0",
-    id: 3,
-    method: "tools/call",
-    params: {
-      name: "workflow_state",
-      arguments: { operation: "start", repository: root, kind: "planning", request: { objective: "Plan the requested feature" } },
-    },
-  }, { cwd: root, pid: process.pid });
-  assert.equal(response.result.isError, false);
-  assert.match(response.result.content[0].text, /"run_id":"run_/);
-
-  const failed = await handleBrokerRequest({
-    jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "workflow_state", arguments: { operation: "missing", repository: root } },
-  }, { cwd: root, pid: process.pid });
-  assert.equal(failed.result.isError, true);
-  assert.match(failed.result.content[0].text, /operation/);
-});
-
-test("workflow broker entry serves newline-delimited MCP over stdio", async () => {
-  const root = await repository();
-  const child = spawn(process.execPath, [new URL("../execution-runtime/workflow-broker.mjs", import.meta.url).pathname], {
-    cwd: root,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
-  const responses = [];
-  lines.on("line", (line) => responses.push(JSON.parse(line)));
-  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18" } })}\n`);
-  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`);
-  for (let attempt = 0; attempt < 20 && responses.length < 2; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 10));
-  child.stdin.end();
-  await once(child, "exit");
-  assert.equal(responses[0].result.serverInfo.name, "ai-work-flow");
-  assert.equal(responses[1].result.tools[0].name, "workflow_state");
+  const started = await dispatchWorkflowTool("coding_start_direct", { objective: "Add a public authorization API" }, { cwd: root });
+  const claimed = await dispatchWorkflowTool("workflow_claim_next", { run_id: started.run_id }, { cwd: root });
+  const decision = await dispatchWorkflowTool(claimed.completion_tool, {
+    lease_id: claimed.lease_id, result: "needs_decision", summary: "planning required",
+    scope_evidence: ["public API"], open_decision: { code: "PLANNING_REQUIRED", reason: "public contract" },
+  }, { cwd: root });
+  assert.equal(decision.status, "decision_required");
+  const handoff = await dispatchWorkflowTool("planning_start_handoff", { source_run_id: started.run_id }, { cwd: root });
+  assert.equal(handoff.kind, "planning");
+  assert.equal(handoff.phase, "started");
 });

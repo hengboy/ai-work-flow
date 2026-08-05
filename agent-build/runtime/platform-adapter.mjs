@@ -11,9 +11,18 @@ const LEGACY_PRIMARY_AGENT_ID = 'orchestrator';
 const LEGACY_GIT_OPERATOR_AGENT_ID = 'git-committer';
 const LEGACY_CODE_REVIEWER_AGENT = 'AGENT.md';
 const WORKFLOW_MCP_ID = 'ai-work-flow';
-const WORKFLOW_TOOL = 'workflow_state';
-const OPENCODE_WORKFLOW_TOOL = `${WORKFLOW_MCP_ID}_${WORKFLOW_TOOL}`;
-const OPENCODE_PERMISSION_KEYS = ['read', 'edit', 'glob', 'grep', 'bash', 'task', 'skill', 'webfetch', 'websearch', 'question', 'external_directory', OPENCODE_WORKFLOW_TOOL];
+const WORKFLOW_CONTRACT_PATH = [
+  resolve(import.meta.dirname, '..', '..', 'execution-runtime', 'workflow-contract.json'),
+  resolve(import.meta.dirname, '..', 'execution-runtime', 'workflow-contract.json'),
+].find(existsSync);
+const WORKFLOW_CONTRACT = JSON.parse(readFileSync(WORKFLOW_CONTRACT_PATH, 'utf8'));
+const WORKFLOW_TOOLS = [
+  'coding_start_direct', 'coding_start_plan', 'planning_start', 'planning_start_handoff',
+  'workflow_resume', 'workflow_claim_next', 'workflow_answer',
+  ...[...new Set(Object.values(WORKFLOW_CONTRACT.actions).map((action) => action.io_contract))].sort().map((name) => `workflow_complete_${name}`),
+];
+const OPENCODE_WORKFLOW_TOOLS = WORKFLOW_TOOLS.map((tool) => `${WORKFLOW_MCP_ID}_${tool}`);
+const OPENCODE_PERMISSION_KEYS = ['read', 'edit', 'glob', 'grep', 'bash', 'task', 'skill', 'webfetch', 'websearch', 'question', 'external_directory', ...OPENCODE_WORKFLOW_TOOLS];
 const OPENCODE_TOOL_KEYS = {
   Read: 'read',
   Edit: 'edit',
@@ -159,7 +168,7 @@ function claudePermission(policy) {
 }
 
 function claudeTools(role) {
-  return (role.tools.length ? role.tools : ['Task']).filter((tool) => tool !== 'Skill').map((tool) => tool === 'WorkflowState' ? `mcp__${WORKFLOW_MCP_ID}__${WORKFLOW_TOOL}` : tool);
+  return (role.tools.length ? role.tools : ['Task']).filter((tool) => tool !== 'Skill').flatMap((tool) => tool === 'WorkflowRuntime' ? WORKFLOW_TOOLS.map((name) => `mcp__${WORKFLOW_MCP_ID}__${name}`) : tool);
 }
 
 function yamlValue(value) {
@@ -212,7 +221,7 @@ export function opencodePermission(role, policy) {
     permission.grep = 'deny';
     permission.bash = 'deny';
   }
-  if (role.tools.includes('WorkflowState')) permission[OPENCODE_WORKFLOW_TOOL] = 'allow';
+  if (role.tools.includes('WorkflowRuntime')) for (const tool of OPENCODE_WORKFLOW_TOOLS) permission[tool] = 'allow';
   if (policy.delegation === 'allowed') permission.task = 'allow';
   if (policy.delegation === 'none') permission.task = 'deny';
   if (role.id === 'task-planner') {
@@ -402,7 +411,10 @@ const strategies = {
 };
 
 function capabilityLevel(platform, role, capability, requested) {
-  if (capability === 'workflow_state') return role.tools.includes('WorkflowState') ? 'enforced' : 'instruction-only';
+  if (capability === 'workflow_runtime') {
+    if (!role.tools.includes('WorkflowRuntime')) return platform === 'codex' ? 'instruction-only' : 'enforced';
+    return platform === 'codex' ? 'instruction-only' : 'enforced';
+  }
   if (capability === 'filesystem') {
     if (platform === 'codex') return requested === 'none' ? 'unsupported' : 'enforced';
     if (platform === 'opencode') return 'enforced';
@@ -425,7 +437,7 @@ export function capabilityEvidence(platform, role, policy) {
   return Object.fromEntries(Object.entries(levels).map(([capability, level]) => [capability, {
     requested: capability === 'delegation_targets' ? role.delegates : policy[capability],
     level,
-    evidence: level === 'enforced' ? [capability === 'workflow_state' ? 'isolated MCP workflow broker' : 'platform permission key'] : []
+    evidence: level === 'enforced' ? [capability === 'workflow_runtime' ? 'narrow MCP workflow tool allowlist' : 'platform permission key'] : []
   }]));
 }
 

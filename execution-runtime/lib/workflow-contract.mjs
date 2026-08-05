@@ -28,7 +28,7 @@ export async function loadWorkflowContract(path = CONTRACT_PATH) {
 }
 
 export function assertWorkflowContract(contract) {
-  if (!contract || !contract.workflows || !contract.actions || !contract.io_contracts || !contract.artifact_kinds || !contract.support_delegations) {
+  if (!contract || contract.version !== 2 || contract.lease_minutes !== 30 || !contract.workflows || !contract.actions || !contract.io_contracts || !contract.artifact_kinds || !Array.isArray(contract.completion_results)) {
     throw new Error("workflow contract is invalid");
   }
   if (!/^[0-9a-f]{64}$/.test(contract.digest)) throw new Error("workflow contract digest is invalid");
@@ -41,7 +41,6 @@ export function assertWorkflowContract(contract) {
     }
     owners.add(action.owner);
     if (!contract.io_contracts[action.io_contract]) throw new Error(`workflow contract action I/O is invalid: ${id}`);
-    if (action.workflow === "support") continue;
     const workflow = contract.workflows[action.workflow];
     if (!workflow || workflow.phase_actions[action.from]?.includes(id) !== true || typeof action.completed_to !== "string") {
       throw new Error(`workflow contract transition is invalid: ${id}`);
@@ -67,7 +66,7 @@ export function assertWorkflowContract(contract) {
     if (!io?.input_contract || !io?.result_contracts) throw new Error(`workflow I/O contract is invalid: ${name}`);
     assertPayloadContract(io.input_contract, `workflow I/O input ${name}`);
     for (const [result, resultContract] of Object.entries(io.result_contracts)) {
-      if (!contract.receipt_schema.results.includes(result) && !contract.support_receipt_schema.results.includes(result)) {
+      if (!contract.completion_results.includes(result)) {
         throw new Error(`workflow I/O result is invalid: ${name}/${result}`);
       }
       assertPayloadContract(resultContract, `workflow I/O result ${name}/${result}`);
@@ -76,11 +75,6 @@ export function assertWorkflowContract(contract) {
   for (const [kind, workflow] of Object.entries(contract.workflows)) {
     for (const ids of Object.values(workflow.phase_actions)) {
       for (const id of ids) if (contract.actions[id]?.workflow !== kind) throw new Error(`workflow ${kind} references invalid action ${id}`);
-    }
-  }
-  for (const [owner, actionIds] of Object.entries(contract.support_delegations)) {
-    if (!owners.has(owner) || !duplicateFreeStrings(actionIds) || actionIds.some((id) => contract.actions[id]?.workflow !== "support")) {
-      throw new Error(`workflow support delegation is invalid: ${owner}`);
     }
   }
   return { contract, owners };
@@ -157,7 +151,7 @@ export function validateActionReceipt(receipt, contract) {
   if (!receipt || Object.keys(receipt).some((key) => !allowed.includes(key)) ||
     typeof receipt.run_id !== "string" || !contract.actions[receipt.action_id] ||
     !Number.isSafeInteger(receipt.attempt) || receipt.attempt < 1 ||
-    !contract.receipt_schema.results.includes(receipt.result) ||
+    !contract.completion_results.includes(receipt.result) ||
     typeof receipt.summary !== "string" || !receipt.summary.trim() || !isPlainObject(receipt.outputs) ||
     !Array.isArray(receipt.artifacts) || !Array.isArray(receipt.checks) ||
     receipt.checks.some((check) => typeof check !== "string" || !check.trim())) {
@@ -195,23 +189,8 @@ function validateActionResult(receipt, contract, support) {
   validateError(receipt.error, resultContract, support ? "SupportReceipt" : "ActionReceipt");
 }
 
-export function validateSupportReceipt(receipt, contract) {
-  const allowed = ["run_id", "caller_ref", "call_id", "action_id", "result", "summary", "outputs", "artifacts", "checks", "error", "decision_request"];
-  if (!isPlainObject(receipt) || Object.keys(receipt).some((key) => !allowed.includes(key)) ||
-    typeof receipt.run_id !== "string" || typeof receipt.caller_ref !== "string" || !receipt.caller_ref ||
-    typeof receipt.call_id !== "string" || !/^[A-Za-z0-9._:-]{8,128}$/.test(receipt.call_id) ||
-    contract.actions[receipt.action_id]?.workflow !== "support" || !contract.support_receipt_schema.results.includes(receipt.result) ||
-    typeof receipt.summary !== "string" || !receipt.summary.trim() || !isPlainObject(receipt.outputs) ||
-    !Array.isArray(receipt.artifacts) || !Array.isArray(receipt.checks) || receipt.checks.some((check) => typeof check !== "string" || !check.trim())) {
-    throw new Error("SupportReceipt is invalid");
-  }
-  validateActionResult(receipt, contract, true);
-  if (receipt.result === "needs_decision" && (!receipt.decision_request || typeof receipt.decision_request.code !== "string")) {
-    throw new Error("needs_decision SupportReceipt requires decision_request");
-  }
-  if (receipt.result === "needs_decision" && !contract.decision_codes.includes(receipt.decision_request.code)) throw new Error("SupportReceipt decision code is invalid");
-  if (receipt.result !== "needs_decision" && receipt.decision_request !== undefined) throw new Error("SupportReceipt result does not allow decision_request");
-  return receipt;
+export function validateSupportReceipt() {
+  throw new Error("SupportReceipt is not part of workflow contract v2");
 }
 
 function assertObjectFields(content, required, label, exact = false) {
@@ -264,18 +243,20 @@ export function validateArtifactContent(kind, content, contract) {
     if (!["standards", "spec"].includes(content.axis) || !Array.isArray(content.findings) || !Array.isArray(content.advisory_findings) || !stringArray(content.coverage)) {
       throw new Error("review_axis_result artifact is invalid");
     }
-    validateArtifactRef(content.review_packet_ref);
-    if (content.review_packet_ref.kind !== "review_packet") throw new Error("review_axis_result packet ref is invalid");
     for (const finding of [...content.findings, ...content.advisory_findings]) validateFinding(finding, content.axis === "spec");
     const findingIds = [...content.findings, ...content.advisory_findings].map((finding) => finding.id);
     if (new Set(findingIds).size !== findingIds.length) throw new Error("review_axis_result finding IDs must be unique");
   }
   if (kind === "review_result") {
-    if (!Array.isArray(content.axis_result_refs) || content.axis_result_refs.length !== 2 || !["passed", "blocking"].includes(content.verdict) || !stringArray(content.finding_ids, true) || !stringArray(content.coverage)) {
+    if (!Array.isArray(content.axis_results) || content.axis_results.length !== 2 || !["passed", "blocking"].includes(content.verdict) || !stringArray(content.finding_ids, true) || !stringArray(content.coverage)) {
       throw new Error("review_result artifact is invalid");
     }
-    content.axis_result_refs.forEach(validateArtifactRef);
-    if (content.axis_result_refs.some((ref) => ref.kind !== "review_axis_result") || new Set(content.axis_result_refs.map((ref) => ref.id)).size !== 2 || new Set(content.finding_ids).size !== content.finding_ids.length) throw new Error("review_result axis refs or finding IDs are invalid");
+    content.axis_results.forEach((axis) => validateArtifactContent("review_axis_result", axis, contract));
+    const findingIds = [...new Set(content.axis_results.flatMap((axis) => axis.findings.map((finding) => finding.id)))].sort();
+    const coverage = [...new Set(content.axis_results.flatMap((axis) => axis.coverage))].sort();
+    if (new Set(content.axis_results.map((axis) => axis.axis)).size !== 2 || new Set(content.finding_ids).size !== content.finding_ids.length ||
+      JSON.stringify([...content.finding_ids].sort()) !== JSON.stringify(findingIds) || JSON.stringify([...content.coverage].sort()) !== JSON.stringify(coverage) ||
+      (findingIds.length > 0) !== (content.verdict === "blocking")) throw new Error("review_result axes, verdict, finding IDs, or coverage are invalid");
   }
   return content;
 }

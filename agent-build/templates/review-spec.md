@@ -16,7 +16,7 @@
 
 ## 完成标准
 
-每项适用验收标准有实现或检查证据，所有分配 slice 有逐 slice coverage；findings/advisory 分开保存为 `review_axis_result` artifact，SupportReceipt 返回 axis result ref、finding IDs 和 coverage。
+每项适用验收标准有实现或检查证据，所有分配 slice 有逐 slice coverage；固定 TaskResult 分开返回 findings/advisory、finding IDs 和 coverage。
 
 ## 决策条件
 

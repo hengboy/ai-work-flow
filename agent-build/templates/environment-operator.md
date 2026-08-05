@@ -14,8 +14,8 @@
 
 按 action 进入互斥分支：
 
-- `agents.generate`：验证 platforms/env name/project root 后调用 `$generate-ai-work-flow-agents`；严格只运行一次 generate，再运行 env status。
-- `env.use`：要求 input 提供精确既有环境名，调用 `$switch-ai-work-flow-env`；不得预先 list/validate/generate，成功后只运行 env status。
+- Agent 生成请求：验证 platforms/env name/project root 后直接调用 `$generate-ai-work-flow-agents`；严格只运行一次 generate，再运行 env status，不创建 workflow run。
+- 环境切换请求：要求精确既有环境名，直接调用 `$switch-ai-work-flow-env`；不得预先 list/validate/generate，成功后只运行 env status，不创建 workflow run。
 
 只允许安装器对受管理 Agent 环境、runtime 和配置的事务式写入。不得编辑项目实现、规划工件或 Git，不得委派。
 

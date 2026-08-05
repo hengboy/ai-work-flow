@@ -15,7 +15,7 @@ const CAPABILITIES = {
   git: new Set(["none", "read", "write"]),
   write_scope: new Set(["none", "docs", "planning-artifacts", "tasks", "research", "code", "git", "environment"]),
   delegation: new Set(["none", "allowed", "review-only"]),
-  workflow_state: new Set(["none", "read", "write"]),
+  workflow_runtime: new Set(["none", "write"]),
 };
 const TOOL_REQUIREMENTS = {
   Read: ["filesystem", new Set(["read", "write"])],
@@ -27,7 +27,7 @@ const TOOL_REQUIREMENTS = {
   WebSearch: ["network", new Set(["official"])],
   WebFetch: ["network", new Set(["official"])],
   Task: ["delegation", new Set(["allowed", "review-only"])],
-  WorkflowState: ["workflow_state", new Set(["write"])],
+  WorkflowRuntime: ["workflow_runtime", new Set(["write"])],
   Skill: null,
 };
 const HEADINGS = ["角色结果", "能力与控制", "允许的 Actions 与输入", "执行循环", "完成标准", "决策条件", "结果回执"];
@@ -196,17 +196,27 @@ function validateAssets(catalog, controlsDocument, policiesDocument, defaults, t
 }
 
 function actionText(role, contract) {
-  if (role.actions.length === 0) return "- 不直接拥有 workflow 或 support action；只调度 snapshot 中 action 的契约 owner。";
+  if (role.actions.length === 0) return "- 不直接拥有 workflow action；主代理按 claim dispatch 调度契约 owner，其他角色直接返回 TaskResult。";
   return role.actions.map((id) => {
     const action = contract.actions[id];
     const io = contract.io_contracts[action.io_contract];
     const input = io.input_contract;
+    const publicInputField = (field) => {
+      if (!field.endsWith("_ref")) return field;
+      const kinds = input.required_artifact_kinds ?? [];
+      return kinds.find((kind) => field === `${kind}_ref`) ?? (kinds.length === 1 ? kinds[0] : field.slice(0, -4));
+    };
+    const publicField = (field, output) => {
+      if (!field.endsWith("_ref")) return field;
+      const kinds = output.required_artifact_kinds ?? [];
+      return kinds.find((kind) => field === `${kind}_ref`) ?? (kinds.length === 1 ? kinds[0] : field.slice(0, -4));
+    };
     const result = Object.entries(io.result_contracts).map(([name, output]) => {
       const error = output.required_error_fields?.length ? `；error=${output.required_error_fields.join(",")}` : "";
-      return `${name}[outputs=${output.required_fields.join(",") || "无"}; artifacts=${output.required_artifact_kinds.join(",") || "无"}${error}]`;
+      return `${name}[fields=${output.required_fields.map((field) => publicField(field, output)).join(",") || "无"}${error}]`;
     }).join("；");
-    const gate = action.workflow === "support" ? "经 support_validate 校验且不推进 phase" : `phase=\`${action.from}\` 且位于 ready_actions`;
-    return `- \`${id}\`（\`${action.io_contract}\`）：${gate}；input.fields 必需=${input.required_fields.join(",") || "无"}，可选=${input.optional_fields.join(",") || "无"}；input.artifacts=${input.required_artifact_kinds.join(",") || "无"}。结果：${result}。`;
+    const gate = "由 workflow_claim_next 返回该 action、lease 和 completion_tool";
+    return `- \`${id}\`（\`${action.io_contract}\`）：${gate}；input 必需=${input.required_fields.map(publicInputField).join(",") || "无"}，可选=${input.optional_fields.map(publicInputField).join(",") || "无"}。结果：${result}。`;
   }).join("\n");
 }
 
@@ -223,10 +233,8 @@ function controlsText(role, controls, policies) {
 }
 
 function receiptText(role, contract) {
-  if (role.actions.length === 0) return "不伪造 `ActionReceipt` 或 `SupportReceipt`。只验证子代理交接与 broker 返回的 canonical receipt，并在终态报告已验证 refs；需要决定时只转交 snapshot 的 `decision_request`。";
-  const supportOnly = role.actions.every((id) => contract.actions[id].workflow === "support");
-  if (supportOnly) return "只返回一个 `SupportReceipt`：`run_id`、`caller_ref`、稳定 `call_id`、`action_id`、`result`、`summary`、`outputs`、`artifacts`、`checks`；需要决定时附 `decision_request`，失败时附契约要求的 `error`。调用者用原始 support input 执行 `support_validate`，并把重要 refs、checks 与失败写入父 `ActionReceipt`。";
-  return "只返回一个 `ActionReceipt`：`run_id`、`action_id`、`attempt`、`result`、`summary`、必需 `outputs`、`artifacts`、`checks`；需要决定时附 `decision_request`，失败时附契约要求的 `error`。完整证据写入本地 artifact，聊天只传 `ArtifactRef`；响应损坏时用 `status(action_id)` 读取同一 canonical receipt。";
+  if (role.actions.length === 0) return "主代理只消费子代理的固定 TaskResult，并使用 dispatch 指定的 completion tool；其他角色不读写 workflow 状态。";
+  return "只向主代理返回一个固定 `TaskResult`：`result`、`summary` 和该 I/O contract 的结果字段；不得提交 run、action、attempt、lease、上游 refs 或 artifact ref。";
 }
 
 export function loadAgentAssets(configRoot = resolve(import.meta.dirname, "..", "config"), templatesRoot = resolve(import.meta.dirname, "..", "templates"), workflowContractPath = contractPath()) {

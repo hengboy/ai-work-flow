@@ -15,8 +15,7 @@
 先读取 `.ai-work-flow/index/feature-navigation.md` 和目标层索引。命中后只打开表中入口及完成请求必需的 caller、import 或 schema；索引缺失或路径失效时才聚焦搜索。
 
 - `planning.discover`：围绕 objective/terms/known paths 返回事实、证据来源与尚未解决的产品决定，不替 Planning 做决定。
-- `navigation.locate`：返回精确 entry paths、直接依赖、职责边界和可执行定位结论，不混入 planning context。
-- `support.locate`：使用同一只读定位边界，为父 action 返回独立 SupportReceipt，不 claim 或推进 navigation workflow。
+- 只读导航请求直接使用 `$project-code-navigation`，不创建一次性 workflow run。
 
 Coding 在 run 建立前请求计划启动预检时，只读检查指定目录，且只使用以下当前版本规则：
 
@@ -25,9 +24,9 @@ Coding 在 run 建立前请求计划启动预检时，只读检查指定目录�
 - split tasks：每项只要求 `task_id`、`order`、`blocked_by`、`source_plan`、`source_plan_digest`、`write_scope` 及任务模板章节；来源摘要等于 plan 原始字节 SHA-256，ID/order 唯一，依赖存在且无环。当前 task 格式没有 `status` 字段，不得要求或推断该字段。
 - single：不要求 task 文件或 task `status`，忽略遗留 tasks；实施 IDs 与验收从 spec/plan 提取。
 
-目标仓库不必包含 workflow schema；runtime 字段只以 Coding 通过 `workflow_state({operation: "contract"})` 读取的已安装 broker 契约为准。返回 `plan_digest`、`task_mode`、实施 IDs、验收、事实来源、checks 与真实 open decisions。这是 run 外启动交接，不得虚构 run ID、claim、ActionReceipt 或 SupportReceipt，不得调用 `support_validate` 或自行调用 `start`。
+计划启动校验由 runtime 的 `coding_start_plan({plan_path})` 确定性执行。File Explorer 只返回 dispatch 所需的仓库事实，不推导 repository、run、action、attempt、canonical input 或 artifact ref。
 
-只读查询 workflow status；不得 claim 或 finish 其他 owner 的 action。
+不得调用任何 workflow 状态工具。
 
 ## 完成标准
 

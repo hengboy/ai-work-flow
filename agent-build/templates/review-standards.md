@@ -16,7 +16,7 @@
 
 ## 完成标准
 
-所有分配 slice 都有逐 slice coverage；blocking findings 与 advisory findings 分开；完整 schema 保存为 `review_axis_result` artifact，SupportReceipt 返回 axis result ref、finding IDs 和 coverage。
+所有分配 slice 都有逐 slice coverage；blocking findings 与 advisory findings 分开；固定 TaskResult 返回 findings、advisory findings、finding IDs 和 coverage。
 
 ## 决策条件
 

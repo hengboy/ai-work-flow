@@ -1,253 +1,146 @@
-import { execFile } from "node:child_process";
-import { realpath } from "node:fs/promises";
-import { promisify } from "node:util";
-
-import { createArtifact, verifyArtifact } from "./artifact-store.mjs";
-import { createReviewPacket, verifyReviewPacket } from "./review-packet.mjs";
 import { loadWorkflowContract } from "./workflow-contract.mjs";
-import { claimAction, finishAction, recoverAction, resolveDecision, startRun, statusRepository, statusRun, validateSupportAction } from "./workflow-store.mjs";
+import {
+  WorkflowBusinessError, answer, claimNext, complete, resume,
+  startDirect, startPlan, startPlanning, startPlanningHandoff,
+} from "./workflow-v2-store.mjs";
 
-const execFileAsync = promisify(execFile);
-const TOOL_NAME = "workflow_state";
-const OPERATIONS = new Set([
-  "start", "status", "claim", "finish", "recover", "decide",
-  "artifact_create", "artifact_verify", "review_packet_create", "review_packet_verify", "contract",
-  "support_validate",
-]);
-const OPERATION_FIELDS = Object.freeze({
-  start: ["operation", "repository", "kind", "plan_digest", "task_mode", "request", "source_run_id"],
-  status: ["operation", "repository", "run_id", "action_id", "kind"],
-  claim: ["operation", "repository", "run_id", "action_id", "claimant", "input"],
-  finish: ["operation", "repository", "receipt"],
-  recover: ["operation", "repository", "run_id", "action_id"],
-  decide: ["operation", "repository", "run_id", "answer", "decision"],
-  artifact_create: ["operation", "repository", "run_id", "kind", "content"],
-  artifact_verify: ["operation", "repository", "run_id", "ref"],
-  review_packet_create: ["operation", "repository", "run_id", "packet"],
-  review_packet_verify: ["operation", "repository", "run_id", "ref"],
-  support_validate: ["operation", "repository", "caller_ref", "input", "receipt"],
-  contract: ["operation"],
-});
-const OPERATION_REQUIRED_FIELDS = Object.freeze({
-  start: ["operation", "repository", "kind"],
-  status: ["operation", "repository"],
-  claim: ["operation", "repository", "run_id", "action_id", "claimant", "input"],
-  finish: ["operation", "repository", "receipt"],
-  recover: ["operation", "repository", "run_id", "action_id"],
-  decide: ["operation", "repository", "run_id"],
-  artifact_create: ["operation", "repository", "run_id", "kind", "content"],
-  artifact_verify: ["operation", "repository", "run_id", "ref"],
-  review_packet_create: ["operation", "repository", "run_id", "packet"],
-  review_packet_verify: ["operation", "repository", "run_id", "ref"],
-  support_validate: ["operation", "repository", "caller_ref", "input", "receipt"],
-  contract: ["operation"],
-});
-
-const ACTION_RECEIPT_SCHEMA = Object.freeze({
-  type: "object",
-  required: ["run_id", "action_id", "attempt", "result", "summary", "outputs", "artifacts", "checks"],
-  properties: {
-    run_id: { type: "string" },
-    action_id: { type: "string" },
-    attempt: { type: "integer", minimum: 1 },
-    result: { type: "string", enum: ["completed", "retryable_failure", "needs_decision", "failed"] },
-    summary: { type: "string", minLength: 1 },
-    outputs: { type: "object" },
-    artifacts: { type: "array", items: { type: "object" } },
-    checks: { type: "array", items: { type: "string", minLength: 1 } },
-    error: { type: "object" },
-    decision_request: { type: "object" },
+const START_TOOLS = Object.freeze({
+  coding_start_direct: {
+    description: "Start or idempotently resume a direct Coding run for a reproducible bug or one small feature.",
+    fields: { objective: { type: "string", minLength: 1 } },
+    run: (cwd, input) => startDirect(cwd, input.objective),
   },
-  additionalProperties: false,
-});
-
-const SUPPORT_RECEIPT_SCHEMA = Object.freeze({
-  type: "object",
-  required: ["run_id", "caller_ref", "call_id", "action_id", "result", "summary", "outputs", "artifacts", "checks"],
-  properties: {
-    run_id: { type: "string" },
-    caller_ref: { type: "string" },
-    call_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{8,128}$" },
-    action_id: { type: "string" },
-    result: { type: "string", enum: ["completed", "needs_decision", "failed"] },
-    summary: { type: "string", minLength: 1 },
-    outputs: { type: "object" },
-    artifacts: { type: "array", items: { type: "object" } },
-    checks: { type: "array", items: { type: "string", minLength: 1 } },
-    error: { type: "object" },
-    decision_request: { type: "object" },
+  coding_start_plan: {
+    description: "Start or idempotently resume Coding from a validated plan directory or plan.md. The runtime derives the canonical PlanBundle.",
+    fields: { plan_path: { type: "string", minLength: 1 } },
+    run: (cwd, input) => startPlan(cwd, input.plan_path),
   },
-  additionalProperties: false,
-});
-
-const DECISION_SCHEMA = Object.freeze({
-  type: "object",
-  description: "Resolution for the active snapshot decision_request. Copy its code exactly and put the verbatim user answer in summary.",
-  required: ["code", "summary"],
-  properties: {
-    code: { type: "string", minLength: 1, description: "Exact code from the active snapshot decision_request." },
-    summary: { type: "string", minLength: 1, description: "Verbatim user answer, including an option ID or custom answer when applicable." },
+  planning_start: {
+    description: "Start or idempotently resume a persistent Planning run from the user's objective.",
+    fields: { objective: { type: "string", minLength: 1 } },
+    run: (cwd, input) => startPlanning(cwd, input.objective),
   },
-  additionalProperties: false,
-});
-
-function operationConstraint(operation) {
-  const constraint = {
-    if: { properties: { operation: { const: operation } }, required: ["operation"] },
-    then: {
-      required: OPERATION_REQUIRED_FIELDS[operation],
-      propertyNames: { enum: OPERATION_FIELDS[operation] },
-    },
-  };
-  if (operation === "contract") constraint.then.maxProperties = 1;
-  if (operation === "start") {
-    const without = (...fields) => ({ not: { anyOf: fields.map((field) => ({ required: [field] })) } });
-    constraint.then.anyOf = [
-      {
-        properties: { kind: { const: "coding" }, plan_digest: { pattern: "^[0-9a-f]{64}$" } },
-        required: ["plan_digest", "task_mode"],
-        ...without("request"),
-      },
-      {
-        properties: { kind: { const: "coding" } },
-        required: ["request"],
-        ...without("plan_digest", "task_mode"),
-      },
-      {
-        properties: { kind: { const: "planning" } },
-        required: ["request"],
-        ...without("plan_digest", "task_mode", "source_run_id"),
-      },
-      {
-        properties: { kind: { const: "planning" } },
-        required: ["source_run_id"],
-        ...without("plan_digest", "task_mode", "request"),
-      },
-      {
-        properties: { kind: { not: { enum: ["coding", "planning"] } }, plan_digest: { pattern: "^[0-9a-f]{64}$" } },
-        required: ["plan_digest"],
-        ...without("request", "task_mode"),
-      },
-    ];
-  }
-  if (operation === "status") {
-    constraint.then.anyOf = [
-      { required: ["run_id"], not: { required: ["kind"] } },
-      { not: { anyOf: [{ required: ["run_id"] }, { required: ["action_id"] }] } },
-    ];
-  }
-  if (operation === "finish") constraint.then.properties = { receipt: ACTION_RECEIPT_SCHEMA };
-  if (operation === "decide") {
-    constraint.then.properties = { decision: DECISION_SCHEMA };
-    constraint.then.anyOf = [
-      { required: ["answer"], not: { required: ["decision"] } },
-      { required: ["decision"], not: { required: ["answer"] } },
-    ];
-  }
-  if (operation === "support_validate") constraint.then.properties = { receipt: SUPPORT_RECEIPT_SCHEMA };
-  return constraint;
-}
-
-const TOOL = Object.freeze({
-  name: TOOL_NAME,
-  description: "Read or update AI Work Flow state through fixed operations. finish takes exactly {operation:'finish', repository, receipt}; run_id and action_id belong inside the ActionReceipt, never at the top level. status with repository and optional kind lists repository runs; add run_id for one canonical snapshot. Prefer the flat decide form with answer=<verbatim user answer>; the legacy decision={code:<exact active code>,summary:<verbatim user answer>} form remains supported. A terminal PLANNING_REQUIRED is not decidable: start planning with kind='planning' and source_run_id=<coding run_id>. recover only releases a stale active claim; never use it for a finished action awaiting a decision. contract takes exactly {operation:'contract'} with no repository or kind. support_validate requires repository, caller_ref, input, and receipt tied to an active parent claim; it must never validate pre-run discovery. Planning start requires repository, kind='planning', and exactly one of request={objective:<verbatim user request>} or source_run_id=<PLANNING_REQUIRED coding run>. Plan-based coding start requires repository, kind='coding', plan_digest, and task_mode. Direct Bug or small-feature coding start instead requires repository, kind='coding', and request={objective:<verbatim user request>}; do not mix request with plan fields.",
-  inputSchema: {
-    type: "object",
-    required: ["operation"],
-    properties: {
-      operation: { type: "string", enum: [...OPERATIONS], description: "Fixed broker operation. Use contract alone to inspect the installed runtime contract." },
-      repository: { type: "string", description: "Repository root. Required for every operation except contract." },
-      run_id: { type: "string", description: "Run ID. Omit for contract and repository-level status discovery." },
-      action_id: { type: "string" },
-      claimant: { type: "string" },
-      kind: { type: "string", description: "Workflow kind for start or repository-level status filtering, such as coding; never a role, support action, or I/O contract name." },
-      plan_digest: { type: "string", description: "Verified lowercase SHA-256 plan digest for start." },
-      task_mode: { type: "string", enum: ["single", "split"], description: "Required only by plan-based coding start." },
-      source_run_id: { type: "string", pattern: "^run_[0-9a-f]{24}$", description: "For planning start only: a terminal direct coding run whose decision_request code is PLANNING_REQUIRED. The planning objective is inherited from that run." },
-      request: {
-        type: "object",
-        description: "Verbatim user request. Required for planning start and for direct Bug or small-feature coding start; do not mix with plan_digest/task_mode.",
-        required: ["objective"],
-        properties: { objective: { type: "string", minLength: 1 } },
-        additionalProperties: false,
-      },
-      receipt: { type: "object", description: "ActionReceipt for finish or SupportReceipt for support_validate; the operation-specific schema defines its fields." },
-      input: { type: "object", description: "Canonical claim input, or the original support input for support_validate." },
-      caller_ref: { type: "string", description: "Active parent claim ID for support_validate only." },
-      answer: { type: "string", minLength: 1, description: "Preferred flat decide input: the verbatim user answer to the active decision_request, such as an option ID or custom answer." },
-      decision: DECISION_SCHEMA,
-      content: {},
-      ref: { type: "object" },
-      packet: { type: "object" },
-    },
-    allOf: [...OPERATIONS].map(operationConstraint),
-    additionalProperties: false,
+  planning_start_handoff: {
+    description: "Start Planning from a direct Coding run that requires a Planning handoff.",
+    fields: { source_run_id: { type: "string", pattern: "^run_[0-9a-f]{24}$" } },
+    run: (cwd, input) => startPlanningHandoff(cwd, input.source_run_id),
   },
 });
 
-async function gitRoot(path) {
-  const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], { cwd: path, encoding: "utf8" });
-  return realpath(stdout.trim());
+const STATE_TOOLS = Object.freeze({
+  workflow_resume: {
+    description: "Resume a run by ID, or auto-resume the unique unfinished run. Multiple unfinished runs return selection_required.",
+    fields: { run_id: { type: "string", pattern: "^run_[0-9a-f]{24}$" } }, optional: ["run_id"],
+    run: (cwd, input) => resume(cwd, input.run_id),
+  },
+  workflow_claim_next: {
+    description: "Atomically select the next ready action, issue a 30-minute lease, and return its complete dispatch and completion_tool.",
+    fields: { run_id: { type: "string", pattern: "^run_[0-9a-f]{24}$" } },
+    run: (cwd, input) => claimNext(cwd, input.run_id),
+  },
+  workflow_answer: {
+    description: "Answer the run's single active decision with the user's verbatim answer.",
+    fields: { run_id: { type: "string", pattern: "^run_[0-9a-f]{24}$" }, answer: { type: "string", minLength: 1 } },
+    run: (cwd, input) => answer(cwd, input.run_id, input.answer),
+  },
+});
+
+function schema(fields, optional = []) {
+  return { type: "object", required: Object.keys(fields).filter((name) => !optional.includes(name)), properties: fields, additionalProperties: false };
 }
 
-async function trustedRepository(repository, cwd) {
-  if (typeof repository !== "string" || !repository) throw new Error("repository is required");
-  const [requested, current] = await Promise.all([gitRoot(repository), gitRoot(cwd)]);
-  if (requested !== current) throw new Error("workflow broker only accepts the current repository");
-  return requested;
-}
-
-export async function dispatchWorkflowState(input, context = {}) {
-  if (!input || !OPERATIONS.has(input.operation)) throw new Error("workflow broker operation is invalid");
-  const allowed = OPERATION_FIELDS[input.operation];
-  if (Object.keys(input).some((key) => !allowed.includes(key))) throw new Error("workflow broker input contains an unsupported field");
-  if (input.operation === "contract") {
-    const contract = await loadWorkflowContract();
-    return { ...contract, broker: { tool_name: TOOL_NAME, input_schema: structuredClone(TOOL.inputSchema) } };
+function payloadFieldSchema(name) {
+  if (name.endsWith("_ids") || ["acceptance", "scope_evidence", "changed_paths", "checks", "coverage", "refs", "entry_paths", "direct_dependencies", "facts", "open_decisions", "committed_paths", "fixed_finding_ids", "deleted_paths"].includes(name)) {
+    return { type: "array" };
   }
-  const repository = await trustedRepository(input.repository, context.cwd ?? process.cwd());
-  if (input.operation === "start") return startRun({ repository, kind: input.kind, plan_digest: input.plan_digest, task_mode: input.task_mode, request: input.request, source_run_id: input.source_run_id });
-  if (input.operation === "status") {
-    if (!input.run_id) {
-      if (input.action_id) throw new Error("repository status does not accept action_id without run_id");
-      return statusRepository({ repository, kind: input.kind });
-    }
-    if (input.kind) throw new Error("run status does not accept kind with run_id");
-    return statusRun({ repository, run_id: input.run_id, action_id: input.action_id });
-  }
-  if (input.operation === "claim") return claimAction({ repository, run_id: input.run_id, action_id: input.action_id, claimant: input.claimant, owner_pid: context.pid ?? process.pid, input: input.input });
-  if (input.operation === "finish") return finishAction({ repository, receipt: input.receipt });
-  if (input.operation === "recover") return recoverAction({ repository, run_id: input.run_id, action_id: input.action_id });
-  if (input.operation === "decide") return resolveDecision({ repository, run_id: input.run_id, answer: input.answer, decision: input.decision });
-  if (input.operation === "artifact_create") return createArtifact({ repository, run_id: input.run_id, kind: input.kind, content: input.content });
-  if (input.operation === "artifact_verify") return verifyArtifact({ repository, run_id: input.run_id, ref: input.ref });
-  if (input.operation === "review_packet_create") {
-    if (!input.packet || typeof input.packet !== "object" || Array.isArray(input.packet)) throw new Error("review packet input is required");
-    return createReviewPacket({ ...input.packet, repository, run_id: input.run_id });
-  }
-  if (input.operation === "support_validate") return validateSupportAction({ repository, caller_ref: input.caller_ref, input: input.input, receipt: input.receipt });
-  return verifyReviewPacket({ repository, run_id: input.run_id, ref: input.ref });
+  if (name.endsWith("_ref") || ["open_decision", "drift", "state", "status", "cleanup_evidence", "initial_status", "clean_state", "verification"].includes(name)) return { type: "object" };
+  return {};
 }
 
-function error(id, code, message) {
-  return { jsonrpc: "2.0", id, error: { code, message } };
+function publicResultField(field, resultContract) {
+  if (!field.endsWith("_ref")) return field;
+  const kinds = resultContract.required_artifact_kinds ?? [];
+  return kinds.find((kind) => field === `${kind}_ref`) ?? (kinds.length === 1 ? kinds[0] : field.slice(0, -4));
 }
 
-export async function handleBrokerRequest(request, context) {
+async function completionTools() {
+  const contract = await loadWorkflowContract();
+  const names = [...new Set(Object.values(contract.actions)
+    .filter((action) => ["coding", "planning"].includes(action.workflow))
+    .map((action) => action.io_contract))].sort();
+  return names.map((name) => {
+    const io = contract.io_contracts[name];
+    const payloadFields = [...new Set(Object.values(io.result_contracts).flatMap((result) => [
+      ...result.required_fields.map((field) => publicResultField(field, result)),
+      ...(result.optional_fields ?? []).map((field) => publicResultField(field, result)),
+      ...(result.required_error_fields ?? []),
+    ]))];
+    const properties = {
+      lease_id: { type: "string", pattern: "^lease_[0-9a-f]{32}$" },
+      result: { type: "string", enum: Object.keys(io.result_contracts) },
+      summary: { type: "string", minLength: 1 },
+      ...Object.fromEntries(payloadFields.map((field) => [field, payloadFieldSchema(field)])),
+    };
+    return {
+      name: `workflow_complete_${name}`,
+      description: `Complete the leased ${name} action. Run, action, attempt, upstream refs, receipts, and artifacts are derived by the runtime.`,
+      inputSchema: schema(properties, payloadFields),
+    };
+  });
+}
+
+async function tools() {
+  const fixed = [...Object.entries({ ...START_TOOLS, ...STATE_TOOLS })].map(([name, tool]) => ({
+    name, description: tool.description, inputSchema: schema(tool.fields, tool.optional),
+  }));
+  return [...fixed, ...await completionTools()];
+}
+
+function validateShape(input, fields, optional = []) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new WorkflowBusinessError("correction_required", "tool arguments must be an object");
+  const allowed = Object.keys(fields);
+  const extra = Object.keys(input).filter((key) => !allowed.includes(key));
+  const missing = allowed.filter((key) => !optional.includes(key) && input[key] === undefined);
+  if (extra.length || missing.length) throw new WorkflowBusinessError("correction_required", "tool arguments do not match the public interface", { extra, missing });
+}
+
+export async function dispatchWorkflowTool(name, input, context = {}) {
+  const cwd = context.cwd ?? process.cwd();
+  const fixed = { ...START_TOOLS, ...STATE_TOOLS }[name];
+  if (fixed) {
+    validateShape(input, fixed.fields, fixed.optional);
+    return fixed.run(cwd, input);
+  }
+  if (name.startsWith("workflow_complete_")) {
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new WorkflowBusinessError("correction_required", "tool arguments must be an object");
+    const contractName = name.slice("workflow_complete_".length);
+    const known = (await completionTools()).some((tool) => tool.name === name);
+    if (!known) throw new WorkflowBusinessError("correction_required", "completion tool is not declared");
+    return complete(cwd, contractName, input);
+  }
+  throw new WorkflowBusinessError("correction_required", "workflow tool is not declared");
+}
+
+function protocolError(id, code, message) { return { jsonrpc: "2.0", id, error: { code, message } }; }
+function toolResult(id, result, isError = false) {
+  return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(result) }], isError } };
+}
+
+export async function handleBrokerRequest(request, context = {}) {
   const id = request?.id ?? null;
-  if (!request || request.jsonrpc !== "2.0" || typeof request.method !== "string") return error(id, -32600, "Invalid Request");
-  if (request.method === "initialize") {
-    return { jsonrpc: "2.0", id, result: { protocolVersion: request.params?.protocolVersion ?? "2025-06-18", capabilities: { tools: { listChanged: false } }, serverInfo: { name: "ai-work-flow", version: "1" } } };
-  }
+  if (!request || request.jsonrpc !== "2.0" || typeof request.method !== "string") return protocolError(id, -32600, "Invalid Request");
+  if (request.method === "initialize") return { jsonrpc: "2.0", id, result: { protocolVersion: request.params?.protocolVersion ?? "2025-06-18", capabilities: { tools: { listChanged: false } }, serverInfo: { name: "ai-work-flow", version: "2" } } };
   if (request.method === "ping") return { jsonrpc: "2.0", id, result: {} };
-  if (request.method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: [TOOL] } };
+  if (request.method === "tools/list") return { jsonrpc: "2.0", id, result: { tools: await tools() } };
   if (request.method === "notifications/initialized") return null;
-  if (request.method !== "tools/call") return error(id, -32601, "Method not found");
-  if (request.params?.name !== TOOL_NAME || !request.params.arguments || typeof request.params.arguments !== "object") return error(id, -32602, "Invalid tool call");
+  if (request.method !== "tools/call") return protocolError(id, -32601, "Method not found");
+  if (typeof request.params?.name !== "string") return toolResult(id, { status: "correction_required", message: "tool name is required" });
   try {
-    const result = await dispatchWorkflowState(request.params.arguments, context);
-    return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(result) }], isError: false } };
-  } catch (cause) {
-    return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: cause.message }], isError: true } };
+    return toolResult(id, await dispatchWorkflowTool(request.params.name, request.params.arguments, context));
+  } catch (error) {
+    if (error instanceof WorkflowBusinessError) return toolResult(id, { status: error.status, message: error.message, ...error.details });
+    return toolResult(id, { status: "failed", fatal: true, message: error.message }, true);
   }
 }
+
+export async function workflowTools() { return tools(); }

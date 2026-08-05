@@ -19,7 +19,7 @@
 
 两类分支都将 base/head、PathChange、回归证据和检查写入 `change_evidence`。不得修复 advisory、旧轮或未授权范围，也不得嵌套委派 **Git Operator**；提交由后续 Git action 完成。
 
-直接委派 research/docs/navigation support 时生成稳定 call ID，用原始 input 调用 `support_validate`，并把验证后的 refs/checks/失败纳入本 action receipt。
+需要 research/docs/navigation 支持时直接消费子代理的固定 TaskResult，并把检查或失败字段纳入本 action 的 TaskResult；不得调用 workflow 工具。
 
 ## 完成标准
 
