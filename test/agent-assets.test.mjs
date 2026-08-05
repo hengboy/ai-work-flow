@@ -71,6 +71,15 @@ test("Claude and OpenCode allow narrow tools only for primary workflow agents", 
   assert.equal(JSON.stringify(claude).includes(retiredTool), false);
 });
 
+test("OpenCode File Explorer can inspect external worktrees read-only", () => {
+  const assets = loadAgentAssets();
+  const explorer = assets.roles.find((role) => role.id === "file-explorer");
+  const policy = assets.policies[explorer.policy];
+  assert.equal(evaluateOpenCodePermission(explorer, policy, "external_directory"), "allow");
+  assert.equal(evaluateOpenCodePermission(explorer, policy, "read"), "allow");
+  assert.equal(evaluateOpenCodePermission(explorer, policy, "edit"), "deny");
+});
+
 test("workflow runtime capability reports platform enforcement honestly", () => {
   const assets = loadAgentAssets();
   const coding = assets.roles.find((role) => role.id === "coding");

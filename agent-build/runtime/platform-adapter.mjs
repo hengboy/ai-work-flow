@@ -221,6 +221,7 @@ export function opencodePermission(role, policy) {
     permission.grep = 'deny';
     permission.bash = 'deny';
   }
+  if (role.controls.includes('read-only-discovery')) permission.external_directory = 'allow';
   if (role.tools.includes('WorkflowRuntime')) for (const tool of OPENCODE_WORKFLOW_TOOLS) permission[tool] = 'allow';
   if (policy.delegation === 'allowed') permission.task = 'allow';
   if (policy.delegation === 'none') permission.task = 'deny';
