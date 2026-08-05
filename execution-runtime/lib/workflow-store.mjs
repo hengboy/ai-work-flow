@@ -151,20 +151,19 @@ function runKey(kind, sourceType, planDigest, taskMode) {
 
 export async function startRun({ repository, kind, plan_digest, task_mode, request }) {
   const contract = await loadWorkflowContract();
-  const direct = request !== undefined;
-  const validDirectRequest = request && typeof request === "object" && !Array.isArray(request) &&
+  const requestBased = request !== undefined;
+  const validRequest = request && typeof request === "object" && !Array.isArray(request) &&
     Object.keys(request).join() === "objective" && typeof request.objective === "string" && request.objective.trim();
-  const validPlanStart = /^[0-9a-f]{64}$/.test(plan_digest ?? "") &&
+  const validRequestStart = ["coding", "planning"].includes(kind) && validRequest && plan_digest === undefined && task_mode === undefined;
+  const validPlanStart = kind !== "planning" && /^[0-9a-f]{64}$/.test(plan_digest ?? "") &&
     (kind === "coding" ? ["single", "split"].includes(task_mode) : task_mode === undefined);
-  if (!contract.workflows[kind] || (direct
-    ? kind !== "coding" || !validDirectRequest || plan_digest !== undefined || task_mode !== undefined
-    : !validPlanStart)) {
+  if (!contract.workflows[kind] || !(requestBased ? validRequestStart : validPlanStart)) {
     throw new Error("start input is invalid");
   }
-  const sourceType = direct ? "direct" : "plan";
-  const directRequest = direct ? { objective: request.objective } : null;
-  const runDigest = direct ? digestValue(directRequest) : plan_digest;
-  const runTaskMode = direct ? "single" : task_mode;
+  const sourceType = requestBased ? "direct" : "plan";
+  const directRequest = requestBased ? { objective: request.objective } : null;
+  const runDigest = requestBased ? digestValue(directRequest) : plan_digest;
+  const runTaskMode = requestBased && kind === "coding" ? "single" : task_mode;
   const location = await paths(repository);
   await ensureDirectoryChain(location.common, location.runs);
   await assertPathChain(location.common, location.runs);
@@ -193,7 +192,7 @@ export async function startRun({ repository, kind, plan_digest, task_mode, reque
       plan_digest: runDigest,
       task_mode: runTaskMode ?? null,
       revision: 0,
-      phase: direct ? "direct_started" : contract.workflows[kind].initial_phase,
+      phase: requestBased && kind === "coding" ? "direct_started" : contract.workflows[kind].initial_phase,
       active_claims: {},
       attempts: {},
       completed_actions: {},
@@ -283,6 +282,9 @@ function validateClaimSemantics({ action_id: actionId, input, run, verifiedArtif
   if (actionId === "coding.triage" && (run.source_type !== "direct" || input.fields.objective !== run.direct_request?.objective || input.fields.request_digest !== run.plan_digest)) {
     throw new Error("coding.triage input does not match the canonical direct request");
   }
+  if (actionId === "planning.discover" && run.source_type === "direct" && input.fields.objective !== run.direct_request?.objective) {
+    throw new Error("planning.discover input does not match the canonical planning request");
+  }
   if (["coding.implement", "coding.fix_direct"].includes(actionId) && run.source_type === "direct") {
     const triage = completedOutputs(run, "coding.triage");
     const expectedAction = triage.implementation_kind === "bug" ? "coding.fix_direct" : "coding.implement";
@@ -325,8 +327,9 @@ function validateClaimSemantics({ action_id: actionId, input, run, verifiedArtif
 
 export async function statusRun({ repository, run_id, action_id }) {
   const { contract, run } = await loadRun(repository, run_id);
-  const validDirectIdentity = run.source_type !== "direct" || run.kind === "coding" && run.task_mode === "single" &&
-    run.direct_request && Object.keys(run.direct_request).join() === "objective" && digestValue(run.direct_request) === run.plan_digest;
+  const validDirectIdentity = run.source_type !== "direct" || ["coding", "planning"].includes(run.kind) &&
+    (run.kind === "coding" ? run.task_mode === "single" : [null, "single", "split"].includes(run.task_mode)) && run.direct_request &&
+    Object.keys(run.direct_request).join() === "objective" && digestValue(run.direct_request) === run.plan_digest;
   if (!Number.isSafeInteger(run.revision) || run.revision < 0 || !["plan", "direct"].includes(run.source_type) || !validDirectIdentity ||
     !contract.workflows[run.kind].terminal_phases.includes(run.phase) && !contract.workflows[run.kind].phase_actions[run.phase]) throw new Error("run state is invalid");
   const result = snapshot(run, contract);

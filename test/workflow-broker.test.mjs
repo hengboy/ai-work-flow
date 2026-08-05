@@ -32,6 +32,8 @@ test("workflow broker exposes one fixed MCP tool and no command execution surfac
   assert.ok(schema.properties.operation.enum.includes("support_validate"));
   assert.ok(schema.properties.input);
   assert.deepEqual(schema.properties.request.required, ["objective"]);
+  assert.equal(constraint("start").anyOf.length, 4);
+  assert.equal(constraint("status").anyOf.length, 2);
   assert.match(listed.result.tools[0].description, /contract takes exactly/);
   assert.match(listed.result.tools[0].description, /run_id and action_id belong inside the ActionReceipt/);
   assert.match(listed.result.tools[0].description, /must never validate pre-run discovery/);
@@ -74,6 +76,7 @@ test("repository status discovers runs without requiring a run id", async () => 
   assert.deepEqual(discovered.runs.map((run) => run.run_id), [latest.run_id, started.run_id]);
   assert.deepEqual(await dispatchWorkflowState({ operation: "status", repository: root, run_id: started.run_id }, { cwd: root, pid: process.pid }), started);
   await assert.rejects(dispatchWorkflowState({ operation: "status", repository: root, action_id: "coding.prepare" }, { cwd: root, pid: process.pid }), /without run_id/);
+  await assert.rejects(dispatchWorkflowState({ operation: "status", repository: root, run_id: started.run_id, kind: "planning" }, { cwd: root, pid: process.pid }), /does not accept kind/);
 });
 
 test("broker starts direct coding requests without plan fields", async () => {
@@ -86,6 +89,17 @@ test("broker starts direct coding requests without plan fields", async () => {
   await assert.rejects(dispatchWorkflowState({
     operation: "start", repository: root, kind: "coding", request, plan_digest: "a".repeat(64), task_mode: "single",
   }, { cwd: root, pid: process.pid }), /start input/);
+});
+
+test("broker starts planning from the verbatim user request", async () => {
+  const root = await repository();
+  const request = { objective: "Plan a snake game for this repository" };
+  const started = await dispatchWorkflowState({ operation: "start", repository: root, kind: "planning", request }, { cwd: root, pid: process.pid });
+  assert.equal(started.source_type, "direct");
+  assert.equal(started.task_mode, null);
+  assert.deepEqual(started.direct_request, request);
+  assert.deepEqual(started.ready_actions, ["planning.discover"]);
+  assert.deepEqual(await dispatchWorkflowState({ operation: "start", repository: root, kind: "planning", request }, { cwd: root, pid: process.pid }), started);
 });
 
 test("workflow broker validates support receipts without advancing the parent phase", async () => {
@@ -147,7 +161,7 @@ test("workflow broker converts tool results and errors into MCP responses", asyn
     method: "tools/call",
     params: {
       name: "workflow_state",
-      arguments: { operation: "start", repository: root, kind: "planning", plan_digest: "c".repeat(64) },
+      arguments: { operation: "start", repository: root, kind: "planning", request: { objective: "Plan the requested feature" } },
     },
   }, { cwd: root, pid: process.pid });
   assert.equal(response.result.isError, false);

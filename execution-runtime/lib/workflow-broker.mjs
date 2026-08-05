@@ -89,6 +89,37 @@ function operationConstraint(operation) {
     },
   };
   if (operation === "contract") constraint.then.maxProperties = 1;
+  if (operation === "start") {
+    const without = (...fields) => ({ not: { anyOf: fields.map((field) => ({ required: [field] })) } });
+    constraint.then.anyOf = [
+      {
+        properties: { kind: { const: "coding" }, plan_digest: { pattern: "^[0-9a-f]{64}$" } },
+        required: ["plan_digest", "task_mode"],
+        ...without("request"),
+      },
+      {
+        properties: { kind: { const: "coding" } },
+        required: ["request"],
+        ...without("plan_digest", "task_mode"),
+      },
+      {
+        properties: { kind: { const: "planning" } },
+        required: ["request"],
+        ...without("plan_digest", "task_mode"),
+      },
+      {
+        properties: { kind: { not: { enum: ["coding", "planning"] } }, plan_digest: { pattern: "^[0-9a-f]{64}$" } },
+        required: ["plan_digest"],
+        ...without("request", "task_mode"),
+      },
+    ];
+  }
+  if (operation === "status") {
+    constraint.then.anyOf = [
+      { required: ["run_id"], not: { required: ["kind"] } },
+      { not: { anyOf: [{ required: ["run_id"] }, { required: ["action_id"] }] } },
+    ];
+  }
   if (operation === "finish") constraint.then.properties = { receipt: ACTION_RECEIPT_SCHEMA };
   if (operation === "support_validate") constraint.then.properties = { receipt: SUPPORT_RECEIPT_SCHEMA };
   return constraint;
@@ -96,22 +127,22 @@ function operationConstraint(operation) {
 
 const TOOL = Object.freeze({
   name: TOOL_NAME,
-  description: "Read or update AI Work Flow state through fixed operations. finish takes exactly {operation:'finish', repository, receipt}; run_id and action_id belong inside the ActionReceipt, never at the top level. status with repository and optional kind lists repository runs; add run_id for one canonical snapshot. contract takes exactly {operation:'contract'} with no repository or kind. support_validate requires repository, caller_ref, input, and receipt tied to an active parent claim; it must never validate pre-run discovery. Plan-based coding start requires repository, kind='coding', plan_digest, and task_mode. Direct Bug or small-feature coding start instead requires repository, kind='coding', and request={objective:<verbatim user request>}; do not mix request with plan fields.",
+  description: "Read or update AI Work Flow state through fixed operations. finish takes exactly {operation:'finish', repository, receipt}; run_id and action_id belong inside the ActionReceipt, never at the top level. status with repository and optional kind lists repository runs; add run_id for one canonical snapshot. contract takes exactly {operation:'contract'} with no repository or kind. support_validate requires repository, caller_ref, input, and receipt tied to an active parent claim; it must never validate pre-run discovery. Planning start requires repository, kind='planning', and request={objective:<verbatim user request>}. Plan-based coding start requires repository, kind='coding', plan_digest, and task_mode. Direct Bug or small-feature coding start instead requires repository, kind='coding', and request={objective:<verbatim user request>}; do not mix request with plan fields.",
   inputSchema: {
     type: "object",
     required: ["operation"],
     properties: {
       operation: { type: "string", enum: [...OPERATIONS], description: "Fixed broker operation. Use contract alone to inspect the installed runtime contract." },
       repository: { type: "string", description: "Repository root. Required for every operation except contract." },
-      run_id: { type: "string", description: "Run ID. Omit only for repository-level status discovery." },
+      run_id: { type: "string", description: "Run ID. Omit for contract and repository-level status discovery." },
       action_id: { type: "string" },
       claimant: { type: "string" },
       kind: { type: "string", description: "Workflow kind for start or repository-level status filtering, such as coding; never a role, support action, or I/O contract name." },
       plan_digest: { type: "string", description: "Verified lowercase SHA-256 plan digest for start." },
-      task_mode: { type: "string", enum: ["single", "split"], description: "Required by start when kind is coding." },
+      task_mode: { type: "string", enum: ["single", "split"], description: "Required only by plan-based coding start." },
       request: {
         type: "object",
-        description: "Direct coding request. Use instead of plan_digest/task_mode only for a user-authorized Bug or small feature.",
+        description: "Verbatim user request. Required for planning start and for direct Bug or small-feature coding start; do not mix with plan_digest/task_mode.",
         required: ["objective"],
         properties: { objective: { type: "string", minLength: 1 } },
         additionalProperties: false,
@@ -156,6 +187,7 @@ export async function dispatchWorkflowState(input, context = {}) {
       if (input.action_id) throw new Error("repository status does not accept action_id without run_id");
       return statusRepository({ repository, kind: input.kind });
     }
+    if (input.kind) throw new Error("run status does not accept kind with run_id");
     return statusRun({ repository, run_id: input.run_id, action_id: input.action_id });
   }
   if (input.operation === "claim") return claimAction({ repository, run_id: input.run_id, action_id: input.action_id, claimant: input.claimant, owner_pid: context.pid ?? process.pid, input: input.input });

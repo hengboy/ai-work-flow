@@ -55,7 +55,7 @@ node execution-runtime/workflow-cli.mjs artifact-create --repository <repo> --ru
 node execution-runtime/workflow-cli.mjs artifact-verify --repository <repo> --run-id <run_id> < artifact-ref.json
 ```
 
-`start` 对同一来源类型、摘要和任务模式幂等，不同任务身份创建独立 run。计划型 coding start 使用 `plan_digest + task_mode`；直接 Bug/小功能 start 使用严格的 `{objective}` request，runtime 对其 canonical JSON 求摘要并固定为 single，两种输入不能混用。同一仓库可用不同 `run_id` 和 worktree 并行执行多个 Coding 任务；claim、锁和 recover 预算均按 run 隔离。`claim` 接收 `{fields, artifacts}`，按 action 的命名 I/O contract 校验非空值后完整持久化；重复 claim 返回原 input，调用者不能替换。`finish` 校验必需 `outputs`、error 字段、artifact kind/run/digest，并交叉核对 canonical 上游 receipt、SHA、PathChange、finding IDs 与 coverage；状态不一致时不推进 phase。损坏或截断的响应通过 `status --action-id` 恢复，不重新执行 action。
+`start` 对同一来源类型、摘要和任务模式幂等，不同任务身份创建独立 run。Planning start 使用严格的原始 `{objective}` request；计划型 coding start 使用 `plan_digest + task_mode`；直接 Bug/小功能 start 同样使用严格的 `{objective}` request，runtime 对 request 的 canonical JSON 求摘要，且仅直接 coding 固定为 single。request 与计划字段不能混用。同一仓库可用不同 `run_id` 和 worktree 并行执行多个 Coding 任务；claim、锁和 recover 预算均按 run 隔离。`claim` 接收 `{fields, artifacts}`，按 action 的命名 I/O contract 校验非空值后完整持久化；重复 claim 返回原 input，调用者不能替换。`finish` 校验必需 `outputs`、error 字段、artifact kind/run/digest，并交叉核对 canonical 上游 receipt、SHA、PathChange、finding IDs 与 coverage；状态不一致时不推进 phase。损坏或截断的响应通过 `status --action-id` 恢复，不重新执行 action。
 
 Agents 不获得运行这些写命令所需的工作区权限。安装器为 Codex、Claude Code 和 OpenCode 注册 `execution-runtime/workflow-broker.mjs` 提供的 MCP `workflow_state` 工具；broker 只接受固定 operation，只允许当前启动仓库，并直接调用 runtime API。它没有命令执行接口，写入范围由 store 固定为 Git common dir 的 `.git/ai-work-flow/`。
 

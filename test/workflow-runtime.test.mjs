@@ -105,6 +105,7 @@ async function actionInput(root, snapshot, actionId) {
   let artifacts = [];
   if (["coding.prepare", "coding.prepare_direct_bug"].includes(actionId)) Object.assign(fields, { plan_digest: snapshot.plan_digest ?? "a".repeat(64), task_mode: snapshot.task_mode ?? "single" });
   if (actionId === "coding.triage") Object.assign(fields, { objective: snapshot.direct_request.objective, request_digest: snapshot.plan_digest });
+  if (actionId === "planning.discover" && snapshot.direct_request) fields.objective = snapshot.direct_request.objective;
   if (actionId === "planning.confirm") {
     fields.decision_history = snapshot.decision_history;
     fields.discovery_receipt = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: "planning.discover" })).result_receipt;
@@ -297,7 +298,10 @@ test("direct coding start is request-digest idempotent and rejects mixed identit
   assert.deepEqual(first.direct_request, input.request);
   assert.deepEqual(first.ready_actions, ["coding.triage"]);
   await assert.rejects(startRun({ ...input, plan_digest: "a".repeat(64), task_mode: "single" }), /start input/);
-  await assert.rejects(startRun({ repository: root, kind: "planning", request: input.request }), /start input/);
+  const planning = await startRun({ repository: root, kind: "planning", request: input.request });
+  assert.equal(planning.phase, "started");
+  assert.equal(planning.task_mode, null);
+  assert.deepEqual(planning.direct_request, input.request);
 });
 
 test("different coding tasks can hold active claims without sharing recovery state", async () => {
@@ -460,7 +464,7 @@ test("required collection inputs reject empty values unless the field has define
 test("planning confirmation persists zero, one, or multiple decisions and binds context", async () => {
   const root = await repository();
   for (const count of [0, 1, 2]) {
-    let snapshot = await startRun({ repository: root, kind: "planning", plan_digest: String(count + 7).repeat(64) });
+    let snapshot = await startRun({ repository: root, kind: "planning", request: { objective: `Plan decision case ${count}` } });
     snapshot = await finishReady(root, snapshot);
     for (let index = 0; index < count; index += 1) {
       const input = await actionInput(root, snapshot, "planning.confirm");
@@ -484,6 +488,7 @@ test("planning confirmation persists zero, one, or multiple decisions and binds 
       input: { ...specInput, fields: { ...specInput.fields, source_digest: "0".repeat(64) } },
     }), /planning context/);
   }
+  await assert.rejects(startRun({ repository: root, kind: "planning", plan_digest: "e".repeat(64) }), /start input/);
   await assert.rejects(startRun({ repository: root, kind: "planning", plan_digest: "f".repeat(64), task_mode: "split" }), /start input/);
 });
 
@@ -790,7 +795,7 @@ test("two main resyncs use distinct actions and a third drift requests a decisio
 
 test("planning and coding happy paths reach terminal state without duplicate action IDs", async () => {
   const root = await repository();
-  let planning = await startRun({ repository: root, kind: "planning", plan_digest: "4".repeat(64) });
+  let planning = await startRun({ repository: root, kind: "planning", request: { objective: "Plan the single-task happy path" } });
   const planningActions = [];
   while (planning.phase !== "complete") {
     planningActions.push(planning.ready_actions[0]);
@@ -799,7 +804,7 @@ test("planning and coding happy paths reach terminal state without duplicate act
   assert.equal(new Set(planningActions).size, planningActions.length);
   assert.equal(planningActions.includes("planning.write_tasks"), false);
 
-  let splitPlanning = await startRun({ repository: root, kind: "planning", plan_digest: "5".repeat(64) });
+  let splitPlanning = await startRun({ repository: root, kind: "planning", request: { objective: "Plan the split-task happy path" } });
   splitPlanning = await finishReady(root, splitPlanning);
   const confirmInput = await actionInput(root, splitPlanning, "planning.confirm");
   const confirmClaim = await claimAction({ repository: root, run_id: splitPlanning.run_id, action_id: "planning.confirm", claimant: "split-driver", owner_pid: process.pid, input: confirmInput });

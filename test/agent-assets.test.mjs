@@ -90,10 +90,10 @@ test("primary agents only orchestrate delegated work and Coding uses verified st
     assert.match(prompt, /不得.*联网/);
   }
   assert.match(coding, /计划启动预检|启动预检/);
-  assert.match(coding, /kind=coding/);
+  assert.match(coding, /kind: "coding"/);
   assert.match(coding, /plan_digest/);
   assert.match(coding, /task_mode/);
-  assert.ok(coding.indexOf("启动预检") < coding.indexOf("start(repository"));
+  assert.ok(coding.indexOf("启动预检") < coding.indexOf('operation: "start"'));
   assert.match(coding, /只恢复 `start` 响应返回的 `run_id`/);
   assert.match(coding, /其他 run 的 claim 不阻塞本 run/);
   assert.doesNotMatch(coding, /先用 `status` 恢复当前 coding run/);
@@ -105,7 +105,7 @@ test("primary agents only orchestrate delegated work and Coding uses verified st
   assert.match(coding, /空 `runs` 是正常首次状态/);
   assert.match(coding, /不得对它调用 `support_validate`/);
   assert.match(coding, /不得要求 task `status`/);
-  assert.match(coding, /request=\{objective:<用户原文>\}/);
+  assert.match(coding, /request: \{objective: <用户原文>\}/);
   assert.match(coding, /PLANNING_REQUIRED/);
   assert.match(coding, /coding\.fix_direct/);
   assert.match(coding, /coding\.implement/);
@@ -120,6 +120,8 @@ test("primary agents only orchestrate delegated work and Coding uses verified st
   assert.match(planning, /Task Planner/);
   assert.match(planning, /Git Operator/);
   assert.match(planning, /support\.research/);
+  assert.match(planning, /kind: "planning", request: \{objective: <用户原文>\}/);
+  assert.match(planning, /不得为尚不存在的 plan 伪造 `plan_digest`/);
   assert.ok(assets.roles.find((role) => role.id === "planning").delegates.includes("researcher"));
   assert.ok(assets.contract.support_delegations.planning.includes("support.research"));
   const roleNames = ["File Explorer", "Researcher", "Document Maintainer", "Planning Writer", "Task Planner", "Full Stack Coder", "Bug Fixer", "Git Operator", "Environment Operator", "Code Reviewer", "Review Standards", "Review Spec", "Planning", "Coding"];
