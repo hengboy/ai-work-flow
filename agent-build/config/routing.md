@@ -2,93 +2,69 @@
 
 ## 1. 事实优先级
 
-- v2 runtime 的 canonical run、lease、receipt 与 decision 是最高事实。
-- `workflow-contract.json` 是 phase、action owner、I/O contract、转换与 receipt 的最高事实。
-- 已验证的 canonical claim input 不得由对话摘要、旧 prompt 或调用者偏好替换。
-- runtime 在 completion 事务中创建的证据与 ReviewPacket 高于聊天中的内容副本。
-- roles、controls、policies 只声明角色能力和平台约束，不改变 workflow 状态。
-- 本文件只治理选择、调度与授权，不覆盖 runtime 或 contract。
-- 事实冲突时停止使用低优先级来源，并重新读取高优先级状态。
-- 响应截断、JSON 损坏或会话切换不构成重新执行 action 的理由。
-- 路径、SHA、digest、lease 与 receipt 必须从机器事实复核。
+- `workflow-contract.json` 是 action owner、I/O contract、转换、预算、决定代码和 `TaskResult` 字段集合的最高事实；`task-result-schemas.json` 是这些字段类型和嵌套 JSON 结构的最高事实。
+- 已批准的 spec、plan、tasks、Git SHA、PathChange 和完整结构化交接内容高于对话摘要。
+- roles、controls、policies 只声明角色能力和平台约束，不改变 workflow contract。
+- 路径、SHA 与 digest 必须从仓库事实复核；事实冲突时停止使用低优先级来源。
+- 流程只存在于当前会话，不写入仓库 Git metadata，也不承诺跨会话恢复调度进度。
 
 ## 2. 主代理边界
 
-- **Coding** 与 **Planning** 都是主代理。
-- 两者互不作为子代理，也不彼此委派。
-- **Planning** 负责发现、确认、规划工件、任务模式与规划提交。
-- **Planning** 不实施源码、不进入 **Coding** 流程，也不预授权实现。
-- **Coding** 消费已批准计划，或分诊用户直接授权的 Bug/小功能，并持续调度实施 workflow。
-- **Coding** 不修改规划决定，不以实现便利重写规格。
-- 主代理只通过 workflow broker 读写 run 状态。
-- 主代理不得直接读取、搜索、枚举或编辑工作区，不得执行 Shell、Skill、Git、浏览器或网络检索。
-- **Planning** 将仓库事实发现交给 **File Explorer**，将 spec/plan、tasks 和本地提交分别交给 **Planning Writer**、**Task Planner** 和 **Git Operator**。
-- **Planning** 在 confirm 阶段完成事实与产品决定后、创建 planning context 前确定 `task_mode`；single 跳过 `planning.write_tasks`，split 才委派 **Task Planner**。
-- **Coding** 有批准计划时调用 `coding_start_plan({plan_path})`，由 runtime 验证真实工件并推导 canonical PlanBundle。
-- **Coding** 没有批准计划时，只接受用户直接授权的可复现 Bug 或小功能，并以用户原文调用 `coding_start_direct({objective})`。
-- 直接 run 的首个 action 必须是 `coding.triage`。**Coding** 可把范围定位和外部研究分别委派给 **File Explorer** 与 **Researcher**，但只自行分类、定义可观察验收和验证交接。
-- 直接 Bug 必须路由到 **Bug Fixer** 的 `coding.fix_direct`；小功能必须路由到 **Full Stack Coder** 的 `coding.implement`。
-- 跨域架构、数据库/schema 迁移、安全/权限、公共 API/契约、多个独立交付任务，或仍有产品决定/广泛验收歧义时，`coding.triage` 必须以不可恢复的 `PLANNING_REQUIRED` 终止。用户必须另行启动 **Planning**，**Coding** 不得拆小规避。
-- run 启动后主代理只调度 `workflow_claim_next` 返回的 action owner，并调用响应指定的 completion tool。
-- 主代理遇到决定门禁时只转交 runtime 中的唯一决定。
+- **Coding** 与 **Planning** 都是主代理，互不作为子代理，也不彼此委派。
+- **Planning** 负责发现、确认、规划工件、任务模式与规划提交，不实施源码或预授权实现。
+- **Coding** 消费已批准计划，或分诊用户直接授权的 Bug/小功能，并在当前会话持续调度后续 action。
+- 主代理只使用 Task 委派，不得直接读取、搜索、枚举或编辑工作区，不得执行 Shell、Skill、Git、浏览器或网络检索。
+- **Planning** 严格执行 `discover → confirm → write_spec → write_plan → optional write_tasks → commit`。
+- **Coding** 有批准计划时委派 **File Explorer** 校验真实工件与来源摘要；没有批准计划时先执行 `coding.triage`。
+- 直接 Bug 路由到 **Bug Fixer**；单一小功能路由到 **Full Stack Coder**。
+- 跨域架构、数据库/schema 迁移、安全/权限、公共 API/契约、多个独立交付任务或产品歧义必须以 `PLANNING_REQUIRED` 停止，**Coding** 不得拆小规避。
+- 主代理遇到决定门禁时只转交当前唯一决定。
 
 ## 3. 角色选择
 
 - 仓库事实发现与精确入口定位交给 **File Explorer**。
 - 官方一手资料研究与单一报告交给 **Researcher**。
 - 指定普通文档维护交给 **Document Maintainer**。
-- spec 与 plan 分别交给 **Planning Writer** 的对应分支。
+- spec 与 plan 分别交给 **Planning Writer** 的对应 action。
 - split/single task 集合交给 **Task Planner**。
-- 已批准计划、小功能实施与项目初始化交给 **Full Stack Coder** 的不同 action 分支。
-- 直接 Bug 与当前 blocking finding 的最小修复交给 **Bug Fixer** 的不同 action 分支。
+- 已批准计划、小功能实施与项目初始化交给 **Full Stack Coder** 的不同分支。
+- 直接 Bug 与当前 blocking finding 的最小修复交给 **Bug Fixer**。
 - 本地 Git 生命周期交给 **Git Operator**，并始终串行。
 - Agent 生成与环境切换交给 **Environment Operator**。
 - 双轴审查编排交给 **Code Reviewer**，叶子轴分别交给 **Review Standards** 和 **Review Spec**。
 - 角色选择以 contract owner 为准，类别说明只帮助理解。
 
-## 4. ActionDispatch
+## 4. Action 交接
 
-- dispatch 前必须成功取得 canonical lease。
-- dispatch 必须携带 claim 响应中完整且原样的 input。
-- dispatch 必须明确 action ID、目标、允许范围和完成边界。
-- dispatch 必须携带 runtime 提供的所有 source、evidence 与 packet 输入。
-- dispatch 必须列出可观察验收与要求执行的 checks。
-- dispatch 不得通过自然语言增加 contract 未声明的必需字段。
-- dispatch 不得省略空值之外的必需输入，也不得用摘要替代 ref。
-- 子代理返回后先验证 TaskResult 的 result、summary 与 contract 结果字段。
-- 验证后由主代理调用 dispatch 明确指定的 completion tool。
-- 无 canonical lease 的 workflow action 不得执行。
+- 每次委派必须明确 action ID、目标、允许范围、完整 input、可观察验收和要求执行的 checks。
+- 每次委派末尾必须附对应 action 的“返回验收”模板：允许的 `result` 分支、精确顶层字段、可选字段和完整结构约束；不得只说“返回 `TaskResult`”。
+- 不得增加 contract 未声明的必需字段，不得省略必需输入，也不得用摘要替代完整结构化内容。
+- 子代理只返回一个可解析的 JSON `TaskResult` 对象，字段遵循 `task-result-schemas.json`。
+- 子代理不加前言、后记或 code fence，不使用 `outputs`/`error` 包装，不用省略号代替内容；空数组显式返回 `[]`，不得用字符串代替数组。
+- 主代理先验证 `result`、`summary`、该结果分支的全部必需字段、禁止的额外字段和嵌套结构，再将下一 action 需要的完整对象原样传递。
+- 返回格式不合格时，主代理只列出字段路径、预期类型、实际类型、缺失字段、多余字段或结构错误，要求子代理基于已完成工作原地重返对象；不得重新执行发现、实现、检查或 Git 操作。
+- `planning_context`、`change_evidence`、`review_packet`、`review_axis_result` 与 `review_result` 不写内部文件，只作为直接内容交接。
 
 ## 5. 调度与并发
 
-- 写入 action 默认串行。
-- 所有 Git mutation 始终串行，不与其他 Git action 重叠。
-- 只有 runtime 同时 dispatch 且写入范围互斥的 actions 才可并行。
-- 共享规划工件、同一 worktree 或同一 artifact 目录视为相交范围。
-- **Review Standards** 与 **Review Spec** 可用同一 packet 并行执行。
-- 不同任务使用各自 `run_id`、worktree 和预算，可在同一仓库并行推进；同一任务由幂等 start 恢复同一 run。
-- active lease 只阻塞所属 run；等待过期或完成后重新 claim，不重复 dispatch。
-- 30 分钟 lease 过期后可接管；旧结果只有未产生新 lease 时仍可完成，否则返回 `superseded`。
-- 每次 completion 后重新 claim，再决定下一 action。
-- 不根据历史 phase 表、对话记忆或预计结果预取下一 action。
+- 写入 action 默认串行；所有 Git mutation 始终串行，不与其他 Git action 重叠。
+- 只有写入范围明确互斥的 actions 才可并行；共享规划工件或同一 worktree 视为相交范围。
+- **Review Standards** 与 **Review Spec** 可用同一完整 ReviewPacket 并行执行。
+- 每个 `TaskResult` 验证后再决定下一 action，不根据预计结果提前调度。
+- **Coding** 的 finding 修复与完整复审最多两轮，main 漂移最多自动同步两次；预算耗尽时使用 contract 决定代码停止。
 
-## 6. Receipt 与恢复
+## 6. 会话边界
 
-- 子代理只返回固定 TaskResult，不读写 run 元数据。
-- 主代理只提交 `lease_id`、`result`、`summary` 和 completion contract 声明的顶层结果字段；不得提交 `run_id`、`action_id` 或嵌套 `error`，失败结果的 `code`、`message` 与适用的 `finding_ids` 必须位于顶层。
-- runtime 在单次事务中校验结果、创建证据或 ReviewPacket、登记 receipt 并推进 phase。
-- 重复 completion 返回同一 canonical receipt；响应损坏通过 `workflow_resume` 与 `workflow_claim_next` 恢复，不重复执行。
-- 无参恢复只自动选择唯一未完成 run；多个候选返回 `selection_required`。
+- 当前会话保留 action 顺序、用户决定和完整 `TaskResult`；不得创建 workflow store 或向 `.git/ai-work-flow` 写入状态。
+- 会话中断后，根据用户提供的计划、Git 状态和仓库事实重新定位；不得声称恢复先前调度进度。
+- 不重复已由 Git 提交、文件内容或检查结果明确证明完成的工作；无法证明的步骤重新验证后再继续。
 
 ## 7. 授权边界
 
-- 分析、发现、研究或审查不等于修改授权；用户明确要求修复 Bug 或实现小功能本身构成该 direct run 的本地实施授权。
+- 分析、发现、研究或审查不等于修改授权；用户明确要求修复 Bug 或实现小功能本身构成对应本地实施授权。
 - **Planning** 授权不等于 **Coding** 实施授权。
-- 实施授权只覆盖批准计划，或 `coding.triage` 从用户直接请求冻结的 objective、IDs 与 acceptance，以及本地验证。
-- 自动流程不包含 push、tag、发布、PR 或任何远端修改。
-- 自动流程不包含 stash、reset、clean、amend 或跳过 hook。
-- **Git Operator** 不进行实现编辑或环境生成。
-- **Environment Operator** 不进行项目实现编辑或 Git mutation。
+- 实施授权只覆盖批准计划，或 `coding.triage` 从用户直接请求确定的 objective、IDs、acceptance 及本地验证。
+- 自动流程不包含 push、tag、发布、PR、远端修改、stash、reset、clean、amend 或跳过 hook。
+- **Git Operator** 不进行实现编辑或环境生成；**Environment Operator** 不进行项目实现编辑或 Git mutation。
 - 支持子代理不扩大父 action 的写入、网络或 Git 权限。
 - 需要新产品决定、删除授权或远端操作时必须停止并请求明确授权。
-- 平台无法强制的边界仍作为角色必须遵守的契约。

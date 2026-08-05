@@ -22,6 +22,6 @@ outputs 返回完整 changed paths 和格式/链接 checks；changed paths 只�
 
 文档目标或受众会实质改变内容时请求一个决定；普通措辞自行选择并保持项目风格。
 
-## 结果回执
+## 结果返回
 
-<!-- ai-work-flow:receipt -->
+<!-- ai-work-flow:task-result -->

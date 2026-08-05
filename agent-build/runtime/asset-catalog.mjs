@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import { fail, isPlainObject, readJson } from "./shared.mjs";
 import { loadSkillAssets } from "./skill-catalog.mjs";
@@ -15,7 +15,6 @@ const CAPABILITIES = {
   git: new Set(["none", "read", "write"]),
   write_scope: new Set(["none", "docs", "planning-artifacts", "tasks", "research", "code", "git", "environment"]),
   delegation: new Set(["none", "allowed", "review-only"]),
-  workflow_runtime: new Set(["none", "write"]),
 };
 const TOOL_REQUIREMENTS = {
   Read: ["filesystem", new Set(["read", "write"])],
@@ -27,13 +26,12 @@ const TOOL_REQUIREMENTS = {
   WebSearch: ["network", new Set(["official"])],
   WebFetch: ["network", new Set(["official"])],
   Task: ["delegation", new Set(["allowed", "review-only"])],
-  WorkflowRuntime: ["workflow_runtime", new Set(["write"])],
   Skill: null,
 };
-const HEADINGS = ["角色结果", "能力与控制", "允许的 Actions 与输入", "执行循环", "完成标准", "决策条件", "结果回执"];
+const HEADINGS = ["角色结果", "能力与控制", "允许的 Actions 与输入", "执行循环", "完成标准", "决策条件", "结果返回"];
 const CONTROL_MARKER = "<!-- ai-work-flow:controls -->";
 const ACTION_MARKER = "<!-- ai-work-flow:actions -->";
-const RECEIPT_MARKER = "<!-- ai-work-flow:receipt -->";
+const RESULT_MARKER = "<!-- ai-work-flow:task-result -->";
 const MAX_PROMPT = 8_000;
 const MAX_TOTAL = 45_000;
 export const MAX_AGENT_DEPTH = 2;
@@ -55,14 +53,43 @@ function canonicalize(value) {
   return value;
 }
 
-function validateContract(contract, errors) {
-  if (!isPlainObject(contract) || !isPlainObject(contract.actions) || !isPlainObject(contract.workflows)) {
-    errors.push("workflow-contract.json must define actions and workflows.");
+function resultFieldNames(contract) {
+  const fields = new Set(["result", "summary"]);
+  const groups = [
+    ...Object.values(contract.io_contracts ?? {}).map((io) => io.result_contracts ?? {}),
+    ...Object.values(contract.support_result_contracts ?? {}),
+  ];
+  for (const results of groups) for (const output of Object.values(results)) {
+    for (const field of [...(output.required_fields ?? []), ...(output.optional_fields ?? []), ...(output.required_error_fields ?? [])]) fields.add(field);
+  }
+  return fields;
+}
+
+function validateContract(contract, schemas, errors) {
+  if (!isPlainObject(contract) || !isPlainObject(contract.actions) || !isPlainObject(contract.workflows) ||
+    !isPlainObject(contract.task_result) || !isPlainObject(contract.structured_content)) {
+    errors.push("workflow-contract.json must define actions, workflows, TaskResult, and structured content.");
     return;
   }
   const { digest, ...unsigned } = contract;
   const actual = createHash("sha256").update(JSON.stringify(canonicalize(unsigned))).digest("hex");
   if (digest !== actual) errors.push("workflow-contract.json digest is stale.");
+  if (!isPlainObject(schemas) || schemas.contract_digest !== digest || !isPlainObject(schemas.envelope) ||
+    !isPlainObject(schemas.field_schemas) || !isPlainObject(schemas.structured_content_schemas)) {
+    errors.push("task-result-schemas.json is invalid or stale.");
+  } else {
+    for (const field of resultFieldNames(contract)) {
+      const schema = schemas.envelope[field] ?? schemas.field_schemas[field];
+      if (!isPlainObject(schema) || typeof schema.prompt_type !== "string" || !schema.prompt_type.trim()) errors.push(`TaskResult schema is missing: ${field}.`);
+    }
+    for (const [name, content] of Object.entries(contract.structured_content)) {
+      const schema = schemas.structured_content_schemas[name];
+      if (!isPlainObject(schema) || schema.type !== "object" || !Array.isArray(schema.required) ||
+        JSON.stringify([...schema.required].sort()) !== JSON.stringify([...content.required_fields].sort())) {
+        errors.push(`Structured content schema is missing or stale: ${name}.`);
+      }
+    }
+  }
   for (const [id, action] of Object.entries(contract.actions)) {
     if (!action.owner || !action.workflow) errors.push(`Action ${id} must declare owner and workflow.`);
     if (!action.io_contract || !contract.io_contracts?.[action.io_contract]) errors.push(`Action ${id} must reference a named I/O contract.`);
@@ -110,9 +137,9 @@ function validateDelegateDepth(roles, errors) {
   for (const role of roles.filter((candidate) => candidate.kind === "primary")) visit(role.id, [role.id]);
 }
 
-function validateAssets(catalog, controlsDocument, policiesDocument, defaults, templates, contract) {
+function validateAssets(catalog, controlsDocument, policiesDocument, defaults, templates, contract, schemas) {
   const errors = [];
-  validateContract(contract, errors);
+  validateContract(contract, schemas, errors);
   if (!isPlainObject(catalog) || !Array.isArray(catalog.roles) || Object.keys(catalog).some((key) => key !== "roles")) errors.push("roles.json must contain only a roles array.");
   const roles = Array.isArray(catalog?.roles) ? catalog.roles : [];
   const ids = roles.map((role) => role?.id);
@@ -182,6 +209,10 @@ function validateAssets(catalog, controlsDocument, policiesDocument, defaults, t
     }
   }
   for (const id of Object.keys(contract.actions)) if (!referencedActions.has(id)) errors.push(`Action is not assigned to a role: ${id}.`);
+  const supportRoles = roles.filter((role) => role.kind !== "primary" && role.actions.length === 0).map((role) => role.id).sort();
+  if (JSON.stringify(Object.keys(contract.support_result_contracts ?? {}).sort()) !== JSON.stringify(supportRoles)) {
+    errors.push("Every non-primary role without an action must have one support result contract.");
+  }
   if (!isPlainObject(defaults?.roles)) errors.push("default-config.json must define roles.");
   for (const id of ids) for (const platform of PLATFORM_NAMES) if (!isPlainObject(defaults?.roles?.[id]?.[platform])) errors.push(`default-config.json is missing ${id}/${platform}.`);
   const expectedTemplates = ids.map((id) => `${id}.md`).sort();
@@ -189,35 +220,73 @@ function validateAssets(catalog, controlsDocument, policiesDocument, defaults, t
   for (const [id, body] of templates) {
     const positions = HEADINGS.map((heading) => body.indexOf(`## ${heading}`));
     if (positions.some((position) => position < 0) || positions.some((position, index) => index && position <= positions[index - 1])) errors.push(`Template ${id}.md must use the seven ordered interface headings.`);
-    for (const marker of [CONTROL_MARKER, ACTION_MARKER, RECEIPT_MARKER]) if (body.split(marker).length !== 2) errors.push(`Template ${id}.md must contain one ${marker}.`);
+    for (const marker of [CONTROL_MARKER, ACTION_MARKER, RESULT_MARKER]) if (body.split(marker).length !== 2) errors.push(`Template ${id}.md must contain one ${marker}.`);
   }
   if (errors.length) fail(`Agent asset catalog is invalid:\n${errors.join("\n")}`);
   return { roles, controls, policies };
 }
 
-function actionText(role, contract) {
-  if (role.actions.length === 0) return "- 不直接拥有 workflow action；主代理按 claim dispatch 调度契约 owner，其他角色直接返回 TaskResult。";
-  return role.actions.map((id) => {
-    const action = contract.actions[id];
-    const io = contract.io_contracts[action.io_contract];
-    const input = io.input_contract;
-    const publicInputField = (field) => {
-      if (!field.endsWith("_ref")) return field;
-      const kinds = input.required_artifact_kinds ?? [];
-      return kinds.find((kind) => field === `${kind}_ref`) ?? (kinds.length === 1 ? kinds[0] : field.slice(0, -4));
-    };
-    const publicField = (field, output) => {
-      if (!field.endsWith("_ref")) return field;
-      const kinds = output.required_artifact_kinds ?? [];
-      return kinds.find((kind) => field === `${kind}_ref`) ?? (kinds.length === 1 ? kinds[0] : field.slice(0, -4));
-    };
-    const result = Object.entries(io.result_contracts).map(([name, output]) => {
-      const error = output.required_error_fields?.length ? `；error=${output.required_error_fields.join(",")}` : "";
-      return `${name}[fields=${output.required_fields.map((field) => publicField(field, output)).join(",") || "无"}${error}]`;
-    }).join("；");
-    const gate = "由 workflow_claim_next 返回该 action、lease 和 completion_tool";
-    return `- \`${id}\`（\`${action.io_contract}\`）：${gate}；input 必需=${input.required_fields.map(publicInputField).join(",") || "无"}，可选=${input.optional_fields.map(publicInputField).join(",") || "无"}。结果：${result}。`;
-  }).join("\n");
+function typedField(field, schemas) {
+  const schema = schemas.envelope[field] ?? schemas.field_schemas[field];
+  return `${field}:${schema.prompt_type}`;
+}
+
+function resultTemplate(name, output) {
+  const fields = [...new Set([...output.required_fields, ...(output.required_error_fields ?? [])])];
+  const required = [`result:"${name}"`, "summary", ...fields].join(",");
+  const optional = output.optional_fields.length ? `；可选字段=${output.optional_fields.join(",")}` : "";
+  return `\`{${required}}\`${optional}`;
+}
+
+function fieldTypes(results, schemas) {
+  const fields = [...new Set(["summary", ...Object.values(results).flatMap((output) => [
+    ...output.required_fields, ...output.optional_fields, ...(output.required_error_fields ?? []),
+  ])])];
+  const exceptions = fields.filter((field) => !["string", "path string", "absolute path"].includes((schemas.envelope[field] ?? schemas.field_schemas[field]).prompt_type));
+  return `未列字段:string,${exceptions.map((field) => typedField(field, schemas)).join(",")}`;
+}
+
+function structuredSchemaText(fields, contract) {
+  return [...new Set(fields)].filter((field) => contract.structured_content[field]).map((field) => {
+    const schema = contract.structured_content[field];
+    const guidance = Object.entries(schema.field_guidance).map(([name, value]) => `${name}=${value}`).join(", ");
+    return `\`${field}={${schema.required_fields.join(",")}}\`${guidance ? `（${guidance}）` : ""}`;
+  }).join("；");
+}
+
+function contractGroupText(ids, ioName, contract, roleNames) {
+  const io = contract.io_contracts[ioName];
+  const input = io.input_contract;
+  const actions = ids.map((id) => `\`${id}\` -> **${roleNames.get(contract.actions[id].owner) ?? contract.actions[id].owner}**`).join("；");
+  const results = Object.entries(io.result_contracts).map(([name, output]) => resultTemplate(name, output)).join("；");
+  const structuredFields = [
+    ...input.required_fields, ...input.optional_fields,
+    ...Object.values(io.result_contracts).flatMap((output) => [...output.required_fields, ...output.optional_fields]),
+  ];
+  const structures = structuredSchemaText(structuredFields, contract);
+  return `- Actions：${actions}\n  - 输入：必需=${input.required_fields.join(",") || "无"}；可选=${input.optional_fields.join(",") || "无"}。\n  - \`TaskResult\` 验收：${results}。${structures ? `\n  - 完整结构：${structures}。` : ""}`;
+}
+
+function actionText(role, contract, schemas, roles) {
+  const roleNames = new Map(roles.map((entry) => [entry.id, entry.name]));
+  if (role.kind !== "primary" && role.actions.length === 0) {
+    const results = contract.support_result_contracts[role.id];
+    const templates = Object.entries(results).map(([name, output]) => resultTemplate(name, output)).join("；");
+    const fields = Object.values(results).flatMap((output) => [...output.required_fields, ...output.optional_fields]);
+    const structures = structuredSchemaText(fields, contract);
+    return `- 字段类型：${fieldTypes(results, schemas)}。\n- 支持委派 \`TaskResult\` 验收：${templates}。${structures ? `\n  - 完整结构：${structures}。` : ""}`;
+  }
+  const actionIds = role.kind === "primary"
+    ? Object.keys(contract.actions).filter((id) => contract.actions[id].workflow === role.id)
+    : role.actions;
+  const groups = new Map();
+  for (const id of actionIds) {
+    const ioName = contract.actions[id].io_contract;
+    groups.set(ioName, [...(groups.get(ioName) ?? []), id]);
+  }
+  const resultContracts = Object.fromEntries([...groups].flatMap(([ioName]) => Object.entries(contract.io_contracts[ioName].result_contracts)
+    .map(([name, output], index) => [`${ioName}:${name}:${index}`, output])));
+  return `- 字段类型：${fieldTypes(resultContracts, schemas)}。\n${[...groups].map(([ioName, ids]) => contractGroupText(ids, ioName, contract, roleNames)).join("\n")}`;
 }
 
 function controlsText(role, controls, policies) {
@@ -232,9 +301,9 @@ function controlsText(role, controls, policies) {
   ].join("\n");
 }
 
-function receiptText(role, contract) {
-  if (role.actions.length === 0) return "只向调用者返回一个固定 `TaskResult`，不得读写 workflow 状态、创建 workflow artifact 或虚构 artifact ref；调用者在适用时负责 completion。";
-  return "只向主代理返回一个固定 `TaskResult`：`result`、`summary` 和上方列出的公开结果字段。结果字段为 artifact kind（如 `planning_context`、`change_evidence`、`review_packet`、`review_result`）时，直接返回完整 JSON 内容，不返回 `*_ref`；runtime completion 负责校验内容、创建 canonical artifact 并生成 ref。不得自行创建 workflow artifact 文件或调用 workflow CLI/状态工具，也不得仅因这些工具不可用而失败；不得提交 run、action、attempt、lease、上游 refs 或 artifact ref。";
+function resultText(role) {
+  if (role.kind === "primary") return "每次委派附对应验收模板。收到可解析 JSON 对象后检查 `result`、字段类型、必需字段、额外字段和完整结构；合格才进入下一 action。不合格时指出字段路径、预期与实际类型并要求原地重返，不重复任务。";
+  return "只返回一个可解析的 JSON `TaskResult` 对象，无前后文字或 code fence。字段置于顶层，不使用 `outputs`/`error` 包装；空数组返回 `[]`，不得以字符串代替数组。仅使用当前结果分支允许的字段，完整结构不得用摘要、路径或省略号代替。";
 }
 
 export function loadAgentAssets(configRoot = resolve(import.meta.dirname, "..", "config"), templatesRoot = resolve(import.meta.dirname, "..", "templates"), workflowContractPath = contractPath()) {
@@ -243,6 +312,9 @@ export function loadAgentAssets(configRoot = resolve(import.meta.dirname, "..", 
   const contractFile = workflowContractPath;
   if (!contractFile) fail("Missing workflow-contract.json.");
   const contract = readJson(contractFile);
+  const schemasFile = resolve(dirname(contractFile), "task-result-schemas.json");
+  if (!existsSync(schemasFile)) fail("Missing task-result-schemas.json.");
+  const schemas = readJson(schemasFile);
   const catalog = readJson(resolve(config, "roles.json"));
   const controlDocument = readJson(resolve(config, "controls.json"));
   const policyDocument = readJson(resolve(config, "policies.json"));
@@ -251,7 +323,7 @@ export function loadAgentAssets(configRoot = resolve(import.meta.dirname, "..", 
   const bodies = new Map(readdirSync(templateRoot, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => [entry.name.slice(0, -3), readFileSync(resolve(templateRoot, entry.name), "utf8").trimEnd()]));
-  const validated = validateAssets(catalog, controlDocument, policyDocument, defaults, bodies, contract);
+  const validated = validateAssets(catalog, controlDocument, policyDocument, defaults, bodies, contract, schemas);
   const skillNamesByOwner = new Map();
   for (const skill of skillAssets.skills) skillNamesByOwner.set(skill.owner, [...(skillNamesByOwner.get(skill.owner) ?? []), skill]);
   const roles = validated.roles.map((role) => ({ ...role, skills: (skillNamesByOwner.get(role.id) ?? []).map((skill) => skill.name).sort() }));
@@ -264,12 +336,12 @@ export function loadAgentAssets(configRoot = resolve(import.meta.dirname, "..", 
   const compiledBodies = new Map(roles.map((role) => {
     const compiled = `<!-- ai-work-flow:contract-digest=${contract.digest} routing-digest=${routingDigest} -->\n\n${bodies.get(role.id)}`
       .replace(CONTROL_MARKER, controlsText(role, controls, policies))
-      .replace(ACTION_MARKER, actionText(role, contract))
-      .replace(RECEIPT_MARKER, receiptText(role, contract));
-    if (compiled.length > MAX_PROMPT) fail(`Compiled prompt ${role.id} exceeds ${MAX_PROMPT} characters.`);
+      .replace(ACTION_MARKER, actionText(role, contract, schemas, roles))
+      .replace(RESULT_MARKER, resultText(role));
+    if (compiled.length > MAX_PROMPT) fail(`Compiled prompt ${role.id} exceeds ${MAX_PROMPT} characters: ${compiled.length}.`);
     return [role.id, compiled];
   }));
   const total = [...compiledBodies.values()].reduce((sum, prompt) => sum + prompt.length, 0);
   if (total > MAX_TOTAL) fail(`Compiled prompts exceed ${MAX_TOTAL} characters: ${total}.`);
-  return { configRoot: config, templatesRoot: templateRoot, roles, controls, policies, defaults, bodies, compiledBodies, routing, contract, skills: skillAssets.skills };
+  return { configRoot: config, templatesRoot: templateRoot, roles, controls, policies, defaults, bodies, compiledBodies, routing, contract, taskResultSchemas: schemas, skills: skillAssets.skills };
 }

@@ -2,7 +2,7 @@
   "version": 1,
   "controls": {
     "no-direct-workspace-operations": {
-      "instruction": "主协调角色只可通过启动、恢复、claim、answer 和 contract completion 窄工具读写运行状态并使用委派工具；不得自行读取、搜索、枚举或编辑工作区，不得运行 Shell、Skill 或 Git，也不得联网检索。仓库事实与路径交给 File Explorer，官方资料研究交给 Researcher，文件写入和 Git 操作交给对应契约 owner。",
+      "instruction": "主协调角色只使用委派工具并在当前会话保存 action 顺序与完整 `TaskResult`；不得自行读取、搜索、枚举或编辑工作区，不得运行 Shell、Skill 或 Git，也不得联网检索。仓库事实与路径交给 **File Explorer**，官方资料研究交给 **Researcher**，文件写入和 Git 操作交给对应契约 owner。",
       "policy_requirements": {
         "filesystem": ["none"],
         "shell": ["none"],
@@ -11,15 +11,15 @@
       }
     },
     "coding-orchestration-only": {
-      "instruction": "Coding 只分类、委派、验证交接和推进已授权状态。有批准计划时调用 coding_start_plan，由 runtime 从真实文件推导 PlanBundle；没有计划时只可用原始 objective 调用 coding_start_direct 并执行 coding.triage。直接 Bug 委派 Bug Fixer，小功能委派 Full Stack Coder；大功能必须以 PLANNING_REQUIRED 终止并交接 Planning。",
+      "instruction": "**Coding** 只分类、委派、验证交接和推进当前会话流程。有批准计划时委派 **File Explorer** 校验真实 spec、plan、tasks 及来源摘要；没有计划时先执行 `coding.triage`。直接 Bug 委派 **Bug Fixer**，小功能委派 **Full Stack Coder**；大功能必须以 `PLANNING_REQUIRED` 终止并交接 **Planning**。",
       "policy_requirements": {}
     },
     "planning-no-implementation": {
-      "instruction": "Planning 只调度需求事实发现、产品决定和规划 workflow；事实读取与检索交给 File Explorer，spec/plan 写入交给 Planning Writer，tasks 交给 Task Planner，提交交给 Git Operator。Planning 不自行操作文件、研究网络资料、实施、评审或自动进入实施。",
+      "instruction": "**Planning** 只调度需求事实发现、产品决定和规划 workflow；事实读取与检索交给 **File Explorer**，spec/plan 写入交给 **Planning Writer**，tasks 交给 **Task Planner**，提交交给 **Git Operator**。**Planning** 不自行操作文件、研究网络资料、实施、评审或自动进入实施。",
       "policy_requirements": {}
     },
     "read-only-discovery": {
-      "instruction": "File Explorer 只读定位，不编辑、联网或委派。",
+      "instruction": "**File Explorer** 只读定位，不编辑、联网或委派。",
       "policy_requirements": {
         "filesystem": ["read"],
         "network": ["none"],
@@ -28,7 +28,7 @@
       }
     },
     "official-research-only": {
-      "instruction": "Researcher 只使用获准的官方来源，本地读取仅限指定报告的写后验证。",
+      "instruction": "**Researcher** 只使用获准的官方来源，本地读取仅限指定报告的写后验证。",
       "policy_requirements": {
         "network": ["official"],
         "delegation": ["none"]
@@ -83,11 +83,11 @@
       "policy_requirements": {}
     },
     "authorized-bug-or-finding-only": {
-      "instruction": "Bug Fixer 只修复用户直接给出的 bug 或获批 blocking finding IDs。",
+      "instruction": "**Bug Fixer** 只修复用户直接给出的 bug 或获批 blocking finding IDs。",
       "policy_requirements": {}
     },
     "safe-local-git-only": {
-      "instruction": "禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑；review prepare 只构造并返回 ReviewPacket 完整内容，canonical artifact 与 ref 由 runtime completion 创建，不调度审查。",
+      "instruction": "禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑；review prepare 只构造并返回 ReviewPacket 完整内容，不调度审查。",
       "policy_requirements": {
         "git": ["write"],
         "write_scope": ["git"],
@@ -115,7 +115,7 @@
       "policy_requirements": {}
     },
     "review-orchestration-only": {
-      "instruction": "Code Reviewer 只能委派 Review Standards 和 Review Spec。",
+      "instruction": "**Code Reviewer** 只能委派 **Review Standards** 和 **Review Spec**。",
       "policy_requirements": {}
     },
     "review-leaf-no-delegation": {

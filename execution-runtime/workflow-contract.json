@@ -1,132 +1,163 @@
 {
-  "digest": "ac5b8389aa09d9039a3348fe9e019d6b594ae6d0f3e1b72b7f318aca723ada19",
-  "version": 2,
-  "lease_minutes": 30,
-  "business_statuses": ["claimed", "busy", "selection_required", "correction_required", "decision_required", "complete", "failed", "superseded"],
-  "completion_results": ["completed", "retryable_failure", "needs_decision", "failed"],
-  "artifact_kinds": {
+  "digest": "b514970706ef41afd0d02b1dbdcb0ef0a4ed57700d195640105cf2e1c2b4d5f3",
+  "task_result": {
+    "required_fields": ["result", "summary"],
+    "results": ["completed", "retryable_failure", "needs_decision", "failed"],
+    "failure_fields": ["code", "message"]
+  },
+  "structured_content": {
     "planning_context": {
-      "required_fields": ["version", "plan_id", "task_mode", "goal", "users_consumers", "success_criteria", "scope", "constraints", "assumptions", "acceptance_criteria", "decisions", "open_questions"]
+      "required_fields": ["plan_id", "task_mode", "goal", "users_consumers", "success_criteria", "scope", "constraints", "assumptions", "acceptance_criteria", "decisions", "open_questions"],
+      "field_guidance": { "task_mode": "single|split", "decisions": "array<{code,revision,summary}>", "open_questions": "must be [] when completed" }
     },
     "change_evidence": {
-      "required_fields": ["base_sha", "head_sha", "path_changes", "acceptance_evidence", "verification"]
+      "required_fields": ["base_sha", "head_sha", "path_changes", "acceptance_evidence", "verification"],
+      "field_guidance": { "path_changes": "array<{record_type,index_status,worktree_status,path,source_path?}>", "acceptance_evidence": "array<{criterion,evidence}>", "verification": "array<{command,result}>" }
     },
     "review_packet": {
-      "required_fields": ["base_sha", "review_sha", "review_context", "slices"]
+      "required_fields": ["base_sha", "review_sha", "review_context", "slices"],
+      "field_guidance": { "review_context": "non-empty object", "slices": "non-empty array of complete committed slice objects" }
     },
     "review_axis_result": {
-      "required_fields": ["axis", "findings", "advisory_findings", "coverage"]
+      "required_fields": ["axis", "findings", "advisory_findings", "coverage"],
+      "field_guidance": { "axis": "standards|spec", "findings": "array<complete blocking finding>", "advisory_findings": "array<complete advisory finding>", "coverage": "unique non-empty slice IDs" }
     },
     "review_result": {
-      "required_fields": ["axis_results", "verdict", "finding_ids", "coverage"]
+      "required_fields": ["axis_results", "verdict", "finding_ids", "coverage"],
+      "field_guidance": { "axis_results": "exactly two raw review_axis_result objects: standards and spec", "verdict": "passed iff finding_ids is empty; otherwise blocking", "finding_ids": "sorted unique blocking IDs only", "coverage": "sorted unique union of both axes" }
+    }
+  },
+  "support_result_contracts": {
+    "researcher": {
+      "completed": { "required_fields": ["report_path", "citation_urls", "changed_paths", "checks"], "optional_fields": [] },
+      "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+      "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [] }
+    },
+    "document-maintainer": {
+      "completed": { "required_fields": ["changed_paths", "checks"], "optional_fields": [] },
+      "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+      "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [] }
+    },
+    "environment-operator": {
+      "completed": { "required_fields": ["operation", "changed_paths", "checks", "status"], "optional_fields": [] },
+      "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+      "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [] }
+    },
+    "review-standards": {
+      "completed": { "required_fields": ["review_axis_result"], "optional_fields": [] },
+      "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] }
+    },
+    "review-spec": {
+      "completed": { "required_fields": ["review_axis_result"], "optional_fields": [] },
+      "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] }
     }
   },
   "io_contracts": {
     "discovery_navigation": {
-      "input_contract": { "required_fields": ["objective", "terms", "known_paths"], "optional_fields": [], "required_artifact_kinds": [] },
+      "input_contract": { "required_fields": ["objective", "terms", "known_paths"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["entry_paths", "direct_dependencies", "facts", "open_decisions"], "optional_fields": [], "required_artifact_kinds": [] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["open_decisions"], "optional_fields": [], "required_artifact_kinds": [] }
+        "completed": { "required_fields": ["entry_paths", "direct_dependencies", "facts", "open_decisions"], "optional_fields": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["open_decisions"], "optional_fields": [] }
       }
     },
     "planning_confirmation": {
-      "input_contract": { "required_fields": ["discovery_receipt", "decision_history"], "optional_fields": [], "required_artifact_kinds": [] },
+      "input_contract": { "required_fields": ["discovery_result", "decision_history"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["plan_id", "task_mode", "planning_context_ref"], "optional_fields": [], "required_artifact_kinds": ["planning_context"] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [], "required_artifact_kinds": [] }
+        "completed": { "required_fields": ["plan_id", "task_mode", "planning_context"], "optional_fields": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [] }
       }
     },
     "planning_write": {
-      "input_contract": { "required_fields": ["target", "source_ref", "source_digest", "mode"], "optional_fields": ["deletion_decision_ref"], "required_artifact_kinds": ["planning_context"] },
+      "input_contract": { "required_fields": ["target", "source_content", "source_digest", "mode"], "optional_fields": ["deletion_decision"] },
       "result_contracts": {
-        "completed": { "required_fields": ["target", "sha256", "changed_paths", "mode"], "optional_fields": ["deleted_paths"], "required_artifact_kinds": [] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [], "required_artifact_kinds": [] }
+        "completed": { "required_fields": ["target", "sha256", "changed_paths", "mode"], "optional_fields": ["deleted_paths"] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [] }
       }
     },
     "planning_commit": {
-      "input_contract": { "required_fields": ["plan_id", "task_mode", "paths", "checks"], "optional_fields": [], "required_artifact_kinds": [] },
+      "input_contract": { "required_fields": ["plan_id", "task_mode", "paths", "checks"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["commit_sha", "committed_paths", "clean_state"], "optional_fields": [], "required_artifact_kinds": [] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["drift"], "optional_fields": [], "required_artifact_kinds": [] }
+        "completed": { "required_fields": ["commit_sha", "committed_paths", "clean_state"], "optional_fields": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["drift"], "optional_fields": [] }
       }
     },
     "local_commit": {
-      "input_contract": { "required_fields": ["base_sha", "path_changes", "checks", "evidence_ref"], "optional_fields": [], "required_artifact_kinds": ["change_evidence"] },
+      "input_contract": { "required_fields": ["base_sha", "path_changes", "checks", "change_evidence"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["commit_sha", "committed_paths", "clean_state"], "optional_fields": [], "required_artifact_kinds": [] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["drift"], "optional_fields": [], "required_artifact_kinds": [] }
+        "completed": { "required_fields": ["commit_sha", "committed_paths", "clean_state"], "optional_fields": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["drift"], "optional_fields": [] }
       }
     },
     "coding_prepare": {
-      "input_contract": { "required_fields": ["plan_digest", "task_mode", "target_base"], "optional_fields": [], "required_artifact_kinds": [] },
+      "input_contract": { "required_fields": ["plan_digest", "task_mode", "target_base"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["worktree", "branch", "base_sha", "initial_status"], "optional_fields": [], "required_artifact_kinds": [] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["drift"], "optional_fields": [], "required_artifact_kinds": [] }
+        "completed": { "required_fields": ["worktree", "branch", "base_sha", "initial_status"], "optional_fields": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["drift"], "optional_fields": [] }
       }
     },
     "direct_triage": {
-      "input_contract": { "required_fields": ["objective", "request_digest"], "optional_fields": [], "required_artifact_kinds": [] },
+      "input_contract": { "required_fields": ["objective", "request_digest"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["implementation_kind", "objective", "implementation_ids", "acceptance", "scope_evidence"], "optional_fields": [], "required_artifact_kinds": [] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["scope_evidence", "open_decision"], "optional_fields": [], "required_artifact_kinds": [] }
+        "completed": { "required_fields": ["implementation_kind", "objective", "implementation_ids", "acceptance", "scope_evidence"], "optional_fields": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["scope_evidence", "open_decision"], "optional_fields": [] }
       }
     },
     "implementation": {
-      "input_contract": { "required_fields": ["worktree", "base_sha", "spec_or_task_ids", "acceptance"], "optional_fields": [], "required_artifact_kinds": [] },
+      "input_contract": { "required_fields": ["worktree", "base_sha", "spec_or_task_ids", "acceptance"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["head_sha", "changed_paths", "change_evidence_ref"], "optional_fields": [], "required_artifact_kinds": ["change_evidence"] },
-        "retryable_failure": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [], "required_artifact_kinds": [] }
+        "completed": { "required_fields": ["head_sha", "changed_paths", "change_evidence"], "optional_fields": [] },
+        "retryable_failure": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [] }
       }
     },
     "finding_fix": {
-      "input_contract": { "required_fields": ["worktree", "base_sha", "finding_ids", "acceptance", "review_result_ref"], "optional_fields": [], "required_artifact_kinds": ["review_result"] },
+      "input_contract": { "required_fields": ["worktree", "base_sha", "finding_ids", "acceptance", "review_result"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["head_sha", "changed_paths", "change_evidence_ref", "fixed_finding_ids"], "optional_fields": [], "required_artifact_kinds": ["change_evidence"] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [], "required_artifact_kinds": [] }
+        "completed": { "required_fields": ["head_sha", "changed_paths", "change_evidence", "fixed_finding_ids"], "optional_fields": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [] }
       }
     },
     "review_prepare": {
-      "input_contract": { "required_fields": ["base_sha", "review_sha", "review_context", "slices"], "optional_fields": [], "required_artifact_kinds": [] },
+      "input_contract": { "required_fields": ["base_sha", "review_sha", "review_context", "slices"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["review_packet_ref"], "optional_fields": [], "required_artifact_kinds": ["review_packet"] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["drift"], "optional_fields": [], "required_artifact_kinds": [] }
+        "completed": { "required_fields": ["review_packet"], "optional_fields": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["drift"], "optional_fields": [] }
       }
     },
     "dual_axis_review": {
-      "input_contract": { "required_fields": ["review_packet_ref", "assigned_axes"], "optional_fields": [], "required_artifact_kinds": ["review_packet"] },
+      "input_contract": { "required_fields": ["review_packet", "assigned_axes"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["review_result_ref", "finding_ids", "coverage"], "optional_fields": [], "required_artifact_kinds": ["review_result"] },
-        "retryable_failure": { "required_fields": ["review_result_ref", "finding_ids", "coverage"], "optional_fields": [], "required_error_fields": ["code", "message", "finding_ids"], "required_artifact_kinds": ["review_result"] },
-        "failed": { "required_fields": [], "optional_fields": ["review_result_ref"], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["review_result_ref", "finding_ids", "coverage"], "optional_fields": [], "required_artifact_kinds": ["review_result"] }
+        "completed": { "required_fields": ["review_result", "finding_ids", "coverage"], "optional_fields": [] },
+        "retryable_failure": { "required_fields": ["review_result", "finding_ids", "coverage"], "optional_fields": [], "required_error_fields": ["code", "message", "finding_ids"] },
+        "failed": { "required_fields": [], "optional_fields": ["review_result"], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["review_result", "finding_ids", "coverage"], "optional_fields": [] }
       }
     },
     "git_lifecycle": {
-      "input_contract": { "required_fields": ["main_sha", "feature_sha", "review_sha", "frozen_state"], "optional_fields": [], "required_artifact_kinds": [] },
+      "input_contract": { "required_fields": ["main_sha", "feature_sha", "review_sha", "frozen_state"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["resulting_sha", "state", "cleanup_evidence"], "optional_fields": [], "required_artifact_kinds": [] },
-        "retryable_failure": { "required_fields": ["resulting_sha", "state", "cleanup_evidence"], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["drift"], "optional_fields": [], "required_artifact_kinds": [] }
+        "completed": { "required_fields": ["resulting_sha", "state", "cleanup_evidence"], "optional_fields": [] },
+        "retryable_failure": { "required_fields": ["resulting_sha", "state", "cleanup_evidence"], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["drift"], "optional_fields": [] }
       }
     },
     "planning_complete": {
-      "input_contract": { "required_fields": ["objective", "refs", "acceptance"], "optional_fields": [], "required_artifact_kinds": [] },
+      "input_contract": { "required_fields": ["objective", "paths", "acceptance"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["refs", "checks"], "optional_fields": [], "required_artifact_kinds": [] },
-        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
-        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [], "required_artifact_kinds": [] }
+        "completed": { "required_fields": ["paths", "checks"], "optional_fields": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [] }
       }
     }
   },

@@ -10,13 +10,13 @@
 4. `执行循环`
 5. `完成标准`
 6. `决策条件`
-7. `结果回执`
+7. `结果返回`
 
-模板显式保留加粗角色名，并只写角色独有判断。`能力与控制` 由 roles、controls、policies 和 `skills.json` 所有权注入；`Actions 与输入` 由 workflow contract 的命名 I/O contract、owner 和结果分支注入；`结果回执` 对子代理注入固定 TaskResult，对 Planning/Coding 主代理注入窄工具 completion 规则。只有 Planning/Coding 获得启动、恢复、claim、answer 和 completion 工具；其他角色不获得运行状态工具。`routing.md` 仅参与 digest 和治理说明，不复制进角色 prompt。Planning Writer 与 Task Planner 可在“执行循环”内用带 `markdown` info string 的 fenced code block 维护 `spec.md`、`plan.md` 和 task 文件的统一模板。
+模板显式保留加粗角色名，并只写角色独有判断。`能力与控制` 由 roles、controls、policies 和 `skills.json` 所有权注入；`Actions 与输入` 由 workflow contract 的命名 I/O contract、owner 和结果分支注入；`结果返回` 注入固定 `TaskResult` 规则。**Planning**/**Coding** 仅获得 `Task`，其他角色按职责获得最小工具集。`routing.md` 仅参与 digest 和治理说明，不复制进角色 prompt。
 
-编译器必须验证：每个 contract action 恰有一个 owner；owner 的角色声明该 action；能力、工具和 control 一致；所有 action/结果字段有结构覆盖。禁止用中文短语、表格行或历史 marker 判断状态机完整性。
+编译器必须验证：每个 contract action 恰有一个 owner；owner 的角色声明该 action；能力、工具和 control 一致；所有 action/结果字段均在 `task-result-schemas.json` 中有类型覆盖，且其 `contract_digest` 与 workflow contract 一致。禁止用中文短语、表格行或历史 marker 判断转换完整性。
 
-单个编译 prompt 不超过 8,000 字符，14 个总量不超过 45,000 字符。Coding、Code Reviewer 和 Git Operator 不携带完整 schema、重试算法或 ReviewPacket 正文。
+单个编译 prompt 不超过 8,000 字符，14 个总量不超过 45,000 字符。**Coding**、**Code Reviewer** 和 **Git Operator** 不携带完整 schema 或 ReviewPacket 正文。
 
 ## Skill 接口
 
@@ -28,10 +28,10 @@
 4. `条件分支`
 5. `最终验收`
 
-每步使用祈使表达并以机器或人工可检查的完成标准结束。分支细节只放一级 `references/`；可重复、易错或解析型逻辑放 `scripts/`。正文不复制 Agent 的状态、Git、重试或交接协议，只引用 runtime action 和结果。
+每步使用祈使表达并以机器或人工可检查的完成标准结束。分支细节只放一级 `references/`；可重复、易错或解析型逻辑放 `scripts/`。正文不复制 Agent 的 Git、重试或交接协议，只引用 action 和结果。
 
-单个 Skill 正文不超过 4,000 字符，五个总量不超过 12,000 字符。`skills.json` 确定 owner、display name、25–64 字符短描述和 default prompt；Codex 用每角色 `skills.config`、Claude 用预加载列表且不开放通用 Skill 工具、OpenCode 用名称级 permission，只允许 owner 调用。`openai.yaml` 的所有字符串加引号，default prompt 显式包含 `$skill-name`。
+单个 Skill 正文不超过 4,000 字符，五个总量不超过 12,000 字符。`skills.json` 确定 owner、display name、短描述和 default prompt；Codex 用每角色 `skills.config`、Claude 用预加载列表、OpenCode 用名称级 permission，只允许 owner 调用。
 
 ## 交接
 
-子代理在聊天中只返回固定 TaskResult；主代理提交 lease、result、summary 和 contract 结果字段。完整规划上下文、变更证据、审查上下文、检查输出和叶子结果由 completion 事务写入内部 artifact。响应截断或 JSON 损坏时通过恢复与 claim 窄工具读取 canonical 状态，不重做 action。
+子代理在聊天中只返回一个可解析的 JSON `TaskResult` 对象；`planning_context`、`change_evidence`、`review_packet`、`review_axis_result` 与 `review_result` 直接携带完整 JSON 内容。`task-result-schemas.json` 约束顶层与嵌套字段类型，主代理验证后将所需对象原样传给下一 action。流程只存在于当前会话；中断后根据计划、Git 状态和仓库事实重新定位。

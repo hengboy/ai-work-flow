@@ -11,18 +11,7 @@ const LEGACY_PRIMARY_AGENT_ID = 'orchestrator';
 const LEGACY_GIT_OPERATOR_AGENT_ID = 'git-committer';
 const LEGACY_CODE_REVIEWER_AGENT = 'AGENT.md';
 const WORKFLOW_MCP_ID = 'ai-work-flow';
-const WORKFLOW_CONTRACT_PATH = [
-  resolve(import.meta.dirname, '..', '..', 'execution-runtime', 'workflow-contract.json'),
-  resolve(import.meta.dirname, '..', 'execution-runtime', 'workflow-contract.json'),
-].find(existsSync);
-const WORKFLOW_CONTRACT = JSON.parse(readFileSync(WORKFLOW_CONTRACT_PATH, 'utf8'));
-const WORKFLOW_TOOLS = [
-  'coding_start_direct', 'coding_start_plan', 'planning_start', 'planning_start_handoff',
-  'workflow_resume', 'workflow_claim_next', 'workflow_answer',
-  ...[...new Set(Object.values(WORKFLOW_CONTRACT.actions).map((action) => action.io_contract))].sort().map((name) => `workflow_complete_${name}`),
-];
-const OPENCODE_WORKFLOW_TOOLS = WORKFLOW_TOOLS.map((tool) => `${WORKFLOW_MCP_ID}_${tool}`);
-const OPENCODE_PERMISSION_KEYS = ['read', 'edit', 'glob', 'grep', 'bash', 'task', 'skill', 'webfetch', 'websearch', 'question', 'external_directory', ...OPENCODE_WORKFLOW_TOOLS];
+const OPENCODE_PERMISSION_KEYS = ['read', 'edit', 'glob', 'grep', 'bash', 'task', 'skill', 'webfetch', 'websearch', 'question', 'external_directory'];
 const OPENCODE_EXTERNAL_WORKTREE_CONTROLS = new Set(['read-only-discovery', 'implementation-worktree-only', 'safe-local-git-only', 'review-read-only']);
 const OPENCODE_READ_ONLY_BASH_COMMANDS = [
   'git branch --show-current', 'git diff', 'git grep', 'git log', 'git ls-files', 'git rev-parse', 'git show', 'git status',
@@ -55,7 +44,7 @@ function opencodeReadOnlyBashPermission() {
   return permission;
 }
 
-function brokerPath(paths) {
+function legacyBrokerPath(paths) {
   return resolve(paths.dir, 'execution-runtime', 'workflow-broker.mjs');
 }
 
@@ -65,11 +54,13 @@ function canonicalJson(value) {
   return value;
 }
 
-function mergeBrokerEntry(entries, expected, path, label) {
+function removeLegacyBrokerEntry(entries, expected, path, label) {
   if (Object.hasOwn(entries, WORKFLOW_MCP_ID) && JSON.stringify(canonicalJson(entries[WORKFLOW_MCP_ID])) !== JSON.stringify(canonicalJson(expected))) {
-    fail(`Unmanaged ${label} workflow broker config already exists in ${path}.`);
+    fail(`Conflicting ${label} ai-work-flow MCP config exists in ${path}.`);
   }
-  return { ...entries, [WORKFLOW_MCP_ID]: expected };
+  const updated = { ...entries };
+  delete updated[WORKFLOW_MCP_ID];
+  return updated;
 }
 
 // --- Shared functions ---
@@ -164,18 +155,22 @@ function codexUpdateConfig(source, path) {
   return `${source.slice(0, end)}${body.endsWith('\n') || !body ? '' : '\n'}max_depth = ${MAX_AGENT_DEPTH}\n${source.slice(end)}`;
 }
 
-function codexBrokerConfig(source, path, paths) {
+function codexRemoveLegacyBroker(source, path, paths) {
   const begin = '# ai-work-flow:workflow-broker:begin';
   const end = '# ai-work-flow:workflow-broker:end';
-  const block = `${begin}\n[mcp_servers.${WORKFLOW_MCP_ID}]\ncommand = "node"\nargs = [${tomlString(brokerPath(paths))}]\n${end}`;
+  const block = `${begin}\n[mcp_servers.${WORKFLOW_MCP_ID}]\ncommand = "node"\nargs = [${tomlString(legacyBrokerPath(paths))}]\n${end}`;
   const start = source.indexOf(begin);
   const finish = source.indexOf(end);
   if ((start === -1) !== (finish === -1) || (start !== -1 && start >= finish) || source.indexOf(begin, start + 1) !== -1 || source.indexOf(end, finish + 1) !== -1) {
-    fail(`Cannot safely update workflow broker block in ${path}.`);
+    fail(`Cannot safely remove legacy workflow broker block in ${path}.`);
   }
-  if (start !== -1) return `${source.slice(0, start)}${block}${source.slice(finish + end.length)}`;
-  if (/^\[mcp_servers\.ai-work-flow\]\s*$/m.test(source)) fail(`Unmanaged workflow broker config already exists in ${path}.`);
-  return `${source.replace(/\s*$/, '')}${source.trim() ? '\n\n' : ''}${block}\n`;
+  if (start !== -1) {
+    const existing = source.slice(start, finish + end.length);
+    if (existing !== block) fail(`Conflicting Codex ai-work-flow MCP config exists in ${path}.`);
+    return `${source.slice(0, start).replace(/[ \t]*\n?$/, '')}${source.slice(finish + end.length).replace(/^\n?/, '')}${source.trim() ? '\n' : ''}`;
+  }
+  if (/^\[mcp_servers\.ai-work-flow\]\s*$/m.test(source)) fail(`Conflicting Codex ai-work-flow MCP config exists in ${path}.`);
+  return source;
 }
 
 // --- Claude strategy ---
@@ -185,7 +180,7 @@ function claudePermission(policy) {
 }
 
 function claudeTools(role) {
-  return (role.tools.length ? role.tools : ['Task']).filter((tool) => tool !== 'Skill').flatMap((tool) => tool === 'WorkflowRuntime' ? WORKFLOW_TOOLS.map((name) => `mcp__${WORKFLOW_MCP_ID}__${name}`) : tool);
+  return (role.tools.length ? role.tools : ['Task']).filter((tool) => tool !== 'Skill');
 }
 
 function yamlValue(value) {
@@ -216,10 +211,13 @@ function claudeUpdateConfig(source, path, roles, paths) {
   let current;
   try { current = source ? JSON.parse(source) : {}; }
   catch (error) { fail(`Cannot safely parse existing Claude config at ${path}: ${error.message}`); }
-  if (!isPlainObject(current) || (current.mcpServers !== undefined && !isPlainObject(current.mcpServers))) fail(`Cannot safely merge Claude MCP config at ${path}.`);
-  const expected = { type: 'stdio', command: 'node', args: [brokerPath(paths)] };
-  const mcpServers = mergeBrokerEntry(current.mcpServers ?? {}, expected, path, 'Claude');
-  return `${JSON.stringify({ ...current, mcpServers }, null, 2)}\n`;
+  if (!isPlainObject(current) || (current.mcpServers !== undefined && !isPlainObject(current.mcpServers))) fail(`Cannot safely inspect Claude MCP config at ${path}.`);
+  const expected = { type: 'stdio', command: 'node', args: [legacyBrokerPath(paths)] };
+  const mcpServers = removeLegacyBrokerEntry(current.mcpServers ?? {}, expected, path, 'Claude');
+  const updated = { ...current };
+  if (Object.keys(mcpServers).length) updated.mcpServers = mcpServers;
+  else delete updated.mcpServers;
+  return `${JSON.stringify(updated, null, 2)}\n`;
 }
 
 // --- OpenCode strategy ---
@@ -240,7 +238,6 @@ export function opencodePermission(role, policy) {
   }
   if (role.controls.includes('read-only-discovery')) permission.bash = opencodeReadOnlyBashPermission();
   if (role.controls.some((control) => OPENCODE_EXTERNAL_WORKTREE_CONTROLS.has(control))) permission.external_directory = 'allow';
-  if (role.tools.includes('WorkflowRuntime')) for (const tool of OPENCODE_WORKFLOW_TOOLS) permission[tool] = 'allow';
   if (policy.delegation === 'allowed') permission.task = 'allow';
   if (policy.delegation === 'none') permission.task = 'deny';
   if (role.id === 'task-planner') {
@@ -311,9 +308,12 @@ function opencodeUpdateConfig(source, path, roles, paths) {
   if (agent.explore === false) delete agent.explore;
   const defaultPrimary = roles.find((role) => role.default_primary === true);
   if (!defaultPrimary) fail('Cannot configure OpenCode without a default primary role.');
-  const expected = { type: 'local', command: ['node', brokerPath(paths)], enabled: true };
-  const mcp = mergeBrokerEntry(current.mcp ?? {}, expected, path, 'OpenCode');
-  return `${JSON.stringify({ ...current, agent, mcp, subagent_depth: Math.max(MAX_AGENT_DEPTH, current.subagent_depth ?? 0), default_agent: defaultPrimary.id }, null, 2)}\n`;
+  const expected = { type: 'local', command: ['node', legacyBrokerPath(paths)], enabled: true };
+  const mcp = removeLegacyBrokerEntry(current.mcp ?? {}, expected, path, 'OpenCode');
+  const updated = { ...current, agent, subagent_depth: Math.max(MAX_AGENT_DEPTH, current.subagent_depth ?? 0), default_agent: defaultPrimary.id };
+  if (Object.keys(mcp).length) updated.mcp = mcp;
+  else delete updated.mcp;
+  return `${JSON.stringify(updated, null, 2)}\n`;
 }
 
 function digest(contents) {
@@ -397,7 +397,7 @@ const strategies = {
     render: codexRender,
     globalConfig: {
       path: (paths) => resolve(paths.codexDir, 'config.toml'),
-      update: (source, path, roles, paths) => codexBrokerConfig(codexUpdateConfig(source, path), path, paths)
+      update: (source, path, roles, paths) => codexRemoveLegacyBroker(codexUpdateConfig(source, path), path, paths)
     },
     marker: {
       path: (paths) => resolve(paths.codexDir, 'AGENTS.md'),
@@ -430,10 +430,6 @@ const strategies = {
 };
 
 function capabilityLevel(platform, role, capability, requested) {
-  if (capability === 'workflow_runtime') {
-    if (!role.tools.includes('WorkflowRuntime')) return platform === 'codex' ? 'instruction-only' : 'enforced';
-    return platform === 'codex' ? 'instruction-only' : 'enforced';
-  }
   if (capability === 'filesystem') {
     if (platform === 'codex') return requested === 'none' ? 'unsupported' : 'enforced';
     if (platform === 'opencode') return 'enforced';
@@ -456,7 +452,7 @@ export function capabilityEvidence(platform, role, policy) {
   return Object.fromEntries(Object.entries(levels).map(([capability, level]) => [capability, {
     requested: capability === 'delegation_targets' ? role.delegates : policy[capability],
     level,
-    evidence: level === 'enforced' ? [capability === 'workflow_runtime' ? 'narrow MCP workflow tool allowlist' : 'platform permission key'] : []
+    evidence: level === 'enforced' ? ['platform permission key'] : []
   }]));
 }
 

@@ -102,6 +102,6 @@ N/A
 
 planning context/spec 未验证、来源摘要不匹配或 mode 漂移时失败，不猜测、不修订另一个规划工件。
 
-## 结果回执
+## 结果返回
 
-<!-- ai-work-flow:receipt -->
+<!-- ai-work-flow:task-result -->

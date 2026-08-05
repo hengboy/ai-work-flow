@@ -9,7 +9,7 @@ description: 使用项目索引只读定位业务入口，或在已授权实现�
 
 # 必要前置条件
 
-- 首先选择一个分支：只读定位直接执行 Skill；随实现维护只在主代理 dispatch 的 `coding.implement` 内执行。两种分支都不创建一次性 workflow run。
+- 首先选择一个分支：只读定位直接执行 Skill；随实现维护只在主代理委派的 `coding.implement` 内执行。
 - 根 `MEMORY.md` 或索引缺失时先使用 `$init-ai-work-flow`。
 
 # 步骤

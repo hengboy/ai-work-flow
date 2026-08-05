@@ -55,6 +55,6 @@ outputs 汇总完整 changed paths、SHA-256 与 split mode，且覆盖完整、
 
 只有任务颗粒度会改变并发或交付边界时请求决定；依赖关系由计划事实确定。
 
-## 结果回执
+## 结果返回
 
-<!-- ai-work-flow:receipt -->
+<!-- ai-work-flow:task-result -->

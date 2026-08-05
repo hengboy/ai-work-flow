@@ -3,13 +3,13 @@
     {
       "id": "coding",
       "name": "Coding",
-      "description": "分诊直接请求或恢复计划运行，并持续调度 ready action，直到终态或单一决策。",
+      "description": "分诊直接请求，并在当前会话持续调度实施、提交、审查、修复与整合。",
       "kind": "primary",
       "default_primary": true,
       "policy": "coding",
       "controls": ["no-direct-workspace-operations", "coding-orchestration-only"],
       "delegates": ["file-explorer", "researcher", "document-maintainer", "planning-writer", "full-stack-coder", "bug-fixer", "git-operator", "environment-operator", "code-reviewer"],
-      "tools": ["WorkflowRuntime", "Task"],
+      "tools": ["Task"],
       "actions": ["coding.triage"]
     },
     {
@@ -20,13 +20,13 @@
       "policy": "planning",
       "controls": ["no-direct-workspace-operations", "planning-no-implementation"],
       "delegates": ["file-explorer", "researcher", "planning-writer", "task-planner", "git-operator"],
-      "tools": ["WorkflowRuntime", "Task"],
+      "tools": ["Task"],
       "actions": ["planning.confirm", "planning.complete"]
     },
     {
       "id": "file-explorer",
       "name": "File Explorer",
-      "description": "索引优先执行只读发现，并可读取 workflow status。",
+      "description": "索引优先执行只读发现并返回仓库事实。",
       "kind": "subagent",
       "policy": "discover",
       "controls": ["read-only-discovery"],
@@ -125,7 +125,7 @@
     {
       "id": "code-reviewer",
       "name": "Code Reviewer",
-      "description": "验证 runtime 冻结的 ReviewPacket，编排并聚合完整双轴审查。",
+      "description": "验证完整 ReviewPacket，编排并聚合完整双轴审查。",
       "kind": "subagent",
       "policy": "review",
       "controls": ["review-read-only", "fixed-review-range-only", "review-orchestration-only"],

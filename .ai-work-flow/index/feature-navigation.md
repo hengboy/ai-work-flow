@@ -1,12 +1,10 @@
 | 功能/关键词 | 入口路径 | 模块边界 |
 | --- | --- | --- |
-| 安装、生成、环境管理 | `agent-build/install.mjs` -> `agent-build/runtime/workflow.mjs` | 事务式安装配置、runtime、Skills 和三平台 Agents；清理明确列出的旧受管理文件。 |
-| Workflow 契约与公共结构 | `execution-runtime/workflow-contract.json`、`execution-runtime/lib/workflow-contract.mjs` | 唯一声明 workflow、phase、action owner、转换、预算、决策代码和结构校验。 |
-| v2 Run、PlanBundle、lease、completion、受管 worktree、恢复与决策 | `execution-runtime/workflow-broker.mjs`、`execution-runtime/lib/workflow-broker.mjs` -> `execution-runtime/lib/workflow-v2-store.mjs` | broker 只注册窄工具；store 推导仓库/action/input、校验 `.worktrees/` prepare 结果、创建内部 artifacts，并持久化到 `.git/ai-work-flow/v2/`。 |
-| 旧 runtime 与 runtime identity | `execution-runtime/lib/workflow-store.mjs`、`execution-runtime/lib/artifact-store.mjs`、`execution-runtime/lib/review-packet.mjs`、`execution-runtime/lib/runtime-identity.mjs`、`execution-runtime/runtime-identity.json` | v1 store/artifact 实现不再由 broker 注册；旧数据保留但忽略。runtime identity 覆盖一次性安装的新 broker catalog。 |
-| Agent 角色与七段 prompt 编译 | `agent-build/config/{roles,controls,policies}.json`、`agent-build/templates/*.md`、`agent-build/runtime/{asset-catalog,platform-adapter}.mjs` | 只有 Planning/Coding 获得窄状态工具；子代理返回 TaskResult；三平台工具 allowlist 与 Skill allowlist 确定性生成。 |
+| 安装、生成、环境管理 | `agent-build/install.mjs` -> `agent-build/runtime/workflow.mjs` | 事务式安装配置、contract、Skills 和三平台 Agents；完整 install 清理历史仓库状态。 |
+| Workflow 契约与公共结构 | `execution-runtime/workflow-contract.json`、`execution-runtime/task-result-schemas.json`、`execution-runtime/lib/workflow-contract.mjs` | 声明 action owner、转换、`TaskResult` 字段及其 JSON 类型、直接结构化内容、预算和决策代码，并提供生成期校验。 |
+| Agent 角色与七段 prompt 编译 | `agent-build/config/{roles,controls,policies}.json`、`agent-build/templates/*.md`、`agent-build/runtime/{asset-catalog,platform-adapter}.mjs` | **Planning**/**Coding** 只有 `Task`；按 action 注入返回验收模板与复杂字段约束；三平台不注册 workflow MCP。 |
 | Skills 元数据与生成 | `agent-build/config/skills.json`、`agent-build/runtime/skill-catalog.mjs`、`agent-build/generate-skill-metadata.mjs` | 五个 Skills、frontmatter 和 `agents/openai.yaml` 的单一元数据来源与确定性校验。 |
 | 项目上下文初始化 | `skills/init-ai-work-flow/SKILL.md`、`skills/init-ai-work-flow/references/project-context-contract.md`、`skills/init-ai-work-flow/scripts/validate-project-context.mjs` | 联合维护 MEMORY、导航和项目指令，验证章节唯一性与路径真实性。 |
-| 代码导航 | `skills/project-code-navigation/SKILL.md`、`skills/project-code-navigation/references/*.md`、`skills/project-code-navigation/scripts/validate-navigation.mjs` | File Explorer 只读定位；Full Stack Coder 随入口/职责变化维护。 |
-| Prompt 格式规范 | `docs/prompt-format.md` | 七段 Agent 接口、五段 Skill 接口、字符预算和 artifact 交接规则。 |
-| 接口测试 | `test/agent-assets.test.mjs`、`test/workflow-broker.test.mjs`、`test/workflow-runtime.test.mjs` | 覆盖三平台窄工具权限、v2 写入隔离、幂等启动、唯一/多 run 恢复、lease 接管、重复 completion、Planning handoff 和 PlanBundle 摘要校验。 |
+| 代码导航 | `skills/project-code-navigation/SKILL.md`、`skills/project-code-navigation/references/*.md`、`skills/project-code-navigation/scripts/validate-navigation.mjs` | **File Explorer** 只读定位；**Full Stack Coder** 随入口或职责变化维护。 |
+| Prompt 格式规范 | `docs/prompt-format.md` | 七段 Agent 接口、五段 Skill 接口、字符预算和直接内容交接规则。 |
+| 接口测试 | `test/agent-assets.test.mjs`、`test/workflow-contract.test.mjs` | 覆盖 contract、`TaskResult` 类型、无状态工具生成、旧配置清理和安装迁移。 |

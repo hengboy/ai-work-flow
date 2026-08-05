@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import process from 'node:process';
 
@@ -10,13 +11,6 @@ import { fail, isPlainObject, readJson, write } from './shared.mjs';
 import { applyGenerationPlan, capabilityMatrix, controlMatrix, generationStatus, planGeneration } from './platform-adapter.mjs';
 import { applyTransaction, recoverTransaction } from './transaction.mjs';
 
-const runtimeIdentityModulePath = [
-  resolve(import.meta.dirname, '..', '..', 'execution-runtime', 'lib', 'runtime-identity.mjs'),
-  resolve(import.meta.dirname, '..', 'execution-runtime', 'lib', 'runtime-identity.mjs')
-].find((candidate) => existsSync(candidate));
-if (!runtimeIdentityModulePath) throw new Error('Missing execution runtime identity module');
-const { loadAndAssertRuntimeIdentity, RUNTIME_IDENTITY_EXCLUDED_DIRECTORIES } = await import(runtimeIdentityModulePath);
-
 const ROOT = resolve(import.meta.dirname, '..', '..');
 const SKILLS_ROOT = resolve(ROOT, 'skills');
 const PLATFORMS = new Set(['codex', 'claude', 'opencode']);
@@ -26,34 +20,6 @@ const INSTALL_MISSING_ROLE_DEFAULTS = ['planning', 'planning-writer', 'task-plan
 const OBSOLETE_SKILLS = [
   `run-${['m', 'att'].join('')}-spec-to-completion`,
   'init-project-code-navigation'
-];
-const OBSOLETE_EXECUTION_RUNTIME_FILES = [
-  'review-manifest-cli.mjs',
-  'runtime-provenance.json',
-  `${['check', 'point-schema.json'].join('')}`,
-  'completion-result-schema.json',
-  `${['execution', '-cli.mjs'].join('')}`,
-  `${['execution', '-plan-schema.json'].join('')}`,
-  'handoff-result-schema.json',
-  'package-lock.json',
-  'package.json',
-  `${['state', '-store.mjs'].join('')}`,
-  `lib/${['check', 'point-integrity.mjs'].join('')}`,
-  `lib/${['check', 'point.mjs'].join('')}`,
-  'lib/completion-adapter.mjs',
-  'lib/directory-review-manifest.mjs',
-  'lib/execution-coding.mjs',
-  'lib/integration-lifecycle.mjs',
-  'lib/issue-tracker.mjs',
-  'lib/pre-merge-stash.mjs',
-  'lib/review-manifest.mjs',
-  'lib/review-result.mjs',
-  'lib/runtime-provenance.mjs',
-  'lib/spec-intake.mjs',
-  `lib/${['tick', 'et-frontier.mjs'].join('')}`,
-  'lib/time.mjs',
-  'lib/validation.mjs',
-  'lib/worktree-lifecycle.mjs'
 ];
 const LEGACY_ROLE_RENAMES = new Map([
   [LEGACY_PRIMARY_AGENT_ID, 'coding'],
@@ -159,14 +125,6 @@ function sourceTreeEntries(source, prefix = '', excludedNames = new Set()) {
   return entries;
 }
 
-function assertSourceRuntimeIdentity(source) {
-  try {
-    return loadAndAssertRuntimeIdentity(source).identity;
-  } catch (error) {
-    fail(`Execution runtime source identity is stale or invalid. Regenerate it before install/generate: ${error.message}`);
-  }
-}
-
 function treeMatches(destination, entries, excludedNames = new Set()) {
   if (!existsSync(destination)) return false;
   const installed = [];
@@ -226,8 +184,7 @@ function planExecutionRuntime(paths) {
   const plan = [];
   const source = [resolve(ROOT, 'execution-runtime'), resolve(import.meta.dirname, '..', 'execution-runtime')].find((candidate) => existsSync(candidate));
   if (!source) fail('Missing execution runtime');
-  assertSourceRuntimeIdentity(source);
-  addSourceTree(plan, source, resolve(paths.dir, 'execution-runtime'), new Set(RUNTIME_IDENTITY_EXCLUDED_DIRECTORIES));
+  addTreeStep(plan, source, resolve(paths.dir, 'execution-runtime'), new Set(['node_modules']));
   return plan;
 }
 
@@ -249,12 +206,23 @@ function planObsoleteManagedContent(paths) {
       if (hasPathEntry(skill)) plan.push({ type: 'delete-tree', path: skill });
     }
   }
-  const installedRuntime = resolve(paths.dir, 'execution-runtime');
-  for (const relativePath of OBSOLETE_EXECUTION_RUNTIME_FILES) {
-    const target = resolve(installedRuntime, relativePath);
-    if (hasPathEntry(target)) plan.push({ type: 'delete', path: target });
-  }
   return plan;
+}
+
+function currentGitCommonDir() {
+  try {
+    const value = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd: process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return value ? resolve(process.cwd(), value) : null;
+  } catch {
+    return null;
+  }
+}
+
+function planRepositoryStateCleanup() {
+  const commonDir = currentGitCommonDir();
+  if (!commonDir) return [];
+  const state = resolve(commonDir, 'ai-work-flow');
+  return hasPathEntry(state) ? [{ type: 'delete-tree', path: state }] : [];
 }
 
 function loadConfig(assets, allowDefaults = false, platforms = [...PLATFORMS]) {
@@ -368,9 +336,10 @@ function listEnvironments() {
 }
 
 function transactionOptions(paths) {
+  const gitCommonDir = currentGitCommonDir();
   return {
     transactionPath: paths.generationTransaction,
-    roots: [paths.home, paths.configHome, paths.codexDir, paths.claudeDir]
+    roots: [paths.home, paths.configHome, paths.codexDir, paths.claudeDir, ...(gitCommonDir ? [gitCommonDir] : [])]
   };
 }
 
@@ -618,7 +587,8 @@ export function runCli(argv) {
       ...planManagedSkills(lifecycle, paths),
       ...planExecutionRuntime(paths),
       ...planObsoleteManagedContent(paths),
-      ...planCoreRuntime(assets, lifecycle, paths)
+      ...planCoreRuntime(assets, lifecycle, paths),
+      ...planRepositoryStateCleanup()
     ];
     for (const [path, contents] of installation.environmentContents) addWriteStep(plan, path, contents);
     addWriteStep(plan, paths.routing, assets.routing);
