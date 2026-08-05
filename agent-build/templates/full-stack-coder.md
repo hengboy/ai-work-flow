@@ -14,7 +14,7 @@
 
 先按 action 进入互斥分支：
 
-- `coding.implement`：验证 worktree、base SHA、spec/task IDs 与验收；以公开接口失败检查驱动最小实现，持续运行聚焦检查。将 base/head、PathChange、验收证据和验证记录写成 `change_evidence` artifact。新增、移动、删除文件或改变入口/API/路由/主职责时，同轮维护导航和必要 MEMORY。
+- `coding.implement`：验证 worktree、base SHA、spec/task IDs 与验收；计划来源绑定批准工件，直接来源绑定 `coding.triage` 冻结的小功能 objective/IDs/acceptance。以公开接口失败检查驱动最小实现，持续运行聚焦检查。将 base/head、PathChange、验收证据和验证记录写成 `change_evidence` artifact。新增、移动、删除文件或改变入口/API/路由/主职责时，同轮维护导航和必要 MEMORY。
 - `project.initialize`：验证 project root 和仓库事实后，必须调用 `$init-ai-work-flow`，只创建或补齐 MEMORY、索引和项目维护约束，并运行其验证脚本；不得进入实现分支。
 
 直接委派 File Explorer 时生成稳定 call ID，并用原始 input 调用 `support_validate`；验证后才消费其结果。

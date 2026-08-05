@@ -3,14 +3,14 @@
     {
       "id": "coding",
       "name": "Coding",
-      "description": "读取工作流快照并持续调度 ready action，直到终态或单一决策。",
+      "description": "分诊直接请求或恢复计划运行，并持续调度 ready action，直到终态或单一决策。",
       "kind": "primary",
       "default_primary": true,
       "policy": "coding",
       "controls": ["no-direct-workspace-operations", "coding-orchestration-only"],
       "delegates": ["file-explorer", "researcher", "document-maintainer", "planning-writer", "full-stack-coder", "bug-fixer", "git-operator", "environment-operator", "code-reviewer"],
       "tools": ["WorkflowState", "Task"],
-      "actions": []
+      "actions": ["coding.triage"]
     },
     {
       "id": "planning",
@@ -98,7 +98,7 @@
       "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "authorized-bug-or-finding-only", "no-git-mutation"],
       "delegates": ["file-explorer", "researcher", "document-maintainer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Task", "WorkflowState"],
-      "actions": ["coding.fix_1", "coding.fix_2"]
+      "actions": ["coding.fix_direct", "coding.fix_1", "coding.fix_2"]
     },
     {
       "id": "git-operator",
@@ -109,7 +109,7 @@
       "controls": ["safe-local-git-only"],
       "delegates": [],
       "tools": ["Read", "Bash", "Skill", "WorkflowState"],
-      "actions": ["planning.commit", "coding.prepare", "coding.commit", "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2", "coding.integrate", "coding.resync_1", "coding.prepare_resync_review_1", "coding.integrate_1", "coding.resync_2", "coding.prepare_resync_review_2", "coding.integrate_2", "coding.cleanup"]
+      "actions": ["planning.commit", "coding.prepare", "coding.prepare_direct_bug", "coding.commit", "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2", "coding.integrate", "coding.resync_1", "coding.prepare_resync_review_1", "coding.integrate_1", "coding.resync_2", "coding.prepare_resync_review_2", "coding.integrate_2", "coding.cleanup"]
     },
     {
       "id": "environment-operator",

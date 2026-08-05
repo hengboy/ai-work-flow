@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, cp, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -57,7 +57,7 @@ function fieldValue(field) {
   if (field === "task_mode" || field === "mode") return "single";
   if (field.endsWith("sha") || field === "base_sha" || field === "head_sha" || field === "commit_sha" || field === "resulting_sha") return "a".repeat(40);
   if (field.includes("digest") || field === "sha256") return "a".repeat(64);
-  if (["terms", "known_paths", "entry_paths", "direct_dependencies", "facts", "open_decisions", "decision_history", "changed_paths", "committed_paths", "path_changes", "checks", "spec_or_task_ids", "acceptance", "finding_ids", "fixed_finding_ids", "assigned_axes", "slices", "platforms", "questions", "allowed_sources", "fact_sources", "assigned_slices", "refs", "coverage", "citation_urls", "deleted_paths"].includes(field)) return ["value"];
+  if (["terms", "known_paths", "entry_paths", "direct_dependencies", "facts", "open_decisions", "decision_history", "changed_paths", "committed_paths", "path_changes", "checks", "spec_or_task_ids", "implementation_ids", "acceptance", "scope_evidence", "finding_ids", "fixed_finding_ids", "assigned_axes", "slices", "platforms", "questions", "allowed_sources", "fact_sources", "assigned_slices", "refs", "coverage", "citation_urls", "deleted_paths"].includes(field)) return ["value"];
   if (["discovery_receipt", "source_ref", "evidence_ref", "review_context", "frozen_state", "initial_status", "clean_state", "cleanup_evidence", "state", "status", "drift", "open_decision", "acceptance_evidence", "verification"].includes(field)) return { value: true };
   return "value";
 }
@@ -103,7 +103,8 @@ async function actionInput(root, snapshot, actionId) {
   const inputContract = contract.io_contracts[contract.actions[actionId].io_contract].input_contract;
   const fields = Object.fromEntries(inputContract.required_fields.map((field) => [field, fieldValue(field)]));
   let artifacts = [];
-  if (actionId === "coding.prepare") Object.assign(fields, { plan_digest: snapshot.plan_digest ?? "a".repeat(64), task_mode: snapshot.task_mode ?? "single" });
+  if (["coding.prepare", "coding.prepare_direct_bug"].includes(actionId)) Object.assign(fields, { plan_digest: snapshot.plan_digest ?? "a".repeat(64), task_mode: snapshot.task_mode ?? "single" });
+  if (actionId === "coding.triage") Object.assign(fields, { objective: snapshot.direct_request.objective, request_digest: snapshot.plan_digest });
   if (actionId === "planning.confirm") {
     fields.decision_history = snapshot.decision_history;
     fields.discovery_receipt = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: "planning.discover" })).result_receipt;
@@ -133,11 +134,18 @@ async function actionInput(root, snapshot, actionId) {
     Object.assign(fields, { base_sha: content.base_sha, path_changes: content.path_changes, evidence_ref: evidence });
     artifacts = [evidence];
   }
-  if (actionId === "coding.implement") {
-    fields.base_sha = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: "coding.prepare" })).result_receipt.outputs.base_sha;
+  if (["coding.implement", "coding.fix_direct"].includes(actionId)) {
+    const prepareId = actionId === "coding.fix_direct" ? "coding.prepare_direct_bug" : "coding.prepare";
+    fields.base_sha = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: prepareId })).result_receipt.outputs.base_sha;
+    if (snapshot.source_type === "direct") {
+      const triage = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: "coding.triage" })).result_receipt.outputs;
+      fields.spec_or_task_ids = triage.implementation_ids;
+      fields.acceptance = triage.acceptance;
+    }
   }
   if (actionId === "coding.commit") {
-    const implementation = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: "coding.implement" })).result_receipt.outputs;
+    const implementationId = snapshot.source_type === "direct" && snapshot.direct_kind === "bug" ? "coding.fix_direct" : "coding.implement";
+    const implementation = (await statusRun({ repository: root, run_id: snapshot.run_id, action_id: implementationId })).result_receipt.outputs;
     const content = await verifyArtifact({ repository: root, run_id: snapshot.run_id, ref: implementation.change_evidence_ref });
     Object.assign(fields, { base_sha: content.base_sha, path_changes: content.path_changes, evidence_ref: implementation.change_evidence_ref });
     artifacts = [implementation.change_evidence_ref];
@@ -208,6 +216,13 @@ async function actionResult(root, snapshot, claim, result) {
     outputs.mode = claim.input.fields.mode;
   }
   if (actionId === "planning.complete" && result === "completed") outputs.refs = claim.input.fields.refs;
+  if (actionId === "coding.triage" && result === "completed") {
+    outputs.implementation_kind = "small_feature";
+    outputs.objective = snapshot.direct_request.objective;
+    outputs.implementation_ids = [snapshot.plan_digest];
+    outputs.acceptance = ["direct request is satisfied"];
+    outputs.scope_evidence = ["single implementation action"];
+  }
   const changeEvidenceRef = refByKind.get("change_evidence");
   if (changeEvidenceRef && result === "completed") {
     const evidence = await verifyArtifact({ repository: root, run_id: snapshot.run_id, ref: changeEvidenceRef });
@@ -262,6 +277,7 @@ test("start is idempotent for one plan version and persists outside the worktree
 
   assert.deepEqual(second, first);
   assert.equal(first.revision, 0);
+  assert.equal(first.source_type, "plan");
   assert.deepEqual(first.ready_actions, ["coding.prepare"]);
   assert.match(first.run_id, /^run_[0-9a-f]{24}$/);
   const common = (await run("git", ["rev-parse", "--git-common-dir"], { cwd: root })).stdout.trim();
@@ -269,30 +285,59 @@ test("start is idempotent for one plan version and persists outside the worktree
   assert.equal(JSON.parse(await readFile(runFile, "utf8")).run_id, first.run_id);
 });
 
-test("different coding plans can hold active claims without sharing recovery state", async () => {
+test("direct coding start is request-digest idempotent and rejects mixed identities", async () => {
+  const root = await repository();
+  const input = { repository: root, kind: "coding", request: { objective: "Fix the save button crash" } };
+  const first = await startRun(input);
+  const second = await startRun(input);
+
+  assert.deepEqual(second, first);
+  assert.equal(first.source_type, "direct");
+  assert.equal(first.task_mode, "single");
+  assert.deepEqual(first.direct_request, input.request);
+  assert.deepEqual(first.ready_actions, ["coding.triage"]);
+  await assert.rejects(startRun({ ...input, plan_digest: "a".repeat(64), task_mode: "single" }), /start input/);
+  await assert.rejects(startRun({ repository: root, kind: "planning", request: input.request }), /start input/);
+});
+
+test("different coding tasks can hold active claims without sharing recovery state", async () => {
   const root = await repository();
   const [first, second] = await Promise.all([
     startRun({ repository: root, kind: "coding", plan_digest: "1".repeat(64), task_mode: "single" }),
-    startRun({ repository: root, kind: "coding", plan_digest: "2".repeat(64), task_mode: "single" }),
+    startRun({ repository: root, kind: "coding", request: { objective: "Fix the second task" } }),
   ]);
 
   assert.notEqual(first.run_id, second.run_id);
-  const [firstClaim, secondClaim] = await Promise.all([first, second].map(async (snapshot, index) => claimAction({
+  const claims = await Promise.all([first, second].map(async (snapshot, index) => claimAction({
     repository: root,
     run_id: snapshot.run_id,
-    action_id: "coding.prepare",
+    action_id: snapshot.ready_actions[0],
     claimant: `session-${index + 1}`,
     owner_pid: process.pid,
-    input: await actionInput(root, snapshot, "coding.prepare"),
+    input: await actionInput(root, snapshot, snapshot.ready_actions[0]),
   })));
 
-  assert.equal(firstClaim.claim_status, "claimed");
-  assert.equal(secondClaim.claim_status, "claimed");
-  const [firstStatus, secondStatus] = await Promise.all([first, second].map((snapshot) => statusRun({ repository: root, run_id: snapshot.run_id })));
-  assert.equal(firstStatus.active_claims[0].claim_id, firstClaim.claim_id);
-  assert.equal(secondStatus.active_claims[0].claim_id, secondClaim.claim_id);
-  assert.equal(firstStatus.budgets.recover_remaining, 1);
-  assert.equal(secondStatus.budgets.recover_remaining, 1);
+  assert.ok(claims.every((claim) => claim.claim_status === "claimed"));
+  const statuses = await Promise.all([first, second].map((snapshot) => statusRun({ repository: root, run_id: snapshot.run_id })));
+  assert.equal(statuses[0].active_claims[0].claim_id, claims[0].claim_id);
+  assert.equal(statuses[1].active_claims[0].claim_id, claims[1].claim_id);
+  assert.ok(statuses.every((status) => status.budgets.recover_remaining === 1));
+});
+
+test("a drifted plan index creates a fresh run without changing the old run", async () => {
+  const root = await repository();
+  const input = { repository: root, kind: "coding", plan_digest: "1".repeat(64), task_mode: "single" };
+  const first = await startRun(input);
+  const runsRoot = join(root, ".git", "ai-work-flow", "runs");
+  const oldRunFile = join(runsRoot, first.run_id, "run.json");
+  const oldRun = JSON.parse(await readFile(oldRunFile, "utf8"));
+  oldRun.contract_digest = "0".repeat(64);
+  await writeFile(oldRunFile, `${JSON.stringify(oldRun, null, 2)}\n`);
+
+  const fresh = await startRun(input);
+  assert.notEqual(fresh.run_id, first.run_id);
+  assert.equal(JSON.parse(await readFile(oldRunFile, "utf8")).contract_digest, "0".repeat(64));
+  assert.deepEqual((await readdir(runsRoot)).sort(), [first.run_id, fresh.run_id].sort());
 });
 
 test("workflow storage rejects a symbolic-link path before writing outside Git common dir", async () => {
@@ -778,6 +823,62 @@ test("planning and coding happy paths reach terminal state without duplicate act
   }
   assert.equal(new Set(codingActions).size, codingActions.length);
   assert.deepEqual(coding.active_claims, []);
+});
+
+test("direct small features use Full Stack Coder and reach the shared terminal path", async () => {
+  const root = await repository();
+  let snapshot = await startRun({ repository: root, kind: "coding", request: { objective: "Add a compact account filter" } });
+  const actions = [];
+  while (snapshot.phase !== "complete") {
+    actions.push(snapshot.ready_actions[0]);
+    snapshot = await finishReady(root, snapshot);
+  }
+
+  assert.equal(snapshot.direct_kind, "small_feature");
+  assert.ok(actions.includes("coding.triage"));
+  assert.ok(actions.includes("coding.implement"));
+  assert.equal(actions.includes("coding.fix_direct"), false);
+  assert.deepEqual(snapshot.active_claims, []);
+});
+
+test("direct Bugs use Bug Fixer and reach the shared terminal path", async () => {
+  const root = await repository();
+  let snapshot = await startRun({ repository: root, kind: "coding", request: { objective: "Fix the reproducible account save crash" } });
+  const triageInput = await actionInput(root, snapshot, "coding.triage");
+  const triageClaim = await claimAction({ repository: root, run_id: snapshot.run_id, action_id: "coding.triage", claimant: "triage", owner_pid: process.pid, input: triageInput });
+  snapshot = (await finishAction({ repository: root, receipt: await receipt(root, snapshot, triageClaim, "completed", {
+    outputs: { implementation_kind: "bug", acceptance: ["save no longer crashes"], scope_evidence: ["one account save path"] },
+  }) })).snapshot;
+  const actions = ["coding.triage"];
+  while (snapshot.phase !== "complete") {
+    actions.push(snapshot.ready_actions[0]);
+    snapshot = await finishReady(root, snapshot);
+  }
+
+  assert.equal(snapshot.direct_kind, "bug");
+  assert.ok(actions.includes("coding.prepare_direct_bug"));
+  assert.ok(actions.includes("coding.fix_direct"));
+  assert.equal(actions.includes("coding.implement"), false);
+  assert.deepEqual(snapshot.active_claims, []);
+});
+
+test("large direct features terminate with a non-resumable Planning handoff", async () => {
+  const root = await repository();
+  let snapshot = await startRun({ repository: root, kind: "coding", request: { objective: "Redesign auth, database schema, and public API" } });
+  const input = await actionInput(root, snapshot, "coding.triage");
+  const claim = await claimAction({ repository: root, run_id: snapshot.run_id, action_id: "coding.triage", claimant: "triage", owner_pid: process.pid, input });
+  snapshot = (await finishAction({ repository: root, receipt: await receipt(root, snapshot, claim, "needs_decision", {
+    outputs: { scope_evidence: ["schema migration", "public API change"], open_decision: { planning: true } },
+    decision_request: { code: "PLANNING_REQUIRED", summary: "Start Planning for this multi-domain feature" },
+  }) })).snapshot;
+
+  assert.equal(snapshot.phase, "awaiting_decision");
+  assert.deepEqual(snapshot.ready_actions, []);
+  assert.equal(snapshot.decision_request.code, "PLANNING_REQUIRED");
+  assert.equal(Object.hasOwn(snapshot.decision_request, "resume_phase"), false);
+  await assert.rejects(resolveDecision({
+    repository: root, run_id: snapshot.run_id, decision: { code: "PLANNING_REQUIRED", summary: "continue directly" },
+  }), /no resumable decision/);
 });
 
 test("maintenance Skill workflows use the same claim and receipt contract", async () => {

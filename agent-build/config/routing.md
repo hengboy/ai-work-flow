@@ -18,14 +18,18 @@
 - 两者互不作为子代理，也不彼此委派。
 - **Planning** 负责发现、确认、规划工件、任务模式与规划提交。
 - **Planning** 不实施源码、不进入 **Coding** 流程，也不预授权实现。
-- **Coding** 消费已批准计划并持续调度实施 workflow。
+- **Coding** 消费已批准计划，或分诊用户直接授权的 Bug/小功能，并持续调度实施 workflow。
 - **Coding** 不修改规划决定，不以实现便利重写规格。
 - 主代理只通过 workflow broker 读写 run 状态。
 - 主代理不得直接读取、搜索、枚举或编辑工作区，不得执行 Shell、Skill、Git、浏览器或网络检索。
 - **Planning** 将仓库事实发现交给 **File Explorer**，将 spec/plan、tasks 和本地提交分别交给 **Planning Writer**、**Task Planner** 和 **Git Operator**。
 - **Planning** 在 confirm 阶段完成事实与产品决定后、创建 planning context 前确定 `task_mode`；single 跳过 `planning.write_tasks`，split 才委派 **Task Planner**。
-- **Coding** 在启动前将计划工件与当前流程/字段元数据兼容性预检交给 **File Explorer**；启动后只调度 snapshot 中 action 的契约 owner。
-- **Coding** 启动预检只消费 **File Explorer** 返回的真实 `plan_digest` 与 `task_mode`，并调用 `start(kind=coding)`；support action 和 I/O contract 名称都不是 run kind。
+- **Coding** 有批准计划时，在启动前将计划工件与当前流程/字段元数据兼容性预检交给 **File Explorer**；只消费其返回的真实 `plan_digest` 与 `task_mode`，并调用计划型 `start(kind=coding)`。
+- **Coding** 没有批准计划时，只接受用户直接授权的可复现 Bug 或小功能，并以用户原文 `request.objective` 调用直接型 `start(kind=coding)`；`request` 不得与 `plan_digest`/`task_mode` 混用。
+- 直接 run 的首个 action 必须是 `coding.triage`。**Coding** 可把范围定位和外部研究分别委派给 **File Explorer** 与 **Researcher**，但只自行分类、定义可观察验收和验证交接。
+- 直接 Bug 必须路由到 **Bug Fixer** 的 `coding.fix_direct`；小功能必须路由到 **Full Stack Coder** 的 `coding.implement`。
+- 跨域架构、数据库/schema 迁移、安全/权限、公共 API/契约、多个独立交付任务，或仍有产品决定/广泛验收歧义时，`coding.triage` 必须以不可恢复的 `PLANNING_REQUIRED` 终止。用户必须另行启动 **Planning**，**Coding** 不得拆小规避。
+- run 启动后 **Coding** 只调度 snapshot 中 action 的契约 owner；support action 和 I/O contract 名称都不是 run kind。
 - 主代理遇到决定门禁时只转交 snapshot 中的唯一决定。
 
 ## 3. 角色选择
@@ -35,8 +39,8 @@
 - 指定普通文档维护交给 **Document Maintainer**。
 - spec 与 plan 分别交给 **Planning Writer** 的对应分支。
 - split/single task 集合交给 **Task Planner**。
-- 实施与项目初始化交给 **Full Stack Coder** 的不同 action 分支。
-- 当前 blocking finding 的最小修复交给 **Bug Fixer**。
+- 已批准计划、小功能实施与项目初始化交给 **Full Stack Coder** 的不同 action 分支。
+- 直接 Bug 与当前 blocking finding 的最小修复交给 **Bug Fixer** 的不同 action 分支。
 - 本地 Git 生命周期交给 **Git Operator**，并始终串行。
 - Agent 生成与环境切换交给 **Environment Operator**。
 - 双轴审查编排交给 **Code Reviewer**，叶子轴分别交给 **Review Standards** 和 **Review Spec**。
@@ -83,9 +87,9 @@
 
 ## 7. 授权边界
 
-- 分析、发现、研究或审查不等于修改授权。
+- 分析、发现、研究或审查不等于修改授权；用户明确要求修复 Bug 或实现小功能本身构成该 direct run 的本地实施授权。
 - **Planning** 授权不等于 **Coding** 实施授权。
-- 实施授权只覆盖已批准范围与本地验证。
+- 实施授权只覆盖批准计划，或 `coding.triage` 从用户直接请求冻结的 objective、IDs 与 acceptance，以及本地验证。
 - 自动流程不包含 push、tag、发布、PR 或任何远端修改。
 - 自动流程不包含 stash、reset、clean、amend 或跳过 hook。
 - **Git Operator** 不进行实现编辑或环境生成。

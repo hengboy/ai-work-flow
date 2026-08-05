@@ -27,7 +27,7 @@ async function main() {
   const input = options(rest);
   let result;
   if (command === "start") {
-    result = await startRun(input);
+    result = await startRun({ ...input, ...(input.request_json ? { request: JSON.parse(input.request_json) } : {}) });
   } else if (command === "status") {
     result = await statusRun(input);
   } else if (command === "claim") {

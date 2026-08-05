@@ -1,11 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { access, lstat, mkdir, open, readFile, realpath, rename, rm } from "node:fs/promises";
+import { access, lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { loadWorkflowContract, validateActionInput, validateActionReceipt, validateSupportReceipt } from "./workflow-contract.mjs";
+import { digestValue, loadWorkflowContract, validateActionInput, validateActionReceipt, validateSupportReceipt } from "./workflow-contract.mjs";
 import { pathChangesEqual } from "./paths.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -119,6 +119,7 @@ function snapshot(run, contract) {
   const result = {
     run_id: run.run_id,
     kind: run.kind,
+    source_type: run.source_type,
     plan_digest: run.plan_digest,
     task_mode: run.task_mode,
     revision: run.revision,
@@ -130,6 +131,8 @@ function snapshot(run, contract) {
   };
   if (run.decision_request) result.decision_request = structuredClone(run.decision_request);
   if (run.planning_context_ref) result.planning_context_ref = structuredClone(run.planning_context_ref);
+  if (run.direct_request) result.direct_request = structuredClone(run.direct_request);
+  if (run.direct_kind) result.direct_kind = run.direct_kind;
   return result;
 }
 
@@ -142,27 +145,41 @@ function initialBudgets(contract) {
   };
 }
 
-function runKey(kind, planDigest, taskMode) {
-  return createHash("sha256").update(`${kind}\0${planDigest}\0${taskMode ?? ""}`).digest("hex");
+function runKey(kind, sourceType, planDigest, taskMode) {
+  return createHash("sha256").update(`${kind}\0${sourceType}\0${planDigest}\0${taskMode ?? ""}`).digest("hex");
 }
 
-export async function startRun({ repository, kind, plan_digest, task_mode }) {
+export async function startRun({ repository, kind, plan_digest, task_mode, request }) {
   const contract = await loadWorkflowContract();
-  if (!contract.workflows[kind] || !/^[0-9a-f]{64}$/.test(plan_digest) ||
-    (kind === "coding" ? !["single", "split"].includes(task_mode) : task_mode !== undefined)) {
+  const direct = request !== undefined;
+  const validDirectRequest = request && typeof request === "object" && !Array.isArray(request) &&
+    Object.keys(request).join() === "objective" && typeof request.objective === "string" && request.objective.trim();
+  const validPlanStart = /^[0-9a-f]{64}$/.test(plan_digest ?? "") &&
+    (kind === "coding" ? ["single", "split"].includes(task_mode) : task_mode === undefined);
+  if (!contract.workflows[kind] || (direct
+    ? kind !== "coding" || !validDirectRequest || plan_digest !== undefined || task_mode !== undefined
+    : !validPlanStart)) {
     throw new Error("start input is invalid");
   }
+  const sourceType = direct ? "direct" : "plan";
+  const directRequest = direct ? { objective: request.objective } : null;
+  const runDigest = direct ? digestValue(directRequest) : plan_digest;
+  const runTaskMode = direct ? "single" : task_mode;
   const location = await paths(repository);
   await ensureDirectoryChain(location.common, location.runs);
   await assertPathChain(location.common, location.runs);
-  const key = runKey(kind, plan_digest, task_mode);
+  const key = runKey(kind, sourceType, runDigest, runTaskMode);
   const indexPath = join(location.base, "plan-index", `${key}.json`);
   const startLock = join(location.base, "start-locks", key);
   await ensureDirectoryChain(location.common, dirname(startLock));
   return withLock(startLock, async () => {
     try {
       const existing = await readJson(indexPath);
-      return statusRun({ repository, run_id: existing.run_id });
+      try {
+        return await statusRun({ repository, run_id: existing.run_id });
+      } catch (error) {
+        if (error.code !== "ENOENT" && !error.message.includes("drifted")) throw error;
+      }
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
@@ -172,10 +189,11 @@ export async function startRun({ repository, kind, plan_digest, task_mode }) {
       contract_digest: contract.digest,
       run_id: runId,
       kind,
-      plan_digest,
-      task_mode: task_mode ?? null,
+      source_type: sourceType,
+      plan_digest: runDigest,
+      task_mode: runTaskMode ?? null,
       revision: 0,
-      phase: contract.workflows[kind].initial_phase,
+      phase: direct ? "direct_started" : contract.workflows[kind].initial_phase,
       active_claims: {},
       attempts: {},
       completed_actions: {},
@@ -184,6 +202,8 @@ export async function startRun({ repository, kind, plan_digest, task_mode }) {
       decision_request: null,
       decision_history: [],
       planning_context_ref: null,
+      direct_request: directRequest,
+      direct_kind: null,
       review_finding_ids: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -256,8 +276,19 @@ function validatePlanningSource(actionId, input, run) {
 }
 
 function validateClaimSemantics({ action_id: actionId, input, run, verifiedArtifacts }) {
-  if (actionId === "coding.prepare" && (input.fields.plan_digest !== run.plan_digest || input.fields.task_mode !== run.task_mode)) {
-    throw new Error("coding.prepare input does not match run identity");
+  if (["coding.prepare", "coding.prepare_direct_bug"].includes(actionId) &&
+    (input.fields.plan_digest !== run.plan_digest || input.fields.task_mode !== run.task_mode)) {
+    throw new Error(`${actionId} input does not match run identity`);
+  }
+  if (actionId === "coding.triage" && (run.source_type !== "direct" || input.fields.objective !== run.direct_request?.objective || input.fields.request_digest !== run.plan_digest)) {
+    throw new Error("coding.triage input does not match the canonical direct request");
+  }
+  if (["coding.implement", "coding.fix_direct"].includes(actionId) && run.source_type === "direct") {
+    const triage = completedOutputs(run, "coding.triage");
+    const expectedAction = triage.implementation_kind === "bug" ? "coding.fix_direct" : "coding.implement";
+    if (actionId !== expectedAction || !same(input.fields.spec_or_task_ids, triage.implementation_ids) || !same(input.fields.acceptance, triage.acceptance)) {
+      throw new Error(`${actionId} input does not match canonical direct triage`);
+    }
   }
   if (actionId === "planning.confirm") {
     if (!same(input.fields.decision_history, run.decision_history)) throw new Error("planning.confirm decision history is stale");
@@ -271,7 +302,8 @@ function validateClaimSemantics({ action_id: actionId, input, run, verifiedArtif
     if (input.fields.base_sha !== evidence.base_sha || !pathChangesEqual(input.fields.path_changes, evidence.path_changes)) {
       throw new Error(`${actionId} input does not match change_evidence`);
     }
-    if (actionId === "coding.commit" && !same(ref, completedOutputs(run, "coding.implement").change_evidence_ref)) {
+    const implementationAction = run.source_type === "direct" && run.direct_kind === "bug" ? "coding.fix_direct" : "coding.implement";
+    if (actionId === "coding.commit" && !same(ref, completedOutputs(run, implementationAction).change_evidence_ref)) {
       throw new Error("coding.commit evidence is not the canonical implementation evidence");
     }
     if (actionId === "planning.commit") {
@@ -293,7 +325,10 @@ function validateClaimSemantics({ action_id: actionId, input, run, verifiedArtif
 
 export async function statusRun({ repository, run_id, action_id }) {
   const { contract, run } = await loadRun(repository, run_id);
-  if (!Number.isSafeInteger(run.revision) || run.revision < 0 || !contract.workflows[run.kind].terminal_phases.includes(run.phase) && !contract.workflows[run.kind].phase_actions[run.phase]) throw new Error("run state is invalid");
+  const validDirectIdentity = run.source_type !== "direct" || run.kind === "coding" && run.task_mode === "single" &&
+    run.direct_request && Object.keys(run.direct_request).join() === "objective" && digestValue(run.direct_request) === run.plan_digest;
+  if (!Number.isSafeInteger(run.revision) || run.revision < 0 || !["plan", "direct"].includes(run.source_type) || !validDirectIdentity ||
+    !contract.workflows[run.kind].terminal_phases.includes(run.phase) && !contract.workflows[run.kind].phase_actions[run.phase]) throw new Error("run state is invalid");
   const result = snapshot(run, contract);
   if (action_id) {
     const completed = run.completed_actions[action_id]?.receipt;
@@ -301,6 +336,46 @@ export async function statusRun({ repository, run_id, action_id }) {
     if (canonical) result.result_receipt = structuredClone(canonical);
   }
   return result;
+}
+
+export async function statusRepository({ repository, kind }) {
+  const contract = await loadWorkflowContract();
+  if (kind !== undefined && !contract.workflows[kind]) throw new Error("workflow kind is invalid");
+  const location = await paths(repository);
+  let entries;
+  try {
+    entries = await readdir(location.runs, { withFileTypes: true });
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    entries = [];
+  }
+  const runs = [];
+  const incompatible_run_ids = [];
+  const invalid_run_ids = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^run_[0-9a-f]{24}$/.test(entry.name)) continue;
+    try {
+      const runLocation = await paths(repository, entry.name);
+      await assertPathChain(runLocation.common, runLocation.runFile);
+      const run = await readJson(runLocation.runFile);
+      if (run.run_id !== entry.name) throw new Error("run identity is invalid");
+      if (run.contract_digest !== contract.digest) {
+        incompatible_run_ids.push(entry.name);
+        continue;
+      }
+      if (kind === undefined || run.kind === kind) runs.push({ updated_at: run.updated_at, snapshot: snapshot(run, contract) });
+    } catch {
+      invalid_run_ids.push(entry.name);
+    }
+  }
+  runs.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+  return {
+    contract_digest: contract.digest,
+    kind: kind ?? null,
+    runs: runs.map((entry) => entry.snapshot),
+    incompatible_run_ids: incompatible_run_ids.sort(),
+    invalid_run_ids: invalid_run_ids.sort(),
+  };
 }
 
 export async function claimAction({ repository, run_id, action_id, claimant, owner_pid, input }) {
@@ -353,7 +428,8 @@ export async function claimAction({ repository, run_id, action_id, claimant, own
 
 function applyReceipt(run, receipt, action, contract) {
   if (receipt.result === "completed") {
-    const completedTo = action.completed_to_by_task_mode?.[run.task_mode] ?? action.completed_to;
+    const outputBranch = action.completed_to_by_output;
+    const completedTo = outputBranch?.values?.[receipt.outputs[outputBranch.field]] ?? action.completed_to_by_task_mode?.[run.task_mode] ?? action.completed_to;
     if (!completedTo || completedTo === run.phase) throw new Error("WORKFLOW_STALLED: completed action did not advance phase");
     run.phase = completedTo;
     if (action.budget === "review_fix_rounds") run.budgets.review_fix_rounds_remaining -= 1;
@@ -379,7 +455,9 @@ function applyReceipt(run, receipt, action, contract) {
   } else if (receipt.result === "needs_decision") {
     if (!contract.decision_codes.includes(receipt.decision_request.code)) throw new Error("decision code is invalid");
     run.phase = "awaiting_decision";
-    run.decision_request = { ...receipt.decision_request, resume_phase: action.from };
+    run.decision_request = receipt.decision_request.code === "PLANNING_REQUIRED"
+      ? structuredClone(receipt.decision_request)
+      : { ...receipt.decision_request, resume_phase: action.from };
   } else {
     run.phase = "failed";
     run.decision_request = { code: "UNRECOVERABLE_FAILURE", summary: receipt.summary };
@@ -388,7 +466,18 @@ function applyReceipt(run, receipt, action, contract) {
 }
 
 function validateFinishedSemantics({ receipt, claim, action, run, verifiedArtifacts }) {
+  if (receipt.action_id === "coding.triage" && receipt.result === "needs_decision" && (
+    receipt.decision_request?.code !== "PLANNING_REQUIRED" || !Array.isArray(receipt.outputs.scope_evidence) || receipt.outputs.scope_evidence.length === 0
+  )) throw new Error("large direct requests must return PLANNING_REQUIRED with scope evidence");
   if (receipt.result !== "completed" && action.io_contract !== "dual_axis_review") return;
+  if (receipt.action_id === "coding.triage") {
+    if (!["bug", "small_feature"].includes(receipt.outputs.implementation_kind) || receipt.outputs.objective !== run.direct_request?.objective ||
+      !Array.isArray(receipt.outputs.implementation_ids) || receipt.outputs.implementation_ids.length === 0 ||
+      !Array.isArray(receipt.outputs.acceptance) || receipt.outputs.acceptance.length === 0 ||
+      !Array.isArray(receipt.outputs.scope_evidence) || receipt.outputs.scope_evidence.length === 0) {
+      throw new Error("coding.triage outputs are invalid or do not match the canonical direct request");
+    }
+  }
   if (receipt.action_id === "planning.confirm") {
     const context = verifiedArtifacts.get(receipt.outputs.planning_context_ref.id);
     if (context.plan_id !== receipt.outputs.plan_id || context.task_mode !== receipt.outputs.task_mode || !same(context.decisions, run.decision_history)) {
@@ -407,12 +496,12 @@ function validateFinishedSemantics({ receipt, claim, action, run, verifiedArtifa
   if (receipt.action_id === "planning.complete" && !same(receipt.outputs.refs, claim.input.fields.refs)) {
     throw new Error("planning.complete outputs do not match canonical refs");
   }
-  if (["coding.implement", "coding.fix_1", "coding.fix_2"].includes(receipt.action_id) && receipt.result === "completed") {
+  if (["coding.implement", "coding.fix_direct", "coding.fix_1", "coding.fix_2"].includes(receipt.action_id) && receipt.result === "completed") {
     const evidence = verifiedArtifacts.get(receipt.outputs.change_evidence_ref.id);
     if (claim.input.fields.base_sha !== evidence.base_sha || receipt.outputs.head_sha !== evidence.head_sha || !same([...receipt.outputs.changed_paths].sort(), uniquePaths(evidence.path_changes))) {
       throw new Error(`${receipt.action_id} outputs do not match change_evidence`);
     }
-    if (receipt.action_id.startsWith("coding.fix_") && !same([...receipt.outputs.fixed_finding_ids].sort(), [...claim.input.fields.finding_ids].sort())) {
+    if (["coding.fix_1", "coding.fix_2"].includes(receipt.action_id) && !same([...receipt.outputs.fixed_finding_ids].sort(), [...claim.input.fields.finding_ids].sort())) {
       throw new Error(`${receipt.action_id} fixed finding IDs do not match its claim`);
     }
   }
@@ -474,6 +563,7 @@ export async function finishAction({ repository, receipt }) {
       run.planning_context_ref = structuredClone(receipt.outputs.planning_context_ref);
       run.task_mode = receipt.outputs.task_mode;
     }
+    if (receipt.action_id === "coding.triage" && receipt.result === "completed") run.direct_kind = receipt.outputs.implementation_kind;
     delete run.active_claims[receipt.action_id];
     applyReceipt(run, receipt, action, contract);
     run.receipts[receiptKey] = structuredClone(receipt);

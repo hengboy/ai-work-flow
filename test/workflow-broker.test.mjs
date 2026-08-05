@@ -29,11 +29,53 @@ test("workflow broker exposes one fixed MCP tool and no command execution surfac
   assert.equal(listed.result.tools[0].name, "workflow_state");
   assert.ok(listed.result.tools[0].inputSchema.properties.operation.enum.includes("support_validate"));
   assert.ok(listed.result.tools[0].inputSchema.properties.input);
+  assert.deepEqual(listed.result.tools[0].inputSchema.properties.request.required, ["objective"]);
+  assert.match(listed.result.tools[0].description, /contract takes exactly/);
+  assert.match(listed.result.tools[0].description, /must never validate pre-run discovery/);
+  assert.equal(listed.result.tools[0].inputSchema.allOf[0].then.maxProperties, 1);
+  assert.deepEqual(listed.result.tools[0].inputSchema.allOf[1].then.required, ["repository", "caller_ref", "input", "receipt"]);
   assert.equal(JSON.stringify(listed).includes("command"), false);
   const unknown = await handleBrokerRequest({
     jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "shell", arguments: {} },
   });
   assert.equal(unknown.error.code, -32602);
+});
+
+test("contract accepts no repository or workflow kind fields", async () => {
+  const contract = await dispatchWorkflowState({ operation: "contract" });
+  assert.ok(contract.actions["coding.prepare"]);
+  await assert.rejects(dispatchWorkflowState({ operation: "contract", repository: "/tmp/repo" }), /unsupported field/);
+  await assert.rejects(dispatchWorkflowState({ operation: "contract", kind: "coding" }), /unsupported field/);
+});
+
+test("repository status discovers runs without requiring a run id", async () => {
+  const root = await repository();
+  const empty = await dispatchWorkflowState({ operation: "status", repository: root, kind: "coding" }, { cwd: root, pid: process.pid });
+  assert.deepEqual(empty.runs, []);
+  assert.equal(empty.kind, "coding");
+  const started = await dispatchWorkflowState({
+    operation: "start", repository: root, kind: "coding", plan_digest: "e".repeat(64), task_mode: "single",
+  }, { cwd: root, pid: process.pid });
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  const latest = await dispatchWorkflowState({
+    operation: "start", repository: root, kind: "coding", plan_digest: "f".repeat(64), task_mode: "split",
+  }, { cwd: root, pid: process.pid });
+  const discovered = await dispatchWorkflowState({ operation: "status", repository: root, kind: "coding" }, { cwd: root, pid: process.pid });
+  assert.deepEqual(discovered.runs.map((run) => run.run_id), [latest.run_id, started.run_id]);
+  assert.deepEqual(await dispatchWorkflowState({ operation: "status", repository: root, run_id: started.run_id }, { cwd: root, pid: process.pid }), started);
+  await assert.rejects(dispatchWorkflowState({ operation: "status", repository: root, action_id: "coding.prepare" }, { cwd: root, pid: process.pid }), /without run_id/);
+});
+
+test("broker starts direct coding requests without plan fields", async () => {
+  const root = await repository();
+  const request = { objective: "Fix the reproducible save crash" };
+  const started = await dispatchWorkflowState({ operation: "start", repository: root, kind: "coding", request }, { cwd: root, pid: process.pid });
+  assert.equal(started.source_type, "direct");
+  assert.deepEqual(started.direct_request, request);
+  assert.deepEqual(started.ready_actions, ["coding.triage"]);
+  await assert.rejects(dispatchWorkflowState({
+    operation: "start", repository: root, kind: "coding", request, plan_digest: "a".repeat(64), task_mode: "single",
+  }, { cwd: root, pid: process.pid }), /start input/);
 });
 
 test("workflow broker validates support receipts without advancing the parent phase", async () => {

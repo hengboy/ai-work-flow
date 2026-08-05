@@ -82,7 +82,7 @@ test("primary agents only orchestrate delegated work and Coding uses verified st
   const assets = loadAgentAssets();
   const coding = assets.compiledBodies.get("coding");
   const planning = assets.compiledBodies.get("planning");
-  assert.deepEqual(assets.roles.find((role) => role.id === "coding").actions, []);
+  assert.deepEqual(assets.roles.find((role) => role.id === "coding").actions, ["coding.triage"]);
   assert.equal(Object.hasOwn(assets.contract.actions, "support.orchestrate"), false);
   for (const prompt of [coding, planning]) {
     assert.match(prompt, /不得自行读取|不得直接读取/);
@@ -94,11 +94,27 @@ test("primary agents only orchestrate delegated work and Coding uses verified st
   assert.match(coding, /plan_digest/);
   assert.match(coding, /task_mode/);
   assert.ok(coding.indexOf("启动预检") < coding.indexOf("start(repository"));
-  assert.match(coding, /只恢复这个响应返回的 `run_id`/);
+  assert.match(coding, /只恢复 `start` 响应返回的 `run_id`/);
   assert.match(coding, /其他 run 的 claim 不阻塞本 run/);
   assert.doesNotMatch(coding, /先用 `status` 恢复当前 coding run/);
   assert.match(coding, /不得尝试 `task_mode=coding`/);
   assert.match(coding, /support_orchestration/);
+  assert.match(coding, /workflow_state\(\{operation: "contract"\}\)/);
+  assert.match(coding, /workflow_state\(\{operation: "status", repository: <repo>, kind: "coding"\}\)/);
+  assert.match(coding, /空 `runs` 是正常首次状态/);
+  assert.match(coding, /不得对它调用 `support_validate`/);
+  assert.match(coding, /不得要求 task `status`/);
+  assert.match(coding, /request=\{objective:<用户原文>\}/);
+  assert.match(coding, /PLANNING_REQUIRED/);
+  assert.match(coding, /coding\.fix_direct/);
+  assert.match(coding, /coding\.implement/);
+  assert.ok(assets.contract.support_delegations.coding.includes("support.locate"));
+  assert.equal(assets.contract.actions["coding.fix_direct"].owner, "bug-fixer");
+  assert.equal(assets.contract.actions["coding.implement"].owner, "full-stack-coder");
+  const explorer = assets.compiledBodies.get("file-explorer");
+  assert.match(explorer, /当前 task 格式没有 `status` 字段/);
+  assert.match(explorer, /目标仓库不必包含 workflow schema/);
+  assert.match(explorer, /不得调用 `support_validate`/);
   assert.match(planning, /Planning Writer/);
   assert.match(planning, /Task Planner/);
   assert.match(planning, /Git Operator/);

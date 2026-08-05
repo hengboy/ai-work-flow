@@ -1,9 +1,11 @@
 {
-  "digest": "26344c3a2daad579a890ab17b3860cbe730be11febb6b617a3843f84abe2ce1a",
+  "digest": "3a168f409b4442170a28ac3c88f690512201e5a079bab1f359d94468e0d0e911",
   "snapshot_schema": {
-    "required": ["run_id", "kind", "plan_digest", "task_mode", "revision", "phase", "ready_actions", "active_claims", "budgets", "decision_history"],
+    "required": ["run_id", "kind", "source_type", "plan_digest", "task_mode", "revision", "phase", "ready_actions", "active_claims", "budgets", "decision_history"],
     "decision_request_optional": true,
-    "planning_context_ref_optional": true
+    "planning_context_ref_optional": true,
+    "direct_request_optional": true,
+    "direct_kind_optional": true
   },
   "claim_input_schema": {
     "required": ["fields", "artifacts"]
@@ -74,6 +76,14 @@
         "completed": { "required_fields": ["worktree", "branch", "base_sha", "initial_status"], "optional_fields": [], "required_artifact_kinds": [] },
         "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
         "needs_decision": { "required_fields": ["drift"], "optional_fields": [], "required_artifact_kinds": [] }
+      }
+    },
+    "direct_triage": {
+      "input_contract": { "required_fields": ["objective", "request_digest"], "optional_fields": [], "required_artifact_kinds": [] },
+      "result_contracts": {
+        "completed": { "required_fields": ["implementation_kind", "objective", "implementation_ids", "acceptance", "scope_evidence"], "optional_fields": [], "required_artifact_kinds": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"], "required_artifact_kinds": [] },
+        "needs_decision": { "required_fields": ["scope_evidence", "open_decision"], "optional_fields": [], "required_artifact_kinds": [] }
       }
     },
     "implementation": {
@@ -161,6 +171,7 @@
   },
   "support_delegations": {
     "planning": ["support.research"],
+    "coding": ["support.locate", "support.research"],
     "full-stack-coder": ["support.locate"],
     "bug-fixer": ["support.locate", "support.research", "support.update_docs"],
     "code-reviewer": ["support.review_standards", "support.review_spec"]
@@ -176,6 +187,7 @@
     "REPEATED_REVIEW_FINDING",
     "REVIEW_FIX_BUDGET_EXHAUSTED",
     "MAIN_RESYNC_BUDGET_EXHAUSTED",
+    "PLANNING_REQUIRED",
     "WORKFLOW_STALLED",
     "UNRECOVERABLE_FAILURE"
   ],
@@ -197,6 +209,9 @@
       "initial_phase": "started",
       "terminal_phases": ["complete", "failed", "awaiting_decision"],
       "phase_actions": {
+        "direct_started": ["coding.triage"],
+        "direct_bug_started": ["coding.prepare_direct_bug"],
+        "direct_bug_prepared": ["coding.fix_direct"],
         "started": ["coding.prepare"],
         "prepared": ["coding.implement"],
         "implemented": ["coding.commit"],
@@ -233,6 +248,9 @@
     "planning.write_tasks": { "owner": "task-planner", "workflow": "planning", "from": "plan_ready", "completed_to": "tasks_ready", "io_contract": "planning_write" },
     "planning.commit": { "owner": "git-operator", "workflow": "planning", "from": "tasks_ready", "completed_to": "planning_committed", "io_contract": "local_commit" },
     "planning.complete": { "owner": "planning", "workflow": "planning", "from": "planning_committed", "completed_to": "complete", "io_contract": "support_orchestration" },
+    "coding.triage": { "owner": "coding", "workflow": "coding", "from": "direct_started", "completed_to": "started", "completed_to_by_output": { "field": "implementation_kind", "values": { "bug": "direct_bug_started", "small_feature": "started" } }, "io_contract": "direct_triage" },
+    "coding.prepare_direct_bug": { "owner": "git-operator", "workflow": "coding", "from": "direct_bug_started", "completed_to": "direct_bug_prepared", "io_contract": "coding_prepare" },
+    "coding.fix_direct": { "owner": "bug-fixer", "workflow": "coding", "from": "direct_bug_prepared", "completed_to": "implemented", "io_contract": "implementation" },
     "coding.prepare": { "owner": "git-operator", "workflow": "coding", "from": "started", "completed_to": "prepared", "io_contract": "coding_prepare" },
     "coding.implement": { "owner": "full-stack-coder", "workflow": "coding", "from": "prepared", "completed_to": "implemented", "io_contract": "implementation" },
     "coding.commit": { "owner": "git-operator", "workflow": "coding", "from": "implemented", "completed_to": "committed", "io_contract": "local_commit" },

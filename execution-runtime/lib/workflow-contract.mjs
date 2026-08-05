@@ -53,6 +53,15 @@ export function assertWorkflowContract(contract) {
         throw new Error(`workflow contract task mode transition is invalid: ${id}`);
       }
     }
+    if (action.completed_to_by_output) {
+      const branch = action.completed_to_by_output;
+      const phases = new Set([...Object.keys(workflow.phase_actions), ...workflow.terminal_phases]);
+      if (!isPlainObject(branch) || typeof branch.field !== "string" || !branch.field || !isPlainObject(branch.values) ||
+        !contract.io_contracts[action.io_contract].result_contracts.completed.required_fields.includes(branch.field) ||
+        Object.keys(branch.values).length < 2 || Object.values(branch.values).some((phase) => !phases.has(phase))) {
+        throw new Error(`workflow contract output transition is invalid: ${id}`);
+      }
+    }
   }
   for (const [name, io] of Object.entries(contract.io_contracts)) {
     if (!io?.input_contract || !io?.result_contracts) throw new Error(`workflow I/O contract is invalid: ${name}`);

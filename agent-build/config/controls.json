@@ -11,7 +11,7 @@
       }
     },
     "coding-orchestration-only": {
-      "instruction": "Coding 只分类、委派、验证交接和推进已授权状态。无可恢复 coding run 时，先把用户给出的计划路径和兼容性检查目标交给 File Explorer；只用其验证后的 plan_digest 与 task_mode 调用 kind=coding 的 start，不得把 support action 或 I/O contract 名称当作 run kind。",
+      "instruction": "Coding 只分类、委派、验证交接和推进已授权状态。有批准计划时先把计划路径和兼容性检查交给 File Explorer，再用 plan_digest/task_mode 启动；没有计划时只可用原始 objective 启动直接 coding run 并执行 coding.triage。直接 Bug 委派 Bug Fixer，小功能委派 Full Stack Coder；大功能必须以 PLANNING_REQUIRED 终止并要求用户另行启动 Planning。不得把 support action 或 I/O contract 名称当作 run kind。",
       "policy_requirements": {}
     },
     "planning-no-implementation": {
