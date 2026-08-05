@@ -28,10 +28,75 @@ const OPERATION_FIELDS = Object.freeze({
   support_validate: ["operation", "repository", "caller_ref", "input", "receipt"],
   contract: ["operation"],
 });
+const OPERATION_REQUIRED_FIELDS = Object.freeze({
+  start: ["operation", "repository", "kind"],
+  status: ["operation", "repository"],
+  claim: ["operation", "repository", "run_id", "action_id", "claimant", "input"],
+  finish: ["operation", "repository", "receipt"],
+  recover: ["operation", "repository", "run_id", "action_id"],
+  decide: ["operation", "repository", "run_id", "decision"],
+  artifact_create: ["operation", "repository", "run_id", "kind", "content"],
+  artifact_verify: ["operation", "repository", "run_id", "ref"],
+  review_packet_create: ["operation", "repository", "run_id", "packet"],
+  review_packet_verify: ["operation", "repository", "run_id", "ref"],
+  support_validate: ["operation", "repository", "caller_ref", "input", "receipt"],
+  contract: ["operation"],
+});
+
+const ACTION_RECEIPT_SCHEMA = Object.freeze({
+  type: "object",
+  required: ["run_id", "action_id", "attempt", "result", "summary", "outputs", "artifacts", "checks"],
+  properties: {
+    run_id: { type: "string" },
+    action_id: { type: "string" },
+    attempt: { type: "integer", minimum: 1 },
+    result: { type: "string", enum: ["completed", "retryable_failure", "needs_decision", "failed"] },
+    summary: { type: "string", minLength: 1 },
+    outputs: { type: "object" },
+    artifacts: { type: "array", items: { type: "object" } },
+    checks: { type: "array", items: { type: "string", minLength: 1 } },
+    error: { type: "object" },
+    decision_request: { type: "object" },
+  },
+  additionalProperties: false,
+});
+
+const SUPPORT_RECEIPT_SCHEMA = Object.freeze({
+  type: "object",
+  required: ["run_id", "caller_ref", "call_id", "action_id", "result", "summary", "outputs", "artifacts", "checks"],
+  properties: {
+    run_id: { type: "string" },
+    caller_ref: { type: "string" },
+    call_id: { type: "string", pattern: "^[A-Za-z0-9._:-]{8,128}$" },
+    action_id: { type: "string" },
+    result: { type: "string", enum: ["completed", "needs_decision", "failed"] },
+    summary: { type: "string", minLength: 1 },
+    outputs: { type: "object" },
+    artifacts: { type: "array", items: { type: "object" } },
+    checks: { type: "array", items: { type: "string", minLength: 1 } },
+    error: { type: "object" },
+    decision_request: { type: "object" },
+  },
+  additionalProperties: false,
+});
+
+function operationConstraint(operation) {
+  const constraint = {
+    if: { properties: { operation: { const: operation } }, required: ["operation"] },
+    then: {
+      required: OPERATION_REQUIRED_FIELDS[operation],
+      propertyNames: { enum: OPERATION_FIELDS[operation] },
+    },
+  };
+  if (operation === "contract") constraint.then.maxProperties = 1;
+  if (operation === "finish") constraint.then.properties = { receipt: ACTION_RECEIPT_SCHEMA };
+  if (operation === "support_validate") constraint.then.properties = { receipt: SUPPORT_RECEIPT_SCHEMA };
+  return constraint;
+}
 
 const TOOL = Object.freeze({
   name: TOOL_NAME,
-  description: "Read or update AI Work Flow state through fixed operations. status with repository and optional kind lists repository runs; add run_id for one canonical snapshot. contract takes exactly {operation:'contract'} with no repository or kind. support_validate requires repository, caller_ref, input, and receipt tied to an active parent claim; it must never validate pre-run discovery. Plan-based coding start requires repository, kind='coding', plan_digest, and task_mode. Direct Bug or small-feature coding start instead requires repository, kind='coding', and request={objective:<verbatim user request>}; do not mix request with plan fields.",
+  description: "Read or update AI Work Flow state through fixed operations. finish takes exactly {operation:'finish', repository, receipt}; run_id and action_id belong inside the ActionReceipt, never at the top level. status with repository and optional kind lists repository runs; add run_id for one canonical snapshot. contract takes exactly {operation:'contract'} with no repository or kind. support_validate requires repository, caller_ref, input, and receipt tied to an active parent claim; it must never validate pre-run discovery. Plan-based coding start requires repository, kind='coding', plan_digest, and task_mode. Direct Bug or small-feature coding start instead requires repository, kind='coding', and request={objective:<verbatim user request>}; do not mix request with plan fields.",
   inputSchema: {
     type: "object",
     required: ["operation"],
@@ -51,7 +116,7 @@ const TOOL = Object.freeze({
         properties: { objective: { type: "string", minLength: 1 } },
         additionalProperties: false,
       },
-      receipt: { type: "object", description: "ActionReceipt for finish or SupportReceipt for support_validate." },
+      receipt: { type: "object", description: "ActionReceipt for finish or SupportReceipt for support_validate; the operation-specific schema defines its fields." },
       input: { type: "object", description: "Canonical claim input, or the original support input for support_validate." },
       caller_ref: { type: "string", description: "Active parent claim ID for support_validate only." },
       decision: { type: "object" },
@@ -59,10 +124,7 @@ const TOOL = Object.freeze({
       ref: { type: "object" },
       packet: { type: "object" },
     },
-    allOf: [
-      { if: { properties: { operation: { const: "contract" } }, required: ["operation"] }, then: { maxProperties: 1 } },
-      { if: { properties: { operation: { const: "support_validate" } }, required: ["operation"] }, then: { required: ["repository", "caller_ref", "input", "receipt"] } },
-    ],
+    allOf: [...OPERATIONS].map(operationConstraint),
     additionalProperties: false,
   },
 });
@@ -83,7 +145,10 @@ export async function dispatchWorkflowState(input, context = {}) {
   if (!input || !OPERATIONS.has(input.operation)) throw new Error("workflow broker operation is invalid");
   const allowed = OPERATION_FIELDS[input.operation];
   if (Object.keys(input).some((key) => !allowed.includes(key))) throw new Error("workflow broker input contains an unsupported field");
-  if (input.operation === "contract") return loadWorkflowContract();
+  if (input.operation === "contract") {
+    const contract = await loadWorkflowContract();
+    return { ...contract, broker: { tool_name: TOOL_NAME, input_schema: structuredClone(TOOL.inputSchema) } };
+  }
   const repository = await trustedRepository(input.repository, context.cwd ?? process.cwd());
   if (input.operation === "start") return startRun({ repository, kind: input.kind, plan_digest: input.plan_digest, task_mode: input.task_mode, request: input.request });
   if (input.operation === "status") {

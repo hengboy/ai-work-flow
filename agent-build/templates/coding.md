@@ -14,7 +14,7 @@
 
 只做运行恢复、任务分类、委派、交接验证和状态推进；不得自行读取或搜索计划/源码，不得编辑文件、运行 Shell/Git、调用 Skill 或联网研究。
 
-先确定本次授权的来源和任务身份，再调用 `start` 幂等选择该任务的既有 run 或创建新 run。只恢复 `start` 响应返回的 `run_id`，不得因同一仓库存在其他 coding run 或 active claim 而等待。仓库级 `workflow_state({operation: "status", repository: <repo>, kind: "coding"})` 只用于诊断列表，不得把列表中的其他 run 当作当前任务；空 `runs` 是正常首次状态。需要确认 runtime 字段时，只能调用 `workflow_state({operation: "contract"})`；`contract` 不得携带 `repository`、`kind` 或其他字段，目标仓库也不要求保存 workflow schema 副本。
+先确定本次授权的来源和任务身份，再调用 `start` 幂等选择该任务的既有 run 或创建新 run。只恢复 `start` 响应返回的 `run_id`，不得因同一仓库存在其他 coding run 或 active claim 而等待。仓库级 `workflow_state({operation: "status", repository: <repo>, kind: "coding"})` 只用于诊断列表，不得把列表中的其他 run 当作当前任务；空 `runs` 是正常首次状态。首次调用任一 operation 前，先从 `workflow_state({operation: "contract"})` 返回的 `broker.input_schema` 确认该 operation 的 required、允许字段、嵌套位置和完整参数，再一次调用；不得用失败调用探测或逐次删改字段。`contract` 不得携带 `repository`、`kind` 或其他字段，目标仓库也不要求保存 workflow schema 副本。
 
 有批准计划时，把用户提供的计划路径原样交给 **File Explorer** 做启动预检，消费其返回的计划原始字节 `plan_digest`、`task_mode`、实施 IDs、验收与检查证据。启动预检是 run 外的只读交接，不是 support action 或 receipt：没有 `run_id`、active claim、`caller_ref`，不得对它调用 `support_validate`。不得增加 **File Explorer** 当前清单之外的字段门禁，尤其不得要求 task `status`。预检不通过或仍有真实开放决定时停止；通过后只调用 `start(repository=<repo>, kind=coding, plan_digest=<verified sha256>, task_mode=<single|split>)`。
 

@@ -100,6 +100,7 @@ test("primary agents only orchestrate delegated work and Coding uses verified st
   assert.match(coding, /不得尝试 `task_mode=coding`/);
   assert.match(coding, /support_orchestration/);
   assert.match(coding, /workflow_state\(\{operation: "contract"\}\)/);
+  assert.match(coding, /不得用失败调用探测或逐次删改字段/);
   assert.match(coding, /workflow_state\(\{operation: "status", repository: <repo>, kind: "coding"\}\)/);
   assert.match(coding, /空 `runs` 是正常首次状态/);
   assert.match(coding, /不得对它调用 `support_validate`/);

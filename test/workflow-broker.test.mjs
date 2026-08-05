@@ -25,15 +25,21 @@ async function repository() {
 
 test("workflow broker exposes one fixed MCP tool and no command execution surface", async () => {
   const listed = await handleBrokerRequest({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+  const schema = listed.result.tools[0].inputSchema;
+  const constraint = (operation) => schema.allOf.find((entry) => entry.if.properties.operation.const === operation).then;
   assert.equal(listed.result.tools.length, 1);
   assert.equal(listed.result.tools[0].name, "workflow_state");
-  assert.ok(listed.result.tools[0].inputSchema.properties.operation.enum.includes("support_validate"));
-  assert.ok(listed.result.tools[0].inputSchema.properties.input);
-  assert.deepEqual(listed.result.tools[0].inputSchema.properties.request.required, ["objective"]);
+  assert.ok(schema.properties.operation.enum.includes("support_validate"));
+  assert.ok(schema.properties.input);
+  assert.deepEqual(schema.properties.request.required, ["objective"]);
   assert.match(listed.result.tools[0].description, /contract takes exactly/);
+  assert.match(listed.result.tools[0].description, /run_id and action_id belong inside the ActionReceipt/);
   assert.match(listed.result.tools[0].description, /must never validate pre-run discovery/);
-  assert.equal(listed.result.tools[0].inputSchema.allOf[0].then.maxProperties, 1);
-  assert.deepEqual(listed.result.tools[0].inputSchema.allOf[1].then.required, ["repository", "caller_ref", "input", "receipt"]);
+  assert.equal(constraint("contract").maxProperties, 1);
+  assert.deepEqual(constraint("support_validate").required, ["operation", "repository", "caller_ref", "input", "receipt"]);
+  assert.deepEqual(constraint("finish").required, ["operation", "repository", "receipt"]);
+  assert.deepEqual(constraint("finish").propertyNames.enum, ["operation", "repository", "receipt"]);
+  assert.deepEqual(constraint("finish").properties.receipt.required, ["run_id", "action_id", "attempt", "result", "summary", "outputs", "artifacts", "checks"]);
   assert.equal(JSON.stringify(listed).includes("command"), false);
   const unknown = await handleBrokerRequest({
     jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "shell", arguments: {} },
@@ -44,6 +50,10 @@ test("workflow broker exposes one fixed MCP tool and no command execution surfac
 test("contract accepts no repository or workflow kind fields", async () => {
   const contract = await dispatchWorkflowState({ operation: "contract" });
   assert.ok(contract.actions["coding.prepare"]);
+  assert.equal(contract.broker.tool_name, "workflow_state");
+  const finish = contract.broker.input_schema.allOf.find((entry) => entry.if.properties.operation.const === "finish").then;
+  assert.deepEqual(finish.required, ["operation", "repository", "receipt"]);
+  assert.deepEqual(finish.propertyNames.enum, ["operation", "repository", "receipt"]);
   await assert.rejects(dispatchWorkflowState({ operation: "contract", repository: "/tmp/repo" }), /unsupported field/);
   await assert.rejects(dispatchWorkflowState({ operation: "contract", kind: "coding" }), /unsupported field/);
 });
