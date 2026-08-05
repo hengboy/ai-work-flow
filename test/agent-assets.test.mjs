@@ -52,6 +52,8 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("researcher"), /checks:array/);
   assert.match(assets.compiledBodies.get("coding"), /可解析 JSON 对象/);
   assert.match(assets.compiledBodies.get("researcher"), /可解析的 JSON `TaskResult`/);
+  assert.match(assets.compiledBodies.get("coding"), /`TaskResult` 使用 2 个空格缩进的多行 JSON/);
+  assert.match(assets.compiledBodies.get("researcher"), /`TaskResult` 对象，并使用 2 个空格缩进的多行格式/);
 });
 
 test("Planning and Coding have Task only", () => {

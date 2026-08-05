@@ -302,8 +302,8 @@ function controlsText(role, controls, policies) {
 }
 
 function resultText(role) {
-  if (role.kind === "primary") return "每次委派附对应验收模板。收到可解析 JSON 对象后检查 `result`、字段类型、必需字段、额外字段和完整结构；合格才进入下一 action。不合格时指出字段路径、预期与实际类型并要求原地重返，不重复任务。";
-  return "只返回一个可解析的 JSON `TaskResult` 对象，无前后文字或 code fence。字段置于顶层，不使用 `outputs`/`error` 包装；空数组返回 `[]`，不得以字符串代替数组。仅使用当前结果分支允许的字段，完整结构不得用摘要、路径或省略号代替。";
+  if (role.kind === "primary") return "每次委派附对应验收模板，并要求 `TaskResult` 使用 2 个空格缩进的多行 JSON。收到可解析 JSON 对象后检查 `result`、字段类型、必需字段、额外字段和完整结构；合格才进入下一 action。不合格时指出字段路径、预期与实际类型并要求原地重返，不重复任务。";
+  return "只返回一个可解析的 JSON `TaskResult` 对象，并使用 2 个空格缩进的多行格式，无前后文字或 code fence。字段置于顶层，不使用 `outputs`/`error` 包装；空数组返回 `[]`，不得以字符串代替数组。仅使用当前结果分支允许的字段，完整结构不得用摘要、路径或省略号代替。";
 }
 
 export function loadAgentAssets(configRoot = resolve(import.meta.dirname, "..", "config"), templatesRoot = resolve(import.meta.dirname, "..", "templates"), workflowContractPath = contractPath()) {
