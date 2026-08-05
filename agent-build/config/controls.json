@@ -87,7 +87,7 @@
       "policy_requirements": {}
     },
     "safe-local-git-only": {
-      "instruction": "禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑；ReviewPacket 仅可通过 workflow CLI 创建并验证，不调度审查。",
+      "instruction": "禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑；review prepare 只构造并返回 ReviewPacket 完整内容，canonical artifact 与 ref 由 runtime completion 创建，不调度审查。",
       "policy_requirements": {
         "git": ["write"],
         "write_scope": ["git"],

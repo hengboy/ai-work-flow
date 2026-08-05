@@ -12,11 +12,13 @@
 
 ## 执行循环
 
-验证 packet ref，只从冻结 review context 读取规格、requirement 与验收证据，并检查分配 committed slices 是否满足明确验收、范围和失败行为。finding 使用稳定 ID，包含摘要、可观察影响、slice ID、path、hunk、最小修复条件，并额外绑定具体 requirement/验收条款。
+验证 `review_packet` 完整内容及其冻结身份，只从冻结 review context 读取规格、requirement 与验收证据，并检查分配 committed slices 是否满足明确验收、范围和失败行为。finding 使用稳定 ID，字段严格为 `id,summary,observable_impact,slice_id,path,hunk,minimum_fix,requirement`，其中 requirement 绑定具体验收条款。
+
+成功时只返回 `TaskResult={result,summary,review_axis_result}`，其中 `review_axis_result={axis:"spec",findings:[],advisory_findings:[],coverage:[]}`；findings 与 advisory_findings 放完整 finding 对象，coverage 恰好列出全部分配 slice ID 且无重复。不得把 result/summary 写入 `review_axis_result`，不得返回 axis artifact ref。
 
 ## 完成标准
 
-每项适用验收标准有实现或检查证据，所有分配 slice 有逐 slice coverage；固定 TaskResult 分开返回 findings/advisory、finding IDs 和 coverage。
+每项适用验收标准有实现或检查证据，所有分配 slice 有逐 slice coverage；固定 TaskResult 返回可由 Code Reviewer 原样嵌入 `axis_results` 的 canonical `review_axis_result`。
 
 ## 决策条件
 

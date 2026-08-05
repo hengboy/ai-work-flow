@@ -47,6 +47,47 @@ test("compiled prompts keep seven sections and contain only v2 workflow names", 
   assert.match(coding, /runtime 读取真实 spec、plan 和 tasks/);
 });
 
+test("artifact-producing agents return content for runtime completion", () => {
+  const assets = loadAgentAssets();
+  const expected = {
+    planning: ["planning_context", "runtime 负责 receipt、上游绑定与 artifact 创建"],
+    "git-operator": ["review_packet", "即使没有 workflow CLI 也不得省略或改为失败"],
+    "bug-fixer": ["change_evidence", "canonical artifact 与 ref 由 runtime completion 创建"],
+    "full-stack-coder": ["change_evidence", "canonical artifact 与 ref 由 runtime completion 创建"],
+    "code-reviewer": ["review_result", "canonical artifact 与 ref 由 runtime completion 创建"],
+  };
+  for (const [role, phrases] of Object.entries(expected)) {
+    const prompt = assets.compiledBodies.get(role);
+    for (const phrase of phrases) assert.match(prompt, new RegExp(phrase), `${role}: ${phrase}`);
+    assert.match(prompt, /直接返回完整 JSON 内容，不返回 `\*_ref`/);
+    assert.match(prompt, /不得自行创建 workflow artifact 文件或调用 workflow CLI\/状态工具/);
+  }
+  assert.doesNotMatch(assets.compiledBodies.get("git-operator"), /ReviewPacket 仅可通过 workflow CLI/);
+  assert.doesNotMatch(assets.compiledBodies.get("bug-fixer"), /change_evidence ref/);
+  assert.doesNotMatch(assets.compiledBodies.get("full-stack-coder"), /change_evidence ref/);
+  assert.doesNotMatch(assets.compiledBodies.get("code-reviewer"), /review_result ref/);
+});
+
+test("support agents consume artifact content without inventing refs", () => {
+  const assets = loadAgentAssets();
+  for (const role of assets.roles.filter((entry) => entry.actions.length === 0)) {
+    const prompt = assets.compiledBodies.get(role.id);
+    assert.match(prompt, /不得读写 workflow 状态、创建 workflow artifact 或虚构 artifact ref/, role.id);
+  }
+  for (const role of ["review-standards", "review-spec"]) {
+    const prompt = assets.compiledBodies.get(role);
+    assert.match(prompt, /验证 `review_packet` 完整内容及其冻结身份/);
+    assert.match(prompt, /TaskResult=\{result,summary,review_axis_result\}/);
+    assert.match(prompt, /不得把 result\/summary 写入 `review_axis_result`/);
+    assert.doesNotMatch(prompt, /验证 packet ref/);
+  }
+  const reviewer = assets.compiledBodies.get("code-reviewer");
+  assert.match(reviewer, /必须实际以同一 `review_packet`.*调度 Review Standards 与 Review Spec/);
+  assert.match(reviewer, /不得放入子代理的 result\/summary 包装/);
+  assert.match(reviewer, /`review_result=\{axis_results,verdict,finding_ids,coverage\}`/);
+  assert.match(reviewer, /`finding_ids` 是两轴 blocking `findings` ID 的排序去重结果，不含 advisory/);
+});
+
 test("only Planning and Coding receive workflow runtime tools", () => {
   const assets = loadAgentAssets();
   for (const role of assets.roles) {

@@ -233,8 +233,8 @@ function controlsText(role, controls, policies) {
 }
 
 function receiptText(role, contract) {
-  if (role.actions.length === 0) return "主代理只消费子代理的固定 TaskResult，并使用 dispatch 指定的 completion tool；其他角色不读写 workflow 状态。";
-  return "只向主代理返回一个固定 `TaskResult`：`result`、`summary` 和该 I/O contract 的结果字段；不得提交 run、action、attempt、lease、上游 refs 或 artifact ref。";
+  if (role.actions.length === 0) return "只向调用者返回一个固定 `TaskResult`，不得读写 workflow 状态、创建 workflow artifact 或虚构 artifact ref；调用者在适用时负责 completion。";
+  return "只向主代理返回一个固定 `TaskResult`：`result`、`summary` 和上方列出的公开结果字段。结果字段为 artifact kind（如 `planning_context`、`change_evidence`、`review_packet`、`review_result`）时，直接返回完整 JSON 内容，不返回 `*_ref`；runtime completion 负责校验内容、创建 canonical artifact 并生成 ref。不得自行创建 workflow artifact 文件或调用 workflow CLI/状态工具，也不得仅因这些工具不可用而失败；不得提交 run、action、attempt、lease、上游 refs 或 artifact ref。";
 }
 
 export function loadAgentAssets(configRoot = resolve(import.meta.dirname, "..", "config"), templatesRoot = resolve(import.meta.dirname, "..", "templates"), workflowContractPath = contractPath()) {

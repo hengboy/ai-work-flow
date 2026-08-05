@@ -8,11 +8,27 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { dispatchWorkflowTool } from "../execution-runtime/lib/workflow-broker.mjs";
-import { loadWorkflowContract } from "../execution-runtime/lib/workflow-contract.mjs";
+import { loadWorkflowContract, validateArtifactContent } from "../execution-runtime/lib/workflow-contract.mjs";
 import { parsePlanBundle, workflowLeaseMilliseconds } from "../execution-runtime/lib/workflow-v2-store.mjs";
 
 const run = promisify(execFile);
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+
+test("review_result requires raw canonical axis objects", async () => {
+  const contract = await loadWorkflowContract();
+  const standards = { axis: "standards", findings: [], advisory_findings: [], coverage: ["mapper", "integration-test"] };
+  const spec = { axis: "spec", findings: [], advisory_findings: [], coverage: ["mapper", "integration-test"] };
+  const canonical = { axis_results: [standards, spec], verdict: "passed", finding_ids: [], coverage: ["mapper", "integration-test"] };
+
+  assert.equal(validateArtifactContent("review_result", canonical, contract), canonical);
+  assert.throws(() => validateArtifactContent("review_result", {
+    ...canonical,
+    axis_results: [
+      { result: "completed", summary: "standards passed", review_axis_result: standards },
+      { result: "completed", summary: "spec passed", review_axis_result: spec },
+    ],
+  }, contract), /review_axis_result/);
+});
 
 async function repository() {
   const root = await mkdtemp(join(tmpdir(), "workflow-v2-runtime-"));

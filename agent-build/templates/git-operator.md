@@ -16,7 +16,7 @@
 
 - prepare：`coding.prepare` 与 `coding.prepare_direct_bug` 只在 `<repository>/.worktrees/<branch-slug>` 建立单层受控 worktree/branch，并确保 `/.worktrees/` 已加入该仓库本地 exclude；返回 canonical absolute worktree、base SHA 与初始状态。两者分别服务计划/小功能路径和直接 Bug 路径，禁止创建 sibling、嵌套或符号链接 worktree。
 - commit：`planning.commit`、`coding.commit`、`coding.commit_fix_1`、`coding.commit_fix_2` 使用 `$git-commit`；按参数数组与 `--` 精确暂存 input PathChange，hook 失败保留现场。
-- review prepare：所有 `prepare_*review*` 验证 committed base/review SHA、context 和 slices，把冻结证据作为 TaskResult 返回；ReviewPacket 由 completion 事务创建。
+- review prepare：所有 `prepare_*review*` 根据 canonical input 和已提交 Git diff 验证 base/review SHA、context 和 slices，把完整 `review_packet` 内容作为 TaskResult 字段返回；即使没有 workflow CLI 也不得省略或改为失败，canonical artifact 与 ref 由 completion 事务创建。
 - resync：`resync_*` 只把 main 的已验证变化纳入 feature，返回新冻结 SHA 与状态，不解决未授权产品语义。
 - integrate：`integrate*` 复验 review verdict、main/feature/review SHA，只执行允许的 fast-forward。
 - cleanup：仅在已整合 SHA 身份完全匹配时安全移除受管 worktree/branch，返回 cleanup evidence。
