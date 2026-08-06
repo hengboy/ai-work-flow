@@ -64,15 +64,20 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   }
   assert.match(assets.compiledBodies.get("planning"), /discover → confirm requirements → write_spec → select task mode → write_plan/);
   assert.match(assets.compiledBodies.get("planning"), /planning_context=\{context_id,plan_id.*context_id=source_context_id metadata value; independent from plan_id/s);
-  assert.match(assets.compiledBodies.get("planning"), /`question_number`，每次只问一个并以 `问题 <question_number>` 开头/);
+  assert.match(assets.compiledBodies.get("planning"), /仅尚未解决的真实需求疑问维护递增且跨轮次不重复的 `question_number`/);
+  assert.match(assets.compiledBodies.get("planning"), /每次只问一个并以 `问题 <question_number>` 开头，同时给出明确建议及建议原因，存在选项时标明推荐选项/);
   assert.match(assets.compiledBodies.get("planning"), /跨轮次不重复.*中断后从对话或 `decision_history` 最大编号继续/s);
-  assert.match(assets.compiledBodies.get("planning"), /需求清零后展示完整列表，只要求确认并停止/);
-  assert.match(assets.compiledBodies.get("planning"), /确认后生成无模式的 `planning_context` 并立即写 spec/);
+  assert.match(assets.compiledBodies.get("planning"), /完整需求确认、后续 `task_mode` 选择及 task preview 确认或修订均不使用 `问题 <question_number>`，也不递增 `question_number`/);
+  assert.match(assets.compiledBodies.get("planning"), /确认完整需求后生成无模式的 `planning_context` 并立即写 spec/);
   assert.match(assets.compiledBodies.get("planning"), /spec 回执未绑定目标和摘要时不得询问模式/);
-  assert.match(assets.compiledBodies.get("planning"), /spec 复验后用新编号单独要求选择 `single`（仅 spec\/plan）或 `split`/);
+  assert.match(assets.compiledBodies.get("planning"), /规划工件路径固定为 `.ai-work-flow\/plans\/<plan-id>\/spec.md`、`.ai-work-flow\/plans\/<plan-id>\/plan.md` 和 split 模式下的 `.ai-work-flow\/plans\/<plan-id>\/tasks\/NN-<task-id>.md`/);
+  assert.match(assets.compiledBodies.get("planning"), /spec 复验后单独要求选择 `single` 或 `split`；此时 `spec.md` 已生成且不属于模式产物/);
+  assert.match(assets.compiledBodies.get("planning"), /`single` 仅生成 `plan.md`，不创建 task 文件；`split` 生成 `plan.md`，并拆分 task，写入前展示完整 task 标题与概要供用户确认/);
+  assert.doesNotMatch(assets.compiledBodies.get("planning"), /`single`（仅 spec\/plan）/);
   assert.match(assets.compiledBodies.get("planning"), /task_mode_selection=\{selected,confirmed_by:"user",user_response\}/);
-  assert.match(assets.compiledBodies.get("planning"), /`split` 由 \*\*Task Planner\*\* 只读预览全部标题\/概要并用新编号确认/);
-  assert.match(assets.compiledBodies.get("planning"), /反馈原文作为 `revision_feedback`，revision 递增后重问/);
+  assert.match(assets.compiledBodies.get("planning"), /`split` 由 \*\*Task Planner\*\* 只读预览全部标题\/概要并请求确认/);
+  assert.match(assets.compiledBodies.get("planning"), /反馈原文作为 `revision_feedback`，revision 递增后重新请求确认/);
+  assert.doesNotMatch(assets.compiledBodies.get("planning"), /用新编号.*(?:选择|确认)/);
   assert.match(assets.compiledBodies.get("planning"), /task_preview_confirmation=\{confirmed_by:"user",user_response,preview_revision\}/);
   assert.match(assets.compiledBodies.get("planning-writer"), /`planning\.write_spec`：写入 context；`source_context_id` 等于 `context_id`，digest 绑定原文/);
   assert.match(assets.compiledBodies.get("planning-writer"), /spec 无模式；plan 回执模式等于输入/);
