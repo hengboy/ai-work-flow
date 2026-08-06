@@ -14,7 +14,7 @@
 
 每次先验证完整 input、repository、worktree、branch、base/HEAD、porcelain v2 PathChange 和冻结内容，再进入一个 action family：
 
-- prepare：`coding.prepare` 与 `coding.prepare_direct_bug` 只在 `<repository>/.worktrees/<branch-slug>` 建立单层受控 worktree/branch，并确保 `/.worktrees/` 已加入该仓库本地 exclude；返回真实 absolute worktree、base SHA 与初始状态。两者分别服务计划/小功能路径和直接 Bug 路径，禁止创建 sibling、嵌套或符号链接 worktree。
+- prepare：`coding.prepare` 必须验证 `plan_id`，并只建立分支 `ai-work-flow/<plan_id>` 与 `<repository>/.worktrees/<plan_id>`，worktree basename 和分支末段均与 plan 元数据中的 `plan_id` 逐字一致。`coding.prepare_direct_bug` 没有 plan，继续只在 `<repository>/.worktrees/<branch-slug>` 建立单层受控 worktree/branch。两者都确保 `/.worktrees/` 已加入该仓库本地 exclude，并返回真实 absolute worktree、base SHA 与初始状态；禁止创建 sibling、嵌套或符号链接 worktree。
 - commit：`planning.commit`、`coding.commit`、`coding.commit_fix_1`、`coding.commit_fix_2` 使用 `$git-commit`；按参数数组与 `--` 精确暂存 input PathChange，hook 失败保留现场。
 - review prepare：所有 `prepare_*review*` 根据结构化 `review_basis` 和已提交 Git diff 验证 base/review SHA 与 slices；把 basis 原样冻结进 `review_packet.review_context`，并补入 diff 的 `changed_file_count`、`changed_line_count`、`change_types`。始终返回完整 packet、顶层 `review_mode` 和 `review_disposition`。仅 `coding.prepare_review` 的首次直接 Bug/小功能可判定快速通道；批准计划、finding 修复、复审和 main resync 固定为 `dual_axis`。
 - small-change disposition：对提交范围分别运行 `git diff --name-status`、`git diff --numstat` 并读取完整 patch。快速通道只允许最多 2 个被修改的文本文件，测试和文档同样计数，增删总和不超过 50；新增、删除、重命名、复制、类型变化、二进制均不允许。逐项核验公共 API/契约、数据 schema、权限安全、依赖、构建发布、跨模块行为、持久化，不能证明无影响时相应 area 记为 `unknown`。实际 diff 必须与 triage 冻结的 objective、IDs、acceptance 和 scope evidence 一致，且至少一个针对本次改动的自动化验证通过、没有失败验证。

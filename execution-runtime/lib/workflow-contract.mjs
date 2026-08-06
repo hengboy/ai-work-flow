@@ -272,6 +272,8 @@ export function validateActionInput(actionId, input, contract) {
   assertObjectFields(input, schema.required_fields, "Action input");
   const allowed = [...schema.required_fields, ...schema.optional_fields];
   if (Object.keys(input).some((field) => !allowed.includes(field))) throw new Error("Action input contains an unsupported field");
+  if (actionId === "coding.prepare" && !Object.hasOwn(input, "plan_id")) throw new Error("Action input requires plan_id");
+  if (actionId === "coding.prepare_direct_bug" && Object.hasOwn(input, "plan_id")) throw new Error("Direct Bug preparation does not accept plan_id");
   for (const field of schema.required_fields) if (!nonEmpty(input[field], field)) throw new Error(`Action input requires non-empty ${field}`);
   const schemas = schemasByContract.get(contract);
   if (!schemas) throw new Error("TaskResult schemas were not loaded with the workflow contract");

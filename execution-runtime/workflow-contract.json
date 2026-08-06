@@ -1,5 +1,5 @@
 {
-  "digest": "aebb4fda2aa5f200fdfdc9cf3d08f317fe27afb3e9dc1dc206175fc1e3301738",
+  "digest": "f80db6d07294fedd1ab7fd14e555fb6d722de937b94a8a3f933bdeb560cc042c",
   "task_result": {
     "required_fields": ["result", "summary"],
     "results": ["completed", "retryable_failure", "needs_decision", "failed"],
@@ -102,7 +102,7 @@
       }
     },
     "coding_prepare": {
-      "input_contract": { "required_fields": ["plan_digest", "task_mode", "target_base"], "optional_fields": [] },
+      "input_contract": { "required_fields": ["plan_digest", "task_mode", "target_base"], "optional_fields": ["plan_id"] },
       "result_contracts": {
         "completed": { "required_fields": ["worktree", "branch", "base_sha", "initial_status"], "optional_fields": [] },
         "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },

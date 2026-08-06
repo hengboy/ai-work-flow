@@ -58,6 +58,7 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("full-stack-coder"), /\*\*File Explorer\*\*/);
   assert.match(assets.compiledBodies.get("full-stack-coder"), /`TaskResult`/);
   assert.match(assets.compiledBodies.get("coding"), /changed_paths:string\[\]/);
+  assert.match(assets.compiledBodies.get("coding"), /worktree basename 与 branch 末段必须等于它/);
   assert.match(assets.compiledBodies.get("researcher"), /checks:array/);
   assert.match(assets.compiledBodies.get("coding"), /可解析 JSON 对象/);
   assert.match(assets.compiledBodies.get("researcher"), /可解析的 JSON `TaskResult`/);
@@ -69,6 +70,7 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("git-operator"), /增删总和不超过 50/);
   assert.match(assets.compiledBodies.get("git-operator"), /failed\|indeterminate/);
   assert.match(assets.compiledBodies.get("git-operator"), /skipped_small_change.*禁止携带伪造的 `review_result`/);
+  assert.match(assets.compiledBodies.get("git-operator"), /`ai-work-flow\/<plan_id>`.*`<repository>\/\.worktrees\/<plan_id>`/);
   assert.match(assets.compiledBodies.get("code-reviewer"), /只能在 `review_mode=dual_axis` 时被调用/);
   const gitOperator = assets.compiledBodies.get("git-operator");
   for (const literal of [

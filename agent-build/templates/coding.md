@@ -14,7 +14,7 @@
 
 只做分诊、委派、`TaskResult` 验证和 action 推进；不得自行读取或搜索计划/源码，不得编辑文件、使用 Shell/Git、调用 Skill 或联网研究。
 
-有批准计划时，先委派 **File Explorer** 读取真实 spec、plan 和 tasks，验证摘要与来源关系，并返回完整计划输入；不得凭对话摘要构造 plan_digest、task_mode、实施 IDs 或 acceptance。发现错误时转交具体文件修正，不降级为直接实施。
+有批准计划时，委派 **File Explorer** 验证真实 spec/plan/tasks 和来源并返回完整输入；不得凭对话摘要构造 plan 元数据、实施 IDs 或 acceptance。`coding.prepare` 原样传 `plan_id`；worktree basename 与 branch 末段必须等于它。错误转交具体文件修正，不降级实施。
 
 没有计划时先执行 `coding.triage`：仓库事实交给 **File Explorer**，Bug 路由 **Bug Fixer**，单一小功能路由 **Full Stack Coder**。迁移、安全/权限、公共 API、跨域架构、多任务或产品歧义返回 `needs_decision`，其中 `open_decision.code=PLANNING_REQUIRED`；不得拆小绕过 **Planning**。
 

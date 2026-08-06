@@ -341,6 +341,19 @@ test("review evidence binding rejects conflicting or incomplete handoffs", async
   }, contract).review_mode, "dual_axis");
 });
 
+test("planned worktree preparation requires the plan ID", async () => {
+  const contract = await loadWorkflowContract();
+  const planned = { plan_id: "worktree-plan-name", plan_digest: "digest", task_mode: "single", target_base: "main" };
+  assert.equal(validateActionInput("coding.prepare", planned, contract), planned);
+  assert.throws(() => validateActionInput("coding.prepare", {
+    plan_digest: "digest", task_mode: "single", target_base: "main",
+  }, contract), /plan_id/);
+
+  const direct = { plan_digest: "digest", task_mode: "single", target_base: "main" };
+  assert.equal(validateActionInput("coding.prepare_direct_bug", direct, contract), direct);
+  assert.throws(() => validateActionInput("coding.prepare_direct_bug", { ...direct, plan_id: "not-applicable" }, contract), /does not accept plan_id/);
+});
+
 test("execution-runtime contains only the contract, typed schemas, and validator", async () => {
   const root = resolve(import.meta.dirname, "..", "execution-runtime");
   const entries = [];
