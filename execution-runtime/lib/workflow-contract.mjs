@@ -139,6 +139,15 @@ function taskCleanupCompleted(evidence) {
     evidence.worktree_removed === true && evidence.branch_removed === true;
 }
 
+function implementationResultMatchesInput(taskResult, input) {
+  const evidencePaths = taskResult.change_evidence.path_changes.flatMap((change) =>
+    [change.path, ...(change.source_path ? [change.source_path] : [])]);
+  return taskResult.change_evidence.base_sha === input.base_sha &&
+    taskResult.head_sha === taskResult.change_evidence.head_sha &&
+    sameStringSet(taskResult.changed_paths, evidencePaths) &&
+    sameStringSet(taskResult.change_evidence.acceptance_evidence.map((entry) => entry.criterion), input.acceptance);
+}
+
 function validatePlanTaskEvidence(input) {
   const integrationIds = taskIntegrationIds(input.task_integrations);
   const cleanupIds = taskCleanupIds(input.task_cleanups);
@@ -359,8 +368,14 @@ export function assertWorkflowContract(contract) {
     owners.add(action.owner);
   }
   for (const [kind, workflow] of Object.entries(contract.workflows)) {
+    if (typeof workflow.orchestrator !== "string" || !workflow.orchestrator.trim()) throw new Error(`workflow ${kind} requires an orchestrator`);
     for (const ids of Object.values(workflow.phase_actions)) {
       for (const id of ids) if (contract.actions[id]?.workflow !== kind) throw new Error(`workflow ${kind} references invalid action ${id}`);
+    }
+  }
+  for (const [caller, actionIds] of Object.entries(contract.support_delegations ?? {})) {
+    if (typeof caller !== "string" || !caller || !duplicateFreeStrings(actionIds) || actionIds.some((id) => !contract.actions[id])) {
+      throw new Error(`support delegation is invalid: ${caller}`);
     }
   }
   return { contract, owners };
@@ -392,13 +407,13 @@ export function validateActionInput(actionId, input, contract) {
     validateWriteScope(input.write_scope, "Action input.write_scope");
   }
   for (const [field, value] of Object.entries(input)) if (contract.structured_content[field]) validateStructuredContent(field, value, contract);
-  if (["planning.write_spec", "planning.select_task_mode", "planning.write_plan"].includes(actionId)) {
-    const expected = planningPath(input.plan_id, actionId === "planning.write_plan" ? "plan.md" : "spec.md");
+  if (["planning.write_spec", "planning.select_task_mode", "planning.write_plan", "planning.sync_plan_tasks"].includes(actionId)) {
+    const expected = planningPath(input.plan_id, ["planning.write_plan", "planning.sync_plan_tasks"].includes(actionId) ? "plan.md" : "spec.md");
     if (!expected || input.target !== expected || !SHA256.test(input.source_digest)) {
       throw new Error(`${actionId} requires a bound planning target and SHA-256 source_digest`);
     }
   }
-  if (["planning.preview_tasks", "planning.revise_task_preview", "planning.write_tasks"].includes(actionId) &&
+  if (["planning.preview_tasks", "planning.revise_task_preview", "planning.sync_plan_tasks", "planning.write_tasks"].includes(actionId) &&
     (input.task_mode !== "split" || !SHA256.test(input.source_digest))) {
     throw new Error(`${actionId} requires split task mode and a SHA-256 source_digest`);
   }
@@ -408,6 +423,12 @@ export function validateActionInput(actionId, input, contract) {
   if (actionId === "planning.revise_task_preview" &&
     (!input.task_preview || !input.revision_feedback || input.task_preview.plan_id !== input.plan_id || input.task_preview.plan_digest !== input.source_digest)) {
     throw new Error("planning.revise_task_preview requires feedback bound to the current preview");
+  }
+  if (actionId === "planning.sync_plan_tasks" &&
+    (input.task_preview.plan_id !== input.plan_id || input.task_preview.plan_digest !== input.source_digest ||
+      input.task_preview_confirmation.preview_revision !== input.task_preview.revision ||
+      createHash("sha256").update(input.source_content).digest("hex") !== input.source_digest)) {
+    throw new Error("planning.sync_plan_tasks requires the current plan and confirmed task preview");
   }
   if (actionId === "planning.write_tasks" &&
     (input.target !== planningPath(input.task_preview.plan_id, "tasks") || input.task_preview.plan_digest !== input.source_digest ||
@@ -421,9 +442,10 @@ export function validateActionInput(actionId, input, contract) {
       !taskArtifactManifestMatches(input.task_artifact_manifest, input))) {
     throw new Error("planning.verify_tasks requires the writer manifest bound to the confirmed preview and task paths");
   }
-  if (["coding.prepare_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task",
+  if (["coding.prepare_task", "coding.implement_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task",
     "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"].includes(actionId) &&
-    (!LOWERCASE_KEBAB_ID.test(input.plan_id) || (Object.hasOwn(input, "task_id") && !LOWERCASE_KEBAB_ID.test(input.task_id)))) {
+    ((Object.hasOwn(input, "plan_id") && !LOWERCASE_KEBAB_ID.test(input.plan_id)) ||
+      (Object.hasOwn(input, "task_id") && !LOWERCASE_KEBAB_ID.test(input.task_id)))) {
     throw new Error("Split task actions require lowercase kebab-case plan_id and task_id");
   }
   if (["coding.prepare_task", "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"].includes(actionId) &&
@@ -513,12 +535,19 @@ export function validateTaskResult(actionId, taskResult, contract, actionInput) 
   const result = validateTaskResultShape(actionId, actionIo(actionId, contract).result_contracts, taskResult, contract);
   const inputBoundActions = new Set([
     "planning.write_spec", "planning.select_task_mode", "planning.write_plan", "planning.preview_tasks", "planning.revise_task_preview",
+    "planning.sync_plan_tasks",
     "planning.confirm_task_preview", "planning.write_tasks", "planning.verify_tasks",
+    "coding.implement", "coding.fix_direct", "coding.fix_1", "coding.fix_2",
     "coding.prepare_task", "coding.implement_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task",
+    "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2",
+    "coding.prepare_resync_review_1", "coding.prepare_resync_review_2",
+    "coding.review", "coding.rereview_1", "coding.rereview_2", "coding.resync_review_1", "coding.resync_review_2",
     "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2",
   ]);
+  const reviewResultBranches = ["coding.review", "coding.rereview_1", "coding.rereview_2", "coding.resync_review_1", "coding.resync_review_2"];
   if (inputBoundActions.has(actionId) && (taskResult.result === "completed" ||
-    (actionId === "coding.integrate_task" && taskResult.result === "needs_decision"))) {
+    (actionId === "coding.integrate_task" && taskResult.result === "needs_decision") ||
+    (reviewResultBranches.includes(actionId) && ["retryable_failure", "needs_decision"].includes(taskResult.result)))) {
     if (!actionInput) throw new Error(`${actionId} result validation requires action input`);
     validateActionInput(actionId, actionInput, contract);
   }
@@ -548,6 +577,16 @@ export function validateTaskResult(actionId, taskResult, contract, actionInput) 
     digestValue(taskResult.task_preview) !== digestValue(actionInput.task_preview)) {
     throw new Error("planning.confirm_task_preview must return the unchanged input preview");
   }
+  if (actionId === "planning.sync_plan_tasks" && taskResult.result === "completed" &&
+    (taskResult.target !== actionInput.target || taskResult.task_mode !== "split" ||
+      !sameStringSet(taskResult.changed_paths, [actionInput.target]) ||
+      createHash("sha256").update(taskResult.source_content).digest("hex") !== taskResult.sha256 ||
+      taskResult.task_preview.plan_id !== actionInput.task_preview.plan_id ||
+      taskResult.task_preview.plan_digest !== taskResult.sha256 ||
+      taskResult.task_preview.revision !== actionInput.task_preview.revision ||
+      digestValue(taskResult.task_preview.tasks) !== digestValue(actionInput.task_preview.tasks))) {
+    throw new Error("planning.sync_plan_tasks must bind the unchanged confirmed preview to the rewritten plan");
+  }
   if (actionId === "planning.write_tasks" && taskResult.result === "completed" &&
     (taskResult.target !== actionInput.target || taskResult.task_mode !== actionInput.task_mode ||
       taskResult.changed_paths.length !== actionInput.task_preview.tasks.length ||
@@ -568,9 +607,18 @@ export function validateTaskResult(actionId, taskResult, contract, actionInput) 
     }
   }
   if (actionId === "coding.implement_task" && taskResult.result === "completed") {
-    if (taskResult.task_id !== actionInput.task_id || JSON.stringify(taskResult.write_scope) !== JSON.stringify(actionInput.write_scope)) {
-      throw new Error("coding.implement_task result is not bound to task_id and write_scope input");
+    if (taskResult.task_id !== actionInput.task_id || JSON.stringify(taskResult.write_scope) !== JSON.stringify(actionInput.write_scope) ||
+      !implementationResultMatchesInput(taskResult, actionInput)) {
+      throw new Error("coding.implement_task result is not bound to task identity, scope, and implementation evidence");
     }
+  }
+  if (["coding.implement", "coding.fix_direct"].includes(actionId) && taskResult.result === "completed" &&
+    !implementationResultMatchesInput(taskResult, actionInput)) {
+    throw new Error(`${actionId} result is not bound to implementation input and evidence`);
+  }
+  if (["coding.fix_1", "coding.fix_2"].includes(actionId) && taskResult.result === "completed" &&
+    (!implementationResultMatchesInput(taskResult, actionInput) || !sameStringSet(taskResult.fixed_finding_ids, actionInput.finding_ids))) {
+    throw new Error(`${actionId} result is not bound to finding input and implementation evidence`);
   }
   if (actionId === "coding.commit_task" && taskResult.result === "completed") {
     const evidencePaths = actionInput.change_evidence.path_changes.flatMap((change) =>
@@ -616,6 +664,25 @@ export function validateTaskResult(actionId, taskResult, contract, actionInput) 
       JSON.stringify(reviewVerification) !== JSON.stringify(taskResult.verification) ||
       taskResult.verification.some((entry) => entry.result !== "passed") || taskResult.clean_state.clean !== true) {
       throw new Error("Plan validation result is not bound to the complete clean plan review range and task slices");
+    }
+  }
+  if (["coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2",
+    "coding.prepare_resync_review_1", "coding.prepare_resync_review_2"].includes(actionId) && taskResult.result === "completed") {
+    const { changed_file_count, changed_line_count, change_types, ...packetBasis } = taskResult.review_packet.review_context;
+    if (taskResult.review_packet.base_sha !== actionInput.base_sha || taskResult.review_packet.review_sha !== actionInput.review_sha ||
+      digestValue(taskResult.review_packet.slices) !== digestValue(actionInput.slices) ||
+      digestValue(packetBasis) !== digestValue(actionInput.review_basis)) {
+      throw new Error(`${actionId} result is not bound to review range and slices`);
+    }
+  }
+  if (["coding.review", "coding.rereview_1", "coding.rereview_2", "coding.resync_review_1", "coding.resync_review_2"].includes(actionId) &&
+    ["completed", "retryable_failure", "needs_decision"].includes(taskResult.result)) {
+    const sliceIds = actionInput.review_packet.slices.map((slice) => slice.id);
+    const axes = taskResult.review_result.axis_results.map((axis) => axis.axis);
+    if (JSON.stringify(taskResult.finding_ids) !== JSON.stringify(taskResult.review_result.finding_ids) ||
+      JSON.stringify(taskResult.coverage) !== JSON.stringify(taskResult.review_result.coverage) ||
+      !sameStringSet(taskResult.coverage, sliceIds) || !sameStringSet(axes, actionInput.assigned_axes)) {
+      throw new Error(`${actionId} result is not bound to assigned review axes and slices`);
     }
   }
   return result;

@@ -15,7 +15,7 @@
       "policy_requirements": {}
     },
     "planning-no-implementation": {
-      "instruction": "**Planning** 只调度需求事实发现、产品决定和规划 workflow；事实发现交给 **File Explorer**，spec/plan 写入交给 **Planning Writer**，task 拆分预览、修订、确认后写入及 manifest 生成交给 **Task Planner**，task manifest 独立复验与提交交给 **Git Operator**。**Planning** 不自行操作文件、研究网络资料、实施、评审或自动进入实施。",
+      "instruction": "**Planning** 只调度需求事实发现、产品决定和规划 workflow；事实发现交给 **File Explorer**，spec/plan 写入及确认 preview 后的 plan 同步交给 **Planning Writer**，task 拆分预览、修订、确认后写入及 manifest 生成交给 **Task Planner**，task manifest 独立复验与提交交给 **Git Operator**。**Planning** 不自行操作文件、研究网络资料、实施、评审或自动进入实施。",
       "policy_requirements": {}
     },
     "read-only-discovery": {

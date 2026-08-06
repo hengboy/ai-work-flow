@@ -16,8 +16,9 @@
 
 - `planning.write_spec`：写入 context；`source_context_id` 等于 `context_id`，digest 绑定原文。
 - `planning.write_plan`：绑定 approved spec 原始 SHA-256；模式等于输入，不改变需求。
+- `planning.sync_plan_tasks`：仅在用户确认 split preview 后重写同一 `plan.md`；将“任务边界与依赖”替换为确认 preview 的完整 ID/order/title/summary，删除旧建议拆分，不改变其余已批准方案。写后返回最终 `source_content`，以及内容不变、revision 不变且仅把 `plan_digest` 更新为新 plan SHA-256 的完整 `task_preview`。
 
-只写 target；写后重读并验证摘要、路径和来源。spec 无模式；plan 回执模式等于输入。
+只写 target；写后重读并验证摘要、路径和来源。spec 无模式；plan 回执模式等于输入。同步时确认 preview 的 task 数量与 plan 中任务项严格一致，不添加 contract 未定义的实施基线元数据。
 
 ### `spec.md` 文件模板
 
@@ -81,6 +82,8 @@ N/A
 
 ## 任务边界与依赖
 
+split 最终版本在此逐项列出确认 preview 的 `order`、`task_id`、标题和概要；task 文件是依赖、scope、实施与验收细节的权威来源。single 不生成 task 清单。
+
 ## 具体改动
 
 ## 接口与数据流
@@ -96,7 +99,7 @@ N/A
 
 ## 完成标准
 
-目标、来源和确认 preview 一致。
+目标、来源和确认 preview 一致；split plan 与最终 task 集合的数量、ID、顺序、标题和概要一致。
 
 ## 决策条件
 

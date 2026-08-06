@@ -62,7 +62,7 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
     }
     assert.doesNotMatch(body, forbiddenPromptTerms, role);
   }
-  assert.match(assets.compiledBodies.get("planning"), /discover → confirm requirements → write_spec → select task mode → write_plan/);
+  assert.match(assets.compiledBodies.get("planning"), /discover → confirm requirements → write_spec → select task mode → write_plan → \(split: preview\/revise\/confirm → sync_plan_tasks → write_tasks/);
   assert.match(assets.compiledBodies.get("planning"), /planning_context=\{context_id,plan_id.*context_id=source_context_id metadata value; independent from plan_id/s);
   assert.match(assets.compiledBodies.get("planning"), /仅尚未解决的真实需求疑问维护递增且跨轮次不重复的 `question_number`/);
   assert.match(assets.compiledBodies.get("planning"), /每次只问一个并以 `问题 <question_number>` 开头，同时给出明确建议及建议原因，存在选项时标明推荐选项/);
@@ -82,6 +82,8 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("planning-writer"), /`planning\.write_spec`：写入 context；`source_context_id` 等于 `context_id`，digest 绑定原文/);
   assert.match(assets.compiledBodies.get("planning-writer"), /spec 无模式；plan 回执模式等于输入/);
   assert.match(assets.compiledBodies.get("planning-writer"), /`planning\.write_plan`：绑定 approved spec 原始 SHA-256；模式等于输入/);
+  assert.match(assets.compiledBodies.get("planning-writer"), /`planning\.sync_plan_tasks`.*确认 preview.*`plan_digest` 更新为新 plan SHA-256/s);
+  assert.match(assets.compiledBodies.get("planning-writer"), /split plan 与最终 task 集合的数量、ID、顺序、标题和概要一致/);
   assert.match(assets.compiledBodies.get("task-planner"), /`input\.task_mode` 与 plan 元数据必须同为 `split`/);
   assert.match(assets.compiledBodies.get("task-planner"), /`planning\.preview_tasks`.*不得创建、修改或删除 task 文件/s);
   assert.match(assets.compiledBodies.get("task-planner"), /`planning\.revise_task_preview`.*revision 严格增加 1/s);
@@ -102,7 +104,17 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("coding"), /Git actions 串行/);
   assert.match(assets.compiledBodies.get("coding"), /`coding\.validate_plan`.*完整无重复 IDs.*slices 覆盖全部 task/s);
   assert.match(assets.compiledBodies.get("coding"), /连续 integration\/cleanup 证据.*verification 全 passed/s);
+  assert.match(assets.compiledBodies.get("coding"), /权威任务集合是 `tasks\/NN-\*\.md`.*不得从 plan 的步骤数、候选文件或“建议任务”等叙述推断另一套 task 数量/s);
+  assert.match(assets.compiledBodies.get("coding"), /不得要求 contract 未声明的“实施基线元数据”/);
   assert.match(assets.compiledBodies.get("coding"), /task 不审查/);
+  assert.match(assets.compiledBodies.get("coding"), /`coding\.implement_task`[\s\S]*`\{result:"completed",summary,task_id,head_sha,changed_paths,change_evidence,write_scope\}`/);
+  for (const action of ["prepare_task", "implement_task", "commit_task", "integrate_task", "cleanup_task"]) {
+    assert.match(assets.compiledBodies.get("coding"), new RegExp(`coding\\.${action}`));
+  }
+  assert.match(assets.compiledBodies.get("coding"), /支持委派：\*\*Researcher\*\*[\s\S]*report_path,citation_urls,changed_paths,checks/);
+  assert.match(assets.compiledBodies.get("full-stack-coder"), /`planning\.discover`/);
+  assert.match(assets.compiledBodies.get("bug-fixer"), /支持委派：\*\*Document Maintainer\*\*/);
+  assert.match(assets.compiledBodies.get("code-reviewer"), /支持委派：\*\*Review Standards\*\*[\s\S]*review_axis_result/);
   assert.match(assets.compiledBodies.get("full-stack-coder"), /全部 PathChange 均在 scope 内/);
   assert.match(assets.compiledBodies.get("full-stack-coder"), /连续 integration 链.*verification 只有全部 passed 才可 completed/s);
   assert.match(assets.compiledBodies.get("researcher"), /checks:array/);
@@ -142,7 +154,7 @@ test("compiled prompt character limits accept the boundary and reject one charac
   extendPrompt(individual.templates, "coding", MAX_COMPILED_PROMPT_CHARACTERS - codingLength);
   assert.equal(loadAgentAssets(undefined, individual.templates).compiledBodies.get("coding").length, MAX_COMPILED_PROMPT_CHARACTERS);
   extendPrompt(individual.templates, "coding", 1);
-  assert.throws(() => loadAgentAssets(undefined, individual.templates), /Compiled prompt coding exceeds 11500 characters: 11501\./);
+  assert.throws(() => loadAgentAssets(undefined, individual.templates), /Compiled prompt coding exceeds 14000 characters: 14001\./);
 
   const aggregate = promptFixture();
   t.after(() => rmSync(aggregate.root, { recursive: true, force: true }));
@@ -159,13 +171,17 @@ test("compiled prompt character limits accept the boundary and reject one charac
   assert.equal([...atLimit.compiledBodies.values()].reduce((sum, prompt) => sum + prompt.length, 0), MAX_COMPILED_PROMPTS_CHARACTERS);
   const expandable = [...atLimit.compiledBodies].find(([, prompt]) => prompt.length < MAX_COMPILED_PROMPT_CHARACTERS)[0];
   extendPrompt(aggregate.templates, expandable, 1);
-  assert.throws(() => loadAgentAssets(undefined, aggregate.templates), /Compiled prompts exceed 57000 characters: 57001\./);
+  assert.throws(() => loadAgentAssets(undefined, aggregate.templates), /Compiled prompts exceed 65000 characters: 65001\./);
 });
 
 test("primary agents have Task only and Task Planner owns the complete split lifecycle", () => {
   const assets = loadAgentAssets();
   assert.deepEqual(assets.roles.find((role) => role.id === "planning").tools, ["Task"]);
-  assert.deepEqual(assets.roles.find((role) => role.id === "coding").tools, ["Task"]);
+  const coding = assets.roles.find((role) => role.id === "coding");
+  assert.deepEqual(coding.tools, ["Task"]);
+  assert.equal(coding.delegates.includes("planning-writer"), false);
+  assert.equal(assets.contract.workflows.coding.orchestrator, "coding");
+  assert.equal(assets.contract.workflows.coding_task.orchestrator, "coding");
   const taskPlanner = assets.roles.find((role) => role.id === "task-planner");
   assert.deepEqual(taskPlanner.actions, ["planning.preview_tasks", "planning.revise_task_preview", "planning.write_tasks"]);
   assert.deepEqual(taskPlanner.tools, ["Read", "Edit", "Write", "Bash"]);

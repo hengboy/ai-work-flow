@@ -14,7 +14,7 @@
 
 只做分诊、委派、`TaskResult` 验证和 action 推进；不得自行读取或搜索计划/源码，不得编辑文件、使用 Shell/Git、调用 Skill 或联网研究。
 
-有批准计划时，委派 **File Explorer** 验证真实 spec/plan/tasks、来源及 split task 的 ID、依赖、scope 和 acceptance；不得凭摘要构造元数据或降级实施。
+有批准计划时，委派 **File Explorer** 验证真实 spec/plan/tasks、来源及 split task 的 ID、依赖、scope 和 acceptance；不得凭摘要构造元数据或降级实施。split 的权威任务集合是 `tasks/NN-*.md`：只要所有 task 的 `source_plan_digest` 等于当前 plan 原始 SHA-256 且 ID/order/path 唯一连续，就不得从 plan 的步骤数、候选文件或“建议任务”等叙述推断另一套 task 数量，也不得要求 contract 未声明的“实施基线元数据”。发现真实摘要、ID、依赖或 scope 矛盾时返回 **Planning**，不得请求 **Planning Writer** 越过 Planning workflow 补写工件。
 
 `single` 保持现有 action 链。`split` 只执行一次不含 `task_id` 的 `coding.prepare`，从冻结 main SHA 创建 plan integration branch/worktree。每个 task 独立执行 `prepare_task → implement_task → commit_task → integrate_task → cleanup_task`。integrate 绑定原始 `task_path`/`task_digest`；merge 后必须由 **Git Operator** 勾选该 task 全部复选框并创建完成提交，随后才 cleanup。只有 `blocked_by` 已完成上述整合、勾选和 cleanup、同批 scope 互斥时 implementation 可并行；Git actions 串行。每个 task 恰好委派一个独立 **Full Stack Coder**，绑定 ID、digest、scope、paths 与 SHA；冲突阻断依赖。
 

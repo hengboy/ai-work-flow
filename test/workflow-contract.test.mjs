@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
@@ -12,6 +13,7 @@ import {
 } from "../execution-runtime/lib/workflow-contract.mjs";
 
 const sha = (character) => character.repeat(40);
+const sha256 = (content) => createHash("sha256").update(content).digest("hex");
 const pathChange = { record_type: "1", index_status: "M", worktree_status: ".", path: "src/app.mjs" };
 const smallChangeNotice = "本次变更符合低风险小改动快速通道，未执行 Standards/Spec 双轴审查；已完成聚焦自动化验证和 Git 状态校验。";
 const criterionNames = [
@@ -75,6 +77,10 @@ function reviewPacketFor(disposition, basis = reviewBasis({ origin: disposition.
     slices: [{ id: "slice-1", path: "src/app.mjs" }],
   };
 }
+function reviewPrepareInputFor(packet) {
+  const { changed_file_count, changed_line_count, change_types, ...reviewBasisInput } = packet.review_context;
+  return { base_sha: packet.base_sha, review_sha: packet.review_sha, review_basis: reviewBasisInput, slices: packet.slices };
+}
 const passedReviewResult = {
   axis_results: [
     { axis: "standards", findings: [], advisory_findings: [], coverage: ["slice-1"] },
@@ -106,6 +112,9 @@ test("contract is generation-only and assigns valid action transitions", async (
     assert.ok(action.owner, id);
     assert.ok(contract.io_contracts[action.io_contract], id);
   }
+  for (const io of Object.values(contract.io_contracts)) for (const resultContract of Object.values(io.result_contracts)) {
+    assert.deepEqual(resultContract.required_fields.filter((field) => resultContract.required_error_fields?.includes(field)), []);
+  }
   assert.deepEqual(contract.actions["coding.resync_1"].completed_to_by_task_mode, {
     single: "revalidated_1", split: "resynced_1",
   });
@@ -122,8 +131,11 @@ test("contract is generation-only and assigns valid action transitions", async (
   assert.equal(contract.actions["planning.preview_tasks"].completed_to, "task_preview_ready");
   assert.equal(contract.actions["planning.revise_task_preview"].completed_to, "task_preview_ready");
   assert.equal(contract.actions["planning.confirm_task_preview"].completed_to, "task_split_confirmed");
+  assert.equal(contract.actions["planning.sync_plan_tasks"].owner, "planning-writer");
+  assert.equal(contract.actions["planning.sync_plan_tasks"].from, "task_split_confirmed");
+  assert.equal(contract.actions["planning.sync_plan_tasks"].completed_to, "plan_tasks_synced");
   assert.equal(contract.actions["planning.write_tasks"].owner, "task-planner");
-  assert.equal(contract.actions["planning.write_tasks"].from, "task_split_confirmed");
+  assert.equal(contract.actions["planning.write_tasks"].from, "plan_tasks_synced");
   assert.equal(contract.actions["planning.write_tasks"].completed_to, "tasks_written");
   assert.equal(contract.actions["planning.verify_tasks"].owner, "git-operator");
   assert.equal(contract.actions["planning.verify_tasks"].from, "tasks_written");
@@ -223,8 +235,9 @@ test("action inputs and change evidence use complete objects", async () => {
   assert.throws(() => validateTaskResult("planning.write_plan", {
     ...planningWriteResult, task_mode: undefined, mode: "split",
   }, contract, planningWriteInput), /unsupported field|task_mode/);
+  const initialPlanContent = "# Ready plan";
   const previewInput = {
-    plan_id: "example", source_content: "# Ready plan", source_digest: "c".repeat(64), task_mode: "split",
+    plan_id: "example", source_content: initialPlanContent, source_digest: sha256(initialPlanContent), task_mode: "split",
   };
   const taskPreview = {
     plan_id: "example", plan_digest: previewInput.source_digest, revision: 1,
@@ -258,9 +271,27 @@ test("action inputs and change evidence use complete objects", async () => {
     result: "completed", summary: "Task split confirmed", task_preview: { ...revisedPreview, plan_id: "other" },
     task_preview_confirmation: confirmation,
   }, contract, confirmationInput), /unchanged input preview/);
+  const syncedPlanContent = "# Ready plan\n\n## Tasks\n\n1. `app` - App: Implement the complete app\n";
+  const syncedPlanDigest = sha256(syncedPlanContent);
+  const syncInput = {
+    plan_id: "example", target: ".ai-work-flow/plans/example/plan.md", source_content: initialPlanContent,
+    source_digest: previewInput.source_digest, task_mode: "split", task_preview: revisedPreview,
+    task_preview_confirmation: confirmation,
+  };
+  assert.equal(validateActionInput("planning.sync_plan_tasks", syncInput, contract), syncInput);
+  const reboundPreview = { ...revisedPreview, plan_digest: syncedPlanDigest };
+  const syncResult = {
+    result: "completed", summary: "Plan task boundary synchronized", target: syncInput.target,
+    source_content: syncedPlanContent, sha256: syncedPlanDigest, changed_paths: [syncInput.target],
+    task_mode: "split", task_preview: reboundPreview,
+  };
+  assert.equal(validateTaskResult("planning.sync_plan_tasks", syncResult, contract, syncInput), syncResult);
+  assert.throws(() => validateTaskResult("planning.sync_plan_tasks", {
+    ...syncResult, task_preview: { ...reboundPreview, tasks: [{ ...reboundPreview.tasks[0], title: "Changed" }] },
+  }, contract, syncInput), /unchanged confirmed preview/);
   const taskWriteInput = {
-    target: ".ai-work-flow/plans/example/tasks", source_content: "# Ready plan", source_digest: previewInput.source_digest,
-    task_mode: "split", task_preview: revisedPreview, task_preview_confirmation: confirmation,
+    target: ".ai-work-flow/plans/example/tasks", source_content: syncResult.source_content, source_digest: syncResult.sha256,
+    task_mode: "split", task_preview: reboundPreview, task_preview_confirmation: confirmation,
   };
   assert.equal(validateActionInput("planning.write_tasks", taskWriteInput, contract), taskWriteInput);
   const taskPath = ".ai-work-flow/plans/example/tasks/01-app.md";
@@ -285,12 +316,12 @@ test("action inputs and change evidence use complete objects", async () => {
     },
   }, contract, taskWriteInput), /confirmed preview and target/);
   assert.throws(() => validateActionInput("planning.write_tasks", {
-    target: ".ai-work-flow/plans/example/tasks", source_content: "# Ready plan", source_digest: previewInput.source_digest,
-    task_mode: "split", task_preview: revisedPreview, task_preview_confirmation: { ...confirmation, preview_revision: 1 },
+    target: ".ai-work-flow/plans/example/tasks", source_content: syncResult.source_content, source_digest: syncResult.sha256,
+    task_mode: "split", task_preview: reboundPreview, task_preview_confirmation: { ...confirmation, preview_revision: 1 },
   }, contract), /current task preview/);
   const verifyInput = {
     target: taskWriteInput.target, source_digest: taskWriteInput.source_digest, changed_paths: taskWriteResult.changed_paths,
-    task_preview: revisedPreview, task_preview_confirmation: confirmation, task_artifact_manifest: manifest,
+    task_preview: reboundPreview, task_preview_confirmation: confirmation, task_artifact_manifest: manifest,
   };
   const verifyResult = {
     result: "completed", summary: "Task files verified", changed_paths: taskWriteResult.changed_paths,
@@ -311,9 +342,15 @@ test("action inputs and change evidence use complete objects", async () => {
   };
   const input = { base_sha: sha("a"), path_changes: [pathChange], checks: changeEvidence.verification, change_evidence: changeEvidence };
   assert.equal(validateActionInput("coding.commit", input, contract), input);
+  const implementationInput = {
+    worktree: "/tmp/worktree", base_sha: sha("a"), spec_or_task_ids: ["REQ-1"], acceptance: ["tests pass"],
+  };
   assert.equal(validateTaskResult("coding.implement", {
     result: "completed", summary: "Implemented", head_sha: sha("b"), changed_paths: ["src/app.mjs"], change_evidence: changeEvidence,
-  }, contract).change_evidence, changeEvidence);
+  }, contract, implementationInput).change_evidence, changeEvidence);
+  assert.throws(() => validateTaskResult("coding.implement", {
+    result: "completed", summary: "Implemented", head_sha: sha("c"), changed_paths: ["src/app.mjs"], change_evidence: changeEvidence,
+  }, contract, implementationInput), /not bound to implementation input and evidence/);
   assert.throws(() => validateTaskResult("coding.implement", {
     result: "completed", summary: "Implemented", head_sha: sha("b"), changed_paths: "src/app.mjs", change_evidence: changeEvidence,
   }, contract), /TaskResult\.changed_paths must be array/);
@@ -343,6 +380,16 @@ test("review result contains two raw review axes", async () => {
     ...reviewResult,
     axis_results: [{ result: "completed", summary: "ok", review_axis_result: standards }, spec],
   }, contract), /axis is required|review_axis_result/);
+  const disposition = reviewDisposition({ origin: "approved_plan" });
+  const reviewInput = { review_packet: reviewPacketFor(disposition), assigned_axes: ["standards", "spec"] };
+  const taskResult = {
+    result: "completed", summary: "Review passed", review_result: passedReviewResult,
+    finding_ids: passedReviewResult.finding_ids, coverage: passedReviewResult.coverage,
+  };
+  assert.equal(validateTaskResult("coding.review", taskResult, contract, reviewInput), taskResult);
+  assert.throws(() => validateTaskResult("coding.review", {
+    ...taskResult, coverage: ["other-slice"],
+  }, contract, reviewInput), /assigned review axes and slices/);
 });
 
 test("initial direct bug and small feature may skip dual-axis review", async () => {
@@ -354,7 +401,7 @@ test("initial direct bug and small feature may skip dual-axis review", async () 
       result: "completed", summary: "Review prepared", review_packet: reviewPacket,
       review_mode: "skipped_small_change", review_disposition: disposition,
     };
-    assert.equal(validateTaskResult("coding.prepare_review", result, contract), result);
+    assert.equal(validateTaskResult("coding.prepare_review", result, contract, reviewPrepareInputFor(reviewPacket)), result);
   }
 });
 
@@ -396,8 +443,8 @@ test("review preparation prevents mode mismatch and skips outside the initial ac
   };
   assert.throws(() => validateTaskResult("coding.prepare_review", {
     ...result, review_mode: "dual_axis",
-  }, contract), /must match/);
-  assert.throws(() => validateTaskResult("coding.prepare_rereview_1", result, contract), /Only coding\.prepare_review/);
+  }, contract, reviewPrepareInputFor(reviewPacket)), /must match/);
+  assert.throws(() => validateTaskResult("coding.prepare_rereview_1", result, contract, reviewPrepareInputFor(reviewPacket)), /Only coding\.prepare_review/);
   for (const [action, disposition] of [
     ["coding.prepare_rereview_1", reviewDisposition({ origin: "rereview", stage: "rereview" })],
     ["coding.prepare_rereview_2", reviewDisposition({ origin: "rereview", stage: "rereview" })],
@@ -408,7 +455,7 @@ test("review preparation prevents mode mismatch and skips outside the initial ac
     assert.equal(validateTaskResult(action, {
       result: "completed", summary: "Review prepared", review_packet: packet,
       review_mode: "dual_axis", review_disposition: disposition,
-    }, contract).review_mode, "dual_axis");
+    }, contract, reviewPrepareInputFor(packet)).review_mode, "dual_axis");
   }
   const failedCriterion = reviewDisposition({ criterionStatuses: { triage_scope_match: "failed" }, mode: "skipped_small_change" });
   assert.throws(() => validateStructuredContent("review_disposition", failedCriterion, contract), /fail-closed criteria/);
@@ -455,18 +502,18 @@ test("review evidence binding rejects conflicting or incomplete handoffs", async
   assert.throws(() => validateTaskResult("coding.prepare_review", {
     result: "completed", summary: "Claimed safe", review_packet: conflictingPacket,
     review_mode: "skipped_small_change", review_disposition: disposition,
-  }, contract), /not bound/);
+  }, contract, prepareInput), /not bound/);
   const noVerificationPacket = reviewPacketFor(disposition, reviewBasis({ verification: [] }));
   assert.throws(() => validateTaskResult("coding.prepare_review", {
     result: "completed", summary: "Claimed safe", review_packet: noVerificationPacket,
     review_mode: "skipped_small_change", review_disposition: disposition,
-  }, contract), /not bound/);
+  }, contract, prepareInput), /not bound/);
   const fullReviewDisposition = reviewDisposition({ criterionStatuses: { full_review_not_requested: "failed" } });
   const fullReviewPacket = reviewPacketFor(fullReviewDisposition, reviewBasis({ userRequestedFullReview: true }));
   assert.equal(validateTaskResult("coding.prepare_review", {
     result: "completed", summary: "Full review required", review_packet: fullReviewPacket,
     review_mode: "dual_axis", review_disposition: fullReviewDisposition,
-  }, contract).review_mode, "dual_axis");
+  }, contract, reviewPrepareInputFor(fullReviewPacket)).review_mode, "dual_axis");
 });
 
 test("split preparation creates one plan integration workflow and safe task workflows", async () => {
@@ -546,7 +593,8 @@ test("split task implementation binds exhaustive scope and rejects path escapes"
   }, contract, input), /changed paths must stay within write_scope/);
   assert.throws(() => validateTaskResult("coding.implement_task", {
     ...result, write_scope: ["src/"],
-  }, contract, input), /not bound to task_id and write_scope input/);
+  }, contract, input), /not bound to task identity, scope, and implementation evidence/);
+  assert.throws(() => validateActionInput("coding.implement_task", { ...input, task_id: "Task_01" }, contract), /lowercase kebab-case/);
 });
 
 test("task commit, no-ff integration, and cleanup bind every task SHA", async () => {

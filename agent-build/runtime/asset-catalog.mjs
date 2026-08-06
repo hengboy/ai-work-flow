@@ -32,8 +32,8 @@ const HEADINGS = ["角色结果", "能力与控制", "允许的 Actions 与输�
 const CONTROL_MARKER = "<!-- ai-work-flow:controls -->";
 const ACTION_MARKER = "<!-- ai-work-flow:actions -->";
 const RESULT_MARKER = "<!-- ai-work-flow:task-result -->";
-export const MAX_COMPILED_PROMPT_CHARACTERS = 11_500;
-export const MAX_COMPILED_PROMPTS_CHARACTERS = 57_000;
+export const MAX_COMPILED_PROMPT_CHARACTERS = 14_000;
+export const MAX_COMPILED_PROMPTS_CHARACTERS = 65_000;
 export const MAX_AGENT_DEPTH = 2;
 
 function unique(values) {
@@ -145,6 +145,10 @@ function validateAssets(catalog, controlsDocument, policiesDocument, defaults, t
   const ids = roles.map((role) => role?.id);
   if (!unique(ids)) errors.push("roles.json contains duplicate role ids.");
   if (roles.filter((role) => role.default_primary).length !== 1) errors.push("roles.json must declare exactly one default primary role.");
+  for (const [id, workflow] of Object.entries(contract.workflows ?? {})) {
+    const orchestrator = roles.find((role) => role.id === workflow.orchestrator);
+    if (!orchestrator || orchestrator.kind !== "primary") errors.push(`Workflow ${id} must declare a primary orchestrator.`);
+  }
   if (!isPlainObject(controlsDocument?.controls)) errors.push("controls.json must define controls.");
   if (!isPlainObject(policiesDocument?.policies)) errors.push("policies.json must define policies.");
   const controls = controlsDocument?.controls ?? {};
@@ -272,6 +276,16 @@ function contractGroupText(ids, ioName, contract, roleNames, includeStructures =
   return `- Actions：${actions}\n  - 输入：必需=${input.required_fields.join(",") || "无"}；可选=${input.optional_fields.join(",") || "无"}。\n  - \`TaskResult\` 验收：${results}。${structures ? `\n  - 完整结构：${structures}。` : ""}`;
 }
 
+function supportContractText(roleIds, contract, roleNames) {
+  return roleIds.map((roleId) => {
+    const results = contract.support_result_contracts[roleId];
+    const templates = Object.entries(results).map(([name, output]) => resultTemplate(name, output)).join("；");
+    const fields = Object.values(results).flatMap((output) => [...output.required_fields, ...output.optional_fields]);
+    const structures = structuredSchemaText(fields, contract);
+    return `- 支持委派：**${roleNames.get(roleId) ?? roleId}**\n  - \`TaskResult\` 验收：${templates}。${structures ? `\n  - 完整结构：${structures}。` : ""}`;
+  }).join("\n");
+}
+
 function actionText(role, contract, schemas, roles) {
   const roleNames = new Map(roles.map((entry) => [entry.id, entry.name]));
   if (role.kind !== "primary" && role.actions.length === 0) {
@@ -281,9 +295,11 @@ function actionText(role, contract, schemas, roles) {
     const structures = structuredSchemaText(fields, contract);
     return `- 字段类型：${fieldTypes(results, schemas)}。\n- 支持委派 \`TaskResult\` 验收：${templates}。${structures ? `\n  - 完整结构：${structures}。` : ""}`;
   }
-  const actionIds = role.kind === "primary"
-    ? Object.keys(contract.actions).filter((id) => contract.actions[id].workflow === role.id)
+  const ownedWorkflowActionIds = role.kind === "primary"
+    ? Object.keys(contract.actions).filter((id) => contract.workflows[contract.actions[id].workflow]?.orchestrator === role.id)
     : role.actions;
+  const actionIds = [...new Set([...ownedWorkflowActionIds, ...(contract.support_delegations?.[role.id] ?? [])])];
+  const supportRoleIds = role.delegates.filter((id) => contract.support_result_contracts[id]);
   const groups = new Map();
   for (const id of actionIds) {
     const ioName = contract.actions[id].io_contract;
@@ -291,6 +307,9 @@ function actionText(role, contract, schemas, roles) {
   }
   const resultContracts = Object.fromEntries([...groups].flatMap(([ioName]) => Object.entries(contract.io_contracts[ioName].result_contracts)
     .map(([name, output], index) => [`${ioName}:${name}:${index}`, output])));
+  for (const roleId of supportRoleIds) for (const [name, output] of Object.entries(contract.support_result_contracts[roleId])) {
+    resultContracts[`support:${roleId}:${name}`] = output;
+  }
   const primaryStructures = role.kind === "primary" ? structuredSchemaText([...groups].flatMap(([ioName]) => {
     const io = contract.io_contracts[ioName];
     return [
@@ -299,7 +318,8 @@ function actionText(role, contract, schemas, roles) {
     ];
   }), contract) : "";
   const groupText = [...groups].map(([ioName, ids]) => contractGroupText(ids, ioName, contract, roleNames, role.kind !== "primary")).join("\n");
-  return `- 字段类型：${fieldTypes(resultContracts, schemas)}。\n${groupText}${primaryStructures ? `\n- 完整结构：${primaryStructures}。` : ""}`;
+  const supportText = supportContractText(supportRoleIds, contract, roleNames);
+  return `- 字段类型：${fieldTypes(resultContracts, schemas)}。\n${groupText}${supportText ? `\n${supportText}` : ""}${primaryStructures ? `\n- 完整结构：${primaryStructures}。` : ""}`;
 }
 
 function controlsText(role, controls, policies) {

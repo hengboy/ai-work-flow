@@ -8,7 +8,7 @@
       "default_primary": true,
       "policy": "coding",
       "controls": ["no-direct-workspace-operations", "coding-orchestration-only"],
-      "delegates": ["file-explorer", "researcher", "document-maintainer", "planning-writer", "full-stack-coder", "bug-fixer", "git-operator", "environment-operator", "code-reviewer"],
+      "delegates": ["file-explorer", "researcher", "document-maintainer", "full-stack-coder", "bug-fixer", "git-operator", "environment-operator", "code-reviewer"],
       "tools": ["Task"],
       "actions": ["coding.triage"]
     },
@@ -65,7 +65,7 @@
       "controls": ["single-planning-artifact-only", "no-git-mutation"],
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
-      "actions": ["planning.write_spec", "planning.write_plan"]
+      "actions": ["planning.write_spec", "planning.write_plan", "planning.sync_plan_tasks"]
     },
     {
       "id": "task-planner",

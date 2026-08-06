@@ -1,5 +1,5 @@
 {
-  "digest": "ad85e80d0a496bc30a19a29d88197ef3d90f0491c777c9e363ae951c11c12138",
+  "digest": "05b8c4292155a81d02e93d55f9c13c64a0356c3bbc4cc7e9d97dd0676a634c75",
   "task_result": {
     "required_fields": ["result", "summary"],
     "results": ["completed", "retryable_failure", "needs_decision", "failed"],
@@ -72,6 +72,11 @@
       "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] }
     }
   },
+  "support_delegations": {
+    "coding": ["planning.discover"],
+    "full-stack-coder": ["planning.discover"],
+    "bug-fixer": ["planning.discover"]
+  },
   "io_contracts": {
     "discovery_navigation": {
       "input_contract": { "required_fields": ["objective", "terms", "known_paths"], "optional_fields": [] },
@@ -109,6 +114,14 @@
       "input_contract": { "required_fields": ["plan_id", "target", "source_content", "source_digest", "task_mode"], "optional_fields": [] },
       "result_contracts": {
         "completed": { "required_fields": ["target", "sha256", "changed_paths", "task_mode"], "optional_fields": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [] }
+      }
+    },
+    "planning_plan_task_sync": {
+      "input_contract": { "required_fields": ["plan_id", "target", "source_content", "source_digest", "task_mode", "task_preview", "task_preview_confirmation"], "optional_fields": [] },
+      "result_contracts": {
+        "completed": { "required_fields": ["target", "source_content", "sha256", "changed_paths", "task_mode", "task_preview"], "optional_fields": [] },
         "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
         "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [] }
       }
@@ -265,7 +278,7 @@
       "input_contract": { "required_fields": ["review_packet", "assigned_axes"], "optional_fields": [] },
       "result_contracts": {
         "completed": { "required_fields": ["review_result", "finding_ids", "coverage"], "optional_fields": [] },
-        "retryable_failure": { "required_fields": ["review_result", "finding_ids", "coverage"], "optional_fields": [], "required_error_fields": ["code", "message", "finding_ids"] },
+        "retryable_failure": { "required_fields": ["review_result", "finding_ids", "coverage"], "optional_fields": [], "required_error_fields": ["code", "message"] },
         "failed": { "required_fields": [], "optional_fields": ["review_result"], "required_error_fields": ["code", "message"] },
         "needs_decision": { "required_fields": ["review_result", "finding_ids", "coverage"], "optional_fields": [] }
       }
@@ -304,6 +317,7 @@
   ],
   "workflows": {
     "planning": {
+      "orchestrator": "planning",
       "initial_phase": "started",
       "terminal_phases": ["complete", "failed", "awaiting_decision"],
       "phase_actions": {
@@ -314,13 +328,15 @@
         "mode_ready": ["planning.write_plan"],
         "plan_ready": ["planning.preview_tasks"],
         "task_preview_ready": ["planning.confirm_task_preview", "planning.revise_task_preview"],
-        "task_split_confirmed": ["planning.write_tasks"],
+        "task_split_confirmed": ["planning.sync_plan_tasks"],
+        "plan_tasks_synced": ["planning.write_tasks"],
         "tasks_written": ["planning.verify_tasks"],
         "tasks_ready": ["planning.commit"],
         "planning_committed": ["planning.complete"]
       }
     },
     "coding": {
+      "orchestrator": "coding",
       "initial_phase": "started",
       "terminal_phases": ["complete", "failed", "awaiting_decision"],
       "phase_actions": {
@@ -356,6 +372,7 @@
       }
     },
     "coding_task": {
+      "orchestrator": "coding",
       "initial_phase": "started",
       "terminal_phases": ["complete", "failed", "awaiting_decision"],
       "phase_actions": {
@@ -376,7 +393,8 @@
     "planning.preview_tasks": { "owner": "task-planner", "workflow": "planning", "from": "plan_ready", "completed_to": "task_preview_ready", "io_contract": "planning_task_preview" },
     "planning.confirm_task_preview": { "owner": "planning", "workflow": "planning", "from": "task_preview_ready", "completed_to": "task_split_confirmed", "io_contract": "planning_task_preview_confirmation" },
     "planning.revise_task_preview": { "owner": "task-planner", "workflow": "planning", "from": "task_preview_ready", "completed_to": "task_preview_ready", "io_contract": "planning_task_preview" },
-    "planning.write_tasks": { "owner": "task-planner", "workflow": "planning", "from": "task_split_confirmed", "completed_to": "tasks_written", "io_contract": "planning_tasks_write" },
+    "planning.sync_plan_tasks": { "owner": "planning-writer", "workflow": "planning", "from": "task_split_confirmed", "completed_to": "plan_tasks_synced", "io_contract": "planning_plan_task_sync" },
+    "planning.write_tasks": { "owner": "task-planner", "workflow": "planning", "from": "plan_tasks_synced", "completed_to": "tasks_written", "io_contract": "planning_tasks_write" },
     "planning.verify_tasks": { "owner": "git-operator", "workflow": "planning", "from": "tasks_written", "completed_to": "tasks_ready", "io_contract": "planning_task_verification" },
     "planning.commit": { "owner": "git-operator", "workflow": "planning", "from": "tasks_ready", "completed_to": "planning_committed", "io_contract": "planning_commit" },
     "planning.complete": { "owner": "planning", "workflow": "planning", "from": "planning_committed", "completed_to": "complete", "io_contract": "planning_complete" },

@@ -27,7 +27,7 @@
 - `agent-build/config/` 负责 roles、controls、policies、Skills 元数据和人类可读 routing 治理。
 - `agent-build/runtime/` 负责结构校验、七段 prompt 编译、三平台生成和事务式安装。
 - `agent-build/templates/` 只保留 14 个角色独有的判断与完成规则，**Planning**/**Coding** 仅使用 `Task`。
-- **File Explorer** 只负责只读发现与事实检索；**Task Planner** 从写后 task 文件生成 manifest，**Git Operator** 在提交前独立复验 manifest。
+- **File Explorer** 只负责只读发现与事实检索；**Planning Writer** 在 split preview 确认后同步 plan 任务边界与摘要；**Task Planner** 从写后 task 文件生成 manifest，**Coding** 以摘要绑定的 task 文件为权威任务集合，**Git Operator** 在提交前独立复验 manifest。
 - `skills/` 提供五个用户入口及一级 references/scripts。
 - `test/` 验证 contract、`TaskResult`、提示词/Skill 生成、三平台渲染和安装迁移。
 
