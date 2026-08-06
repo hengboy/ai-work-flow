@@ -11,10 +11,10 @@
 ## 2. 主代理边界
 
 - **Coding** 与 **Planning** 都是主代理，互不作为子代理，也不彼此委派。
-- **Planning** 负责发现、确认、规划工件、任务模式与规划提交，不实施源码或预授权实现。
+- **Planning** 负责发现、需求确认、spec 后任务模式选择、split task 拆分确认、规划工件与规划提交，不实施源码或预授权实现。
 - **Coding** 消费已批准计划，或分诊用户直接授权的 Bug/小功能，并在当前会话持续调度后续 action。
 - 主代理只使用 Task 委派，不得直接读取、搜索、枚举或编辑工作区，不得执行 Shell、Skill、Git、浏览器或网络检索。
-- **Planning** 严格执行 `discover → confirm → write_spec → write_plan → optional write_tasks → commit`。
+- **Planning** 严格执行 `discover → confirm requirements → write_spec → select task mode → write_plan → (split: preview/revise/confirm → write_tasks → verify_tasks) → commit`。
 - **Coding** 有批准计划时委派 **File Explorer** 校验真实工件与来源摘要；没有批准计划时先执行 `coding.triage`。
 - 直接 Bug 路由到 **Bug Fixer**；单一小功能路由到 **Full Stack Coder**。
 - 跨域架构、数据库/schema 迁移、安全/权限、公共 API/契约、多个独立交付任务或产品歧义必须以 `PLANNING_REQUIRED` 停止，**Coding** 不得拆小规避。
@@ -22,11 +22,11 @@
 
 ## 3. 角色选择
 
-- 仓库事实发现与精确入口定位交给 **File Explorer**。
+- 仓库事实发现、精确入口定位和 task 写后独立核验交给 **File Explorer**。
 - 官方一手资料研究与单一报告交给 **Researcher**。
 - 指定普通文档维护交给 **Document Maintainer**。
 - spec 与 plan 分别交给 **Planning Writer** 的对应 action。
-- split/single task 集合交给 **Task Planner**。
+- split task 预览、按用户反馈修订和确认后写入交给 **Task Planner**；预览/修订 action 禁止修改工作区。
 - 已批准计划、小功能实施与项目初始化交给 **Full Stack Coder** 的不同分支。
 - 直接 Bug 与当前 blocking finding 的最小修复交给 **Bug Fixer**。
 - 本地 Git 生命周期交给 **Git Operator**，并始终串行。
@@ -44,7 +44,7 @@
 - 子代理不加前言、后记或 code fence，不使用 `outputs`/`error` 包装，不用省略号代替内容；空数组显式返回 `[]`，不得用字符串代替数组。
 - 主代理先验证 `result`、`summary`、该结果分支的全部必需字段、禁止的额外字段和嵌套结构，再将下一 action 需要的完整对象原样传递。
 - 返回格式不合格时，主代理只列出字段路径、预期类型、实际类型、缺失字段、多余字段或结构错误，要求子代理基于已完成工作原地重返对象；不得重新执行发现、实现、检查或 Git 操作。
-- `planning_context`、`change_evidence`、`review_basis`、`review_packet`、`review_disposition`、`review_axis_result` 与 `review_result` 不写内部文件，只作为直接内容交接。
+- `planning_context`、`task_preview`、`task_preview_confirmation`、`task_artifact_manifest`、`change_evidence`、`review_basis`、`review_packet`、`review_disposition`、`review_axis_result` 与 `review_result` 不写内部文件，只作为直接内容交接。
 - `review_basis` 冻结来源、阶段、objective/IDs/acceptance/scope、用户完整审查选择和验证记录；ReviewPacket context、disposition 与 integration SHA 必须逐字段绑定，冲突时不得跳过审查或整合。
 
 ## 5. 调度与并发

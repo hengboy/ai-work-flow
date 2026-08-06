@@ -112,6 +112,21 @@ test("contract is generation-only and assigns valid action transitions", async (
   assert.deepEqual(contract.actions["coding.resync_2"].completed_to_by_task_mode, {
     single: "revalidated_2", split: "resynced_2",
   });
+  assert.equal(contract.actions["planning.write_spec"].from, "context_ready");
+  assert.equal(contract.actions["planning.write_spec"].completed_to, "spec_ready");
+  assert.equal(contract.actions["planning.select_task_mode"].from, "spec_ready");
+  assert.equal(contract.actions["planning.write_plan"].from, "mode_ready");
+  assert.deepEqual(contract.actions["planning.write_plan"].completed_to_by_task_mode, {
+    single: "tasks_ready", split: "plan_ready",
+  });
+  assert.equal(contract.actions["planning.preview_tasks"].completed_to, "task_preview_ready");
+  assert.equal(contract.actions["planning.revise_task_preview"].completed_to, "task_preview_ready");
+  assert.equal(contract.actions["planning.confirm_task_preview"].completed_to, "task_split_confirmed");
+  assert.equal(contract.actions["planning.write_tasks"].owner, "task-planner");
+  assert.equal(contract.actions["planning.write_tasks"].from, "task_split_confirmed");
+  assert.equal(contract.actions["planning.write_tasks"].completed_to, "tasks_written");
+  assert.equal(contract.actions["planning.verify_tasks"].from, "tasks_written");
+  assert.equal(contract.actions["planning.verify_tasks"].completed_to, "tasks_ready");
 });
 
 test("TaskResult carries direct structured content", async () => {
@@ -119,8 +134,6 @@ test("TaskResult carries direct structured content", async () => {
   const planningContext = {
     context_id: "context-example",
     plan_id: "example",
-    task_mode: "single",
-    task_mode_selection: { selected: "single", confirmed_by: "user", user_response: "Use single mode" },
     goal: "Implement the example",
     users_consumers: ["users"],
     success_criteria: ["behavior works"],
@@ -135,17 +148,26 @@ test("TaskResult carries direct structured content", async () => {
     result: "completed",
     summary: "Planning facts confirmed",
     plan_id: "example",
-    task_mode: "single",
     planning_context: planningContext,
   };
   assert.equal(validateTaskResult("planning.confirm", result, contract), result);
   assert.equal(validateStructuredContent("planning_context", planningContext, contract), planningContext);
-  assert.throws(() => validateStructuredContent("planning_context", {
-    ...planningContext, task_mode_selection: { ...planningContext.task_mode_selection, selected: "split" },
-  }, contract), /planning_context is invalid/);
-  assert.throws(() => validateTaskResult("planning.confirm", {
-    ...result, task_mode: "split",
-  }, contract), /not bound to the user selection/);
+  assert.throws(() => validateStructuredContent("planning_context", { ...planningContext, task_mode: "single" }, contract), /unsupported field/);
+  const modeResult = {
+    result: "completed", summary: "Task mode selected", plan_id: "example", task_mode: "single",
+    task_mode_selection: { selected: "single", confirmed_by: "user", user_response: "Use single mode" },
+  };
+  const modeInput = { plan_id: "example", target: ".ai-work-flow/plans/example/spec.md", source_digest: "a".repeat(64), decision_history: [] };
+  assert.equal(validateTaskResult("planning.select_task_mode", modeResult, contract, modeInput), modeResult);
+  assert.throws(() => validateTaskResult("planning.select_task_mode", {
+    ...modeResult, task_mode: "split",
+  }, contract, modeInput), /not bound to the user selection/);
+  assert.throws(() => validateTaskResult("planning.select_task_mode", {
+    ...modeResult, plan_id: "other",
+  }, contract, modeInput), /spec plan_id/);
+  assert.throws(() => validateActionInput("planning.select_task_mode", {
+    ...modeInput, source_digest: "not-a-digest",
+  }, contract), /source_digest/);
   const { context_id, ...missingContextId } = planningContext;
   assert.throws(() => validateStructuredContent("planning_context", missingContextId, contract), /context_id/);
   assert.throws(() => validateTaskResult("planning.confirm", { ...result, planning_context_ref: {} }, contract), /unsupported field/);
@@ -154,7 +176,24 @@ test("TaskResult carries direct structured content", async () => {
 
 test("action inputs and change evidence use complete objects", async () => {
   const contract = await loadWorkflowContract();
+  const planningSpecInput = {
+    plan_id: "example",
+    target: ".ai-work-flow/plans/example/spec.md",
+    source_content: "{\"goal\":\"Example\"}",
+    source_digest: "f".repeat(64),
+  };
+  assert.equal(validateActionInput("planning.write_spec", planningSpecInput, contract), planningSpecInput);
+  const planningSpecResult = {
+    result: "completed", summary: "Spec written", target: planningSpecInput.target, sha256: "e".repeat(64),
+    changed_paths: [planningSpecInput.target],
+  };
+  assert.equal(validateTaskResult("planning.write_spec", planningSpecResult, contract, planningSpecInput), planningSpecResult);
+  assert.throws(() => validateTaskResult("planning.write_spec", {
+    ...planningSpecResult, target: ".ai-work-flow/plans/other/spec.md",
+  }, contract, planningSpecInput), /bound to its target/);
+  assert.throws(() => validateActionInput("planning.write_spec", { ...planningSpecInput, task_mode: "split" }, contract), /unsupported field/);
   const planningWriteInput = {
+    plan_id: "example",
     target: ".ai-work-flow/plans/example/plan.md",
     source_content: "# Approved spec",
     source_digest: "a".repeat(64),
@@ -176,10 +215,86 @@ test("action inputs and change evidence use complete objects", async () => {
     changed_paths: [planningWriteInput.target],
     task_mode: "split",
   };
-  assert.equal(validateTaskResult("planning.write_plan", planningWriteResult, contract), planningWriteResult);
+  assert.equal(validateTaskResult("planning.write_plan", planningWriteResult, contract, planningWriteInput), planningWriteResult);
+  assert.throws(() => validateTaskResult("planning.write_plan", {
+    ...planningWriteResult, task_mode: "single",
+  }, contract, planningWriteInput), /target and task_mode/);
   assert.throws(() => validateTaskResult("planning.write_plan", {
     ...planningWriteResult, task_mode: undefined, mode: "split",
-  }, contract), /unsupported field|task_mode/);
+  }, contract, planningWriteInput), /unsupported field|task_mode/);
+  const previewInput = {
+    plan_id: "example", source_content: "# Ready plan", source_digest: "c".repeat(64), task_mode: "split",
+  };
+  const taskPreview = {
+    plan_id: "example", plan_digest: previewInput.source_digest, revision: 1,
+    tasks: [
+      { task_id: "api", order: 1, title: "API", summary: "Implement the API" },
+      { task_id: "ui", order: 2, title: "UI", summary: "Implement the UI" },
+    ],
+  };
+  const previewResult = { result: "completed", summary: "Task split previewed", task_preview: taskPreview };
+  assert.equal(validateTaskResult("planning.preview_tasks", previewResult, contract, previewInput), previewResult);
+  assert.throws(() => validateStructuredContent("task_preview", {
+    ...taskPreview, tasks: [taskPreview.tasks[0], { ...taskPreview.tasks[1], task_id: "api" }],
+  }, contract), /unique/);
+  assert.throws(() => validateStructuredContent("task_preview", {
+    ...taskPreview, tasks: [{ ...taskPreview.tasks[0], order: 100 }],
+  }, contract), /maximum/);
+  const reviseInput = { ...previewInput, task_preview: taskPreview, revision_feedback: "Merge the tasks" };
+  const revisedPreview = {
+    ...taskPreview, revision: 2, tasks: [{ task_id: "app", order: 1, title: "App", summary: "Implement the complete app" }],
+  };
+  assert.equal(validateTaskResult("planning.revise_task_preview", {
+    result: "completed", summary: "Task split revised", task_preview: revisedPreview,
+  }, contract, reviseInput).task_preview, revisedPreview);
+  assert.throws(() => validateTaskResult("planning.revise_task_preview", previewResult, contract, reviseInput), /increment/);
+  const confirmation = { confirmed_by: "user", user_response: "This split is reasonable", preview_revision: 2 };
+  const confirmationInput = { task_preview: revisedPreview, decision_history: [] };
+  assert.equal(validateTaskResult("planning.confirm_task_preview", {
+    result: "completed", summary: "Task split confirmed", task_preview: revisedPreview, task_preview_confirmation: confirmation,
+  }, contract, confirmationInput).task_preview_confirmation, confirmation);
+  assert.throws(() => validateTaskResult("planning.confirm_task_preview", {
+    result: "completed", summary: "Task split confirmed", task_preview: { ...revisedPreview, plan_id: "other" },
+    task_preview_confirmation: confirmation,
+  }, contract, confirmationInput), /unchanged input preview/);
+  const taskWriteInput = {
+    target: ".ai-work-flow/plans/example/tasks", source_content: "# Ready plan", source_digest: previewInput.source_digest,
+    task_mode: "split", task_preview: revisedPreview, task_preview_confirmation: confirmation,
+  };
+  assert.equal(validateActionInput("planning.write_tasks", taskWriteInput, contract), taskWriteInput);
+  const taskWriteResult = {
+    result: "completed", summary: "Tasks written", target: taskWriteInput.target, sha256: "d".repeat(64),
+    changed_paths: [".ai-work-flow/plans/example/tasks/01-app.md"], task_mode: "split",
+  };
+  assert.equal(validateTaskResult("planning.write_tasks", taskWriteResult, contract, taskWriteInput).task_mode, "split");
+  assert.throws(() => validateTaskResult("planning.write_tasks", {
+    ...taskWriteResult, changed_paths: [".ai-work-flow/plans/example/tasks/01-unrelated.md", ".ai-work-flow/plans/example/tasks/02-extra.md"],
+  }, contract, taskWriteInput), /confirmed preview and target/);
+  assert.throws(() => validateActionInput("planning.write_tasks", {
+    target: ".ai-work-flow/plans/example/tasks", source_content: "# Ready plan", source_digest: previewInput.source_digest,
+    task_mode: "split", task_preview: revisedPreview, task_preview_confirmation: { ...confirmation, preview_revision: 1 },
+  }, contract), /current task preview/);
+  const verifyInput = {
+    target: taskWriteInput.target, source_digest: taskWriteInput.source_digest, changed_paths: taskWriteResult.changed_paths,
+    task_preview: revisedPreview, task_preview_confirmation: confirmation,
+  };
+  const manifest = {
+    plan_id: "example", plan_digest: taskWriteInput.source_digest, preview_revision: 2,
+    files: [{
+      path: taskWriteResult.changed_paths[0], sha256: "9".repeat(64), task_id: "app", order: 1,
+      title: "App", summary: "Implement the complete app",
+    }],
+  };
+  const verifyResult = {
+    result: "completed", summary: "Task files verified", changed_paths: taskWriteResult.changed_paths,
+    task_artifact_manifest: manifest, checks: ["All task files match preview revision 2"],
+  };
+  assert.equal(validateTaskResult("planning.verify_tasks", verifyResult, contract, verifyInput), verifyResult);
+  assert.throws(() => validateTaskResult("planning.verify_tasks", {
+    ...verifyResult, task_artifact_manifest: {
+      ...manifest, files: [{ ...manifest.files[0], title: "Different title" }],
+    },
+  }, contract, verifyInput), /actual files and the confirmed preview/);
   const changeEvidence = {
     base_sha: sha("a"),
     head_sha: sha("b"),

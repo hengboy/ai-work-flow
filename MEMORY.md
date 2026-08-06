@@ -6,7 +6,7 @@
 - **TaskResult**：所有 action 的唯一 JSON 交接接口，固定包含 `result`、`summary` 和 contract 声明的结果字段。
 - **TaskResult schema**：`task-result-schemas.json` 独立声明交付字段类型和嵌套结构，并以 `contract_digest` 绑定 workflow contract。
 - **Return acceptance template**：编译进主代理与 owner 提示词的分支级 `TaskResult` 字段、可选字段和完整结构约束；主代理每次委派时必须附带。
-- **Structured handoff**：`planning_context`、`change_evidence`、`review_basis`、`review_packet`、`review_disposition`、`review_axis_result` 与 `review_result` 直接以完整对象传递。
+- **Structured handoff**：`planning_context`、`task_preview`、`task_preview_confirmation`、`task_artifact_manifest`、`change_evidence`、`review_basis`、`review_packet`、`review_disposition`、`review_axis_result` 与 `review_result` 直接以完整对象传递。
 - **Review disposition**：`coding.prepare_review` 对 committed diff 的 fail-closed 审查分流证据；只有首次直接 Bug/小功能且九项 criteria 全部通过时为 `skipped_small_change`，否则为 `dual_axis`。
 - **Review basis binding**：首次审查、复审和 resync 都冻结结构化来源、验收、scope、用户审查选择与验证记录；packet context、disposition 和 integration SHA 必须一致。
 - **Managed content / User content**：生成器负责更新的内容 / 生成器不得改写的用户内容。

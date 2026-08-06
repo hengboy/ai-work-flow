@@ -103,6 +103,10 @@ function validTaskPath(path, planId) {
   }
 }
 
+function planningPath(planId, name) {
+  return LOWERCASE_KEBAB_ID.test(planId) ? `.ai-work-flow/plans/${planId}/${name}` : null;
+}
+
 function sameStringSet(left, right) {
   return stringArray(left) && stringArray(right) &&
     JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
@@ -271,6 +275,7 @@ export function validateJsonSchema(value, schema, root = schema, path = "value")
     if (schema.pattern && !new RegExp(schema.pattern).test(value)) throw new Error(`${path} has an invalid format`);
   }
   if (typeof value === "number" && schema.minimum !== undefined && value < schema.minimum) throw new Error(`${path} is below its minimum`);
+  if (typeof value === "number" && schema.maximum !== undefined && value > schema.maximum) throw new Error(`${path} is above its maximum`);
   if (Array.isArray(value)) {
     if (schema.minItems !== undefined && value.length < schema.minItems) throw new Error(`${path} has too few items`);
     if (schema.maxItems !== undefined && value.length > schema.maxItems) throw new Error(`${path} has too many items`);
@@ -373,6 +378,34 @@ export function validateActionInput(actionId, input, contract) {
     validateWriteScope(input.write_scope, "Action input.write_scope");
   }
   for (const [field, value] of Object.entries(input)) if (contract.structured_content[field]) validateStructuredContent(field, value, contract);
+  if (["planning.write_spec", "planning.select_task_mode", "planning.write_plan"].includes(actionId)) {
+    const expected = planningPath(input.plan_id, actionId === "planning.write_plan" ? "plan.md" : "spec.md");
+    if (!expected || input.target !== expected || !SHA256.test(input.source_digest)) {
+      throw new Error(`${actionId} requires a bound planning target and SHA-256 source_digest`);
+    }
+  }
+  if (["planning.preview_tasks", "planning.revise_task_preview", "planning.write_tasks"].includes(actionId) &&
+    (input.task_mode !== "split" || !SHA256.test(input.source_digest))) {
+    throw new Error(`${actionId} requires split task mode and a SHA-256 source_digest`);
+  }
+  if (actionId === "planning.preview_tasks" && (Object.hasOwn(input, "task_preview") || Object.hasOwn(input, "revision_feedback"))) {
+    throw new Error("planning.preview_tasks does not accept revision input");
+  }
+  if (actionId === "planning.revise_task_preview" &&
+    (!input.task_preview || !input.revision_feedback || input.task_preview.plan_id !== input.plan_id || input.task_preview.plan_digest !== input.source_digest)) {
+    throw new Error("planning.revise_task_preview requires feedback bound to the current preview");
+  }
+  if (actionId === "planning.write_tasks" &&
+    (input.target !== planningPath(input.task_preview.plan_id, "tasks") || input.task_preview.plan_digest !== input.source_digest ||
+      input.task_preview_confirmation.preview_revision !== input.task_preview.revision)) {
+    throw new Error("planning.write_tasks requires confirmation of the current task preview");
+  }
+  if (actionId === "planning.verify_tasks" &&
+    (input.target !== planningPath(input.task_preview.plan_id, "tasks") || input.task_preview.plan_digest !== input.source_digest ||
+      input.task_preview_confirmation.preview_revision !== input.task_preview.revision || !stringArray(input.changed_paths) ||
+      input.changed_paths.some((path) => !pathIsWithinScope(path, [`${input.target}/`])))) {
+    throw new Error("planning.verify_tasks requires the confirmed preview and task paths from planning.write_tasks");
+  }
   if (["coding.prepare_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task",
     "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"].includes(actionId) &&
     (!LOWERCASE_KEBAB_ID.test(input.plan_id) || (Object.hasOwn(input, "task_id") && !LOWERCASE_KEBAB_ID.test(input.task_id)))) {
@@ -440,10 +473,13 @@ function validateTaskResultShape(label, resultContracts, taskResult, contract) {
     if (label !== "coding.prepare_review" && taskResult.review_mode !== "dual_axis") throw new Error("Only coding.prepare_review may skip dual-axis review");
     validateReviewDispositionBinding(taskResult.review_disposition, taskResult.review_packet);
   }
-  if (label === "planning.confirm" && taskResult.result === "completed" &&
-    (taskResult.task_mode !== taskResult.planning_context.task_mode ||
-      taskResult.task_mode !== taskResult.planning_context.task_mode_selection.selected)) {
-    throw new Error("planning.confirm task_mode is not bound to the user selection");
+  if (label === "planning.select_task_mode" && taskResult.result === "completed" &&
+    taskResult.task_mode !== taskResult.task_mode_selection.selected) {
+    throw new Error("planning.select_task_mode task_mode is not bound to the user selection");
+  }
+  if (label === "planning.confirm_task_preview" && taskResult.result === "completed" &&
+    taskResult.task_preview_confirmation.preview_revision !== taskResult.task_preview.revision) {
+    throw new Error("planning.confirm_task_preview is not bound to the current preview revision");
   }
   if (label === "coding.implement_task" && taskResult.result === "completed") {
     validateWriteScope(taskResult.write_scope, "TaskResult.write_scope");
@@ -461,13 +497,64 @@ function validateTaskResultShape(label, resultContracts, taskResult, contract) {
 export function validateTaskResult(actionId, taskResult, contract, actionInput) {
   const result = validateTaskResultShape(actionId, actionIo(actionId, contract).result_contracts, taskResult, contract);
   const inputBoundActions = new Set([
+    "planning.write_spec", "planning.select_task_mode", "planning.write_plan", "planning.preview_tasks", "planning.revise_task_preview",
+    "planning.confirm_task_preview", "planning.write_tasks", "planning.verify_tasks",
     "coding.prepare_task", "coding.implement_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task",
     "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2",
   ]);
   if (inputBoundActions.has(actionId) && (taskResult.result === "completed" ||
     (actionId === "coding.integrate_task" && taskResult.result === "needs_decision"))) {
-    if (!actionInput) throw new Error("coding.implement_task result validation requires action input");
+    if (!actionInput) throw new Error(`${actionId} result validation requires action input`);
     validateActionInput(actionId, actionInput, contract);
+  }
+  if (actionId === "planning.select_task_mode" && taskResult.result === "completed" && taskResult.plan_id !== actionInput.plan_id) {
+    throw new Error("planning.select_task_mode result is not bound to the spec plan_id");
+  }
+  if (actionId === "planning.write_spec" && taskResult.result === "completed" &&
+    (taskResult.target !== actionInput.target || !sameStringSet(taskResult.changed_paths, [actionInput.target]))) {
+    throw new Error("planning.write_spec result is not bound to its target");
+  }
+  if (actionId === "planning.write_plan" && taskResult.result === "completed" &&
+    (taskResult.target !== actionInput.target || taskResult.task_mode !== actionInput.task_mode ||
+      !sameStringSet(taskResult.changed_paths, [actionInput.target]))) {
+    throw new Error("planning.write_plan result is not bound to its target and task_mode");
+  }
+  if (actionId === "planning.preview_tasks" && taskResult.result === "completed" &&
+    (taskResult.task_preview.plan_id !== actionInput.plan_id || taskResult.task_preview.plan_digest !== actionInput.source_digest ||
+      taskResult.task_preview.revision !== 1)) {
+    throw new Error("planning.preview_tasks result is not bound to the plan input");
+  }
+  if (actionId === "planning.revise_task_preview" && taskResult.result === "completed" &&
+    (taskResult.task_preview.plan_id !== actionInput.plan_id || taskResult.task_preview.plan_digest !== actionInput.source_digest ||
+      taskResult.task_preview.revision !== actionInput.task_preview.revision + 1)) {
+    throw new Error("planning.revise_task_preview must increment the bound preview revision");
+  }
+  if (actionId === "planning.confirm_task_preview" && taskResult.result === "completed" &&
+    digestValue(taskResult.task_preview) !== digestValue(actionInput.task_preview)) {
+    throw new Error("planning.confirm_task_preview must return the unchanged input preview");
+  }
+  if (actionId === "planning.write_tasks" && taskResult.result === "completed" &&
+    (taskResult.target !== actionInput.target || taskResult.task_mode !== actionInput.task_mode ||
+      taskResult.changed_paths.length !== actionInput.task_preview.tasks.length ||
+      taskResult.changed_paths.some((path) => !pathIsWithinScope(path, [`${actionInput.target}/`])))) {
+    throw new Error("planning.write_tasks result is not bound to the confirmed preview and target");
+  }
+  if (actionId === "planning.verify_tasks" && taskResult.result === "completed") {
+    const manifest = taskResult.task_artifact_manifest;
+    const projected = manifest.files.map(({ task_id, order, title, summary }) => ({ task_id, order, title, summary }))
+      .sort((left, right) => left.order - right.order);
+    const expected = [...actionInput.task_preview.tasks].sort((left, right) => left.order - right.order);
+    if (manifest.plan_id !== actionInput.task_preview.plan_id || manifest.plan_digest !== actionInput.source_digest ||
+      manifest.preview_revision !== actionInput.task_preview.revision || digestValue(projected) !== digestValue(expected) ||
+      !sameStringSet(taskResult.changed_paths, actionInput.changed_paths) ||
+      !sameStringSet(manifest.files.map((file) => file.path), actionInput.changed_paths) || !taskResult.checks.length ||
+      manifest.files.some((file) => {
+        const basename = file.path.slice(actionInput.target.length + 1);
+        return !pathIsWithinScope(file.path, [`${actionInput.target}/`]) || !/^\d{2}-[a-z0-9][a-z0-9-]*\.md$/.test(basename) ||
+          Number(basename.slice(0, 2)) !== file.order;
+      })) {
+      throw new Error("planning.verify_tasks result is not bound to actual files and the confirmed preview");
+    }
   }
   if (actionId === "coding.prepare_task" && taskResult.result === "completed") {
     if (taskResult.plan_id !== actionInput.plan_id || taskResult.task_id !== actionInput.task_id || taskResult.base_sha !== actionInput.plan_sha ||
@@ -543,14 +630,28 @@ export function validateStructuredContent(kind, content, contract) {
   const jsonSchema = schemas?.structured_content_schemas[kind];
   if (jsonSchema) validateJsonSchema(content, jsonSchema, schemas, kind);
   if (kind === "planning_context") {
-    if (typeof content.plan_id !== "string" || !content.plan_id.trim() || !["single", "split"].includes(content.task_mode) ||
+    if (typeof content.plan_id !== "string" || !content.plan_id.trim() ||
       typeof content.goal !== "string" || !content.goal.trim() || !stringArray(content.users_consumers) || !stringArray(content.success_criteria) ||
       !isPlainObject(content.scope) || !Object.keys(content.scope).length || !stringArray(content.constraints, true) || !stringArray(content.assumptions, true) ||
       !stringArray(content.acceptance_criteria) || !Array.isArray(content.decisions) || content.decisions.some((decision) =>
         !isPlainObject(decision) || Object.keys(decision).sort().join() !== "code,revision,summary" ||
         typeof decision.code !== "string" || !decision.code.trim() || !Number.isSafeInteger(decision.revision) || decision.revision < 1 ||
-        typeof decision.summary !== "string" || !decision.summary.trim()) || !Array.isArray(content.open_questions) || content.open_questions.length !== 0 ||
-      content.task_mode !== content.task_mode_selection.selected) throw new Error("planning_context is invalid");
+      typeof decision.summary !== "string" || !decision.summary.trim()) || !Array.isArray(content.open_questions) || content.open_questions.length !== 0) {
+      throw new Error("planning_context is invalid");
+    }
+  }
+  if (kind === "task_preview") {
+    const ids = content.tasks.map((task) => task.task_id);
+    const orders = content.tasks.map((task) => task.order);
+    if (new Set(ids).size !== ids.length || new Set(orders).size !== orders.length) throw new Error("task_preview task IDs and order values must be unique");
+  }
+  if (kind === "task_artifact_manifest") {
+    const ids = content.files.map((file) => file.task_id);
+    const orders = content.files.map((file) => file.order);
+    const paths = content.files.map((file) => file.path);
+    if (new Set(ids).size !== ids.length || new Set(orders).size !== orders.length || new Set(paths).size !== paths.length) {
+      throw new Error("task_artifact_manifest IDs, order values, and paths must be unique");
+    }
   }
   if (kind === "change_evidence") {
     if (!/^[0-9a-f]{40,64}$/.test(content.base_sha) || !/^[0-9a-f]{40,64}$/.test(content.head_sha) ||

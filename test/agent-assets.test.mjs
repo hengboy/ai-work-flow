@@ -62,25 +62,27 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
     }
     assert.doesNotMatch(body, forbiddenPromptTerms, role);
   }
-  assert.match(assets.compiledBodies.get("planning"), /discover → confirm → write_spec → write_plan/);
+  assert.match(assets.compiledBodies.get("planning"), /discover → confirm requirements → write_spec → select task mode → write_plan/);
   assert.match(assets.compiledBodies.get("planning"), /planning_context=\{context_id,plan_id.*context_id=source_context_id metadata value; independent from plan_id/s);
-  assert.match(assets.compiledBodies.get("planning"), /`planning\.confirm` 在 `write_spec` 前持续澄清共享需求/);
-  assert.match(assets.compiledBodies.get("planning"), /维护从 1 开始的 `question_number`/);
-  assert.match(assets.compiledBodies.get("planning"), /必须以 `问题 <question_number>` 开头/);
-  assert.match(assets.compiledBodies.get("planning"), /收到回答后序号严格递增，跨对话轮次不得重复/);
-  assert.match(assets.compiledBodies.get("planning"), /从已保留对话或 `decision_history` 中的最大已发编号继续/);
-  assert.match(assets.compiledBodies.get("planning"), /不得在仍有开放问题时询问 `task_mode`/);
-  assert.match(assets.compiledBodies.get("planning"), /先向用户输出完整的共享需求列表，再使用下一个问题序号，在同一次确认中要求用户确认该列表并选择 `single` 或 `split`/);
-  assert.match(assets.compiledBodies.get("planning"), /只有用户同时确认需求列表并明确选择模式才可完成确认/);
-  assert.match(assets.compiledBodies.get("planning"), /`single` 只生成 spec\/plan、不生成 tasks，`split` 还会生成/);
-  assert.match(assets.compiledBodies.get("planning"), /不得根据复杂度、文件数量、工件内容或代理偏好代替用户选择/);
+  assert.match(assets.compiledBodies.get("planning"), /`question_number`，每次只问一个并以 `问题 <question_number>` 开头/);
+  assert.match(assets.compiledBodies.get("planning"), /跨轮次不重复.*中断后从对话或 `decision_history` 最大编号继续/s);
+  assert.match(assets.compiledBodies.get("planning"), /需求清零后展示完整列表，只要求确认并停止/);
+  assert.match(assets.compiledBodies.get("planning"), /确认后生成无模式的 `planning_context` 并立即写 spec/);
+  assert.match(assets.compiledBodies.get("planning"), /spec 回执未绑定目标和摘要时不得询问模式/);
+  assert.match(assets.compiledBodies.get("planning"), /spec 复验后用新编号单独要求选择 `single`（仅 spec\/plan）或 `split`/);
   assert.match(assets.compiledBodies.get("planning"), /task_mode_selection=\{selected,confirmed_by:"user",user_response\}/);
-  assert.match(assets.compiledBodies.get("planning"), /`planning\.write_\*` 输入的 `task_mode` 必须逐字等于 `planning_context\.task_mode`/);
-  assert.match(assets.compiledBodies.get("planning-writer"), /source_context_id.*planning_context\.context_id.*不得从 `plan_id` 推断/);
-  assert.match(assets.compiledBodies.get("planning-writer"), /计划元数据的 `task_mode` 必须逐字等于 `input\.task_mode`，不得默认 `single`/);
-  assert.match(assets.compiledBodies.get("task-planner"), /`input\.task_mode` 与 plan 元数据的 `task_mode` 逐字一致且都为 `split`/);
-  assert.match(assets.compiledBodies.get("task-planner"), /可并行 task 的 scope 必须明确互斥/);
+  assert.match(assets.compiledBodies.get("planning"), /`split` 由 \*\*Task Planner\*\* 只读预览全部标题\/概要并用新编号确认/);
+  assert.match(assets.compiledBodies.get("planning"), /反馈原文作为 `revision_feedback`，revision 递增后重问/);
+  assert.match(assets.compiledBodies.get("planning"), /task_preview_confirmation=\{confirmed_by:"user",user_response,preview_revision\}/);
+  assert.match(assets.compiledBodies.get("planning-writer"), /`planning\.write_spec`：写入 context；`source_context_id` 等于 `context_id`，digest 绑定原文/);
+  assert.match(assets.compiledBodies.get("planning-writer"), /spec 无模式；plan 回执模式等于输入/);
+  assert.match(assets.compiledBodies.get("planning-writer"), /`planning\.write_plan`：绑定 approved spec 原始 SHA-256；模式等于输入/);
+  assert.match(assets.compiledBodies.get("task-planner"), /`input\.task_mode` 与 plan 元数据必须同为 `split`/);
+  assert.match(assets.compiledBodies.get("task-planner"), /`planning\.preview_tasks`.*不得创建、修改或删除 task 文件/s);
+  assert.match(assets.compiledBodies.get("task-planner"), /`planning\.revise_task_preview`.*revision 严格增加 1/s);
+  assert.match(assets.compiledBodies.get("task-planner"), /`planning\.write_tasks`.*用户确认的当前 revision.*逐字写 preview ID\/order\/title\/summary/s);
   assert.match(assets.compiledBodies.get("task-planner"), /write_scope_mode: `exhaustive`/);
+  assert.match(assets.compiledBodies.get("file-explorer"), /`planning\.verify_tasks`.*实际文件重建的 `task_artifact_manifest`.*不信任 writer 回执/s);
   assert.match(assets.compiledBodies.get("coding"), /当前会话/);
   assert.match(assets.compiledBodies.get("code-reviewer"), /同一完整对象/);
   assert.match(assets.compiledBodies.get("full-stack-coder"), /\*\*File Explorer\*\*/);
@@ -154,11 +156,26 @@ test("compiled prompt character limits accept the boundary and reject one charac
   assert.throws(() => loadAgentAssets(undefined, aggregate.templates), /Compiled prompts exceed 55000 characters: 55001\./);
 });
 
-test("Planning and Coding have Task only", () => {
+test("primary agents have Task only and Task Planner owns the complete split lifecycle", () => {
   const assets = loadAgentAssets();
   assert.deepEqual(assets.roles.find((role) => role.id === "planning").tools, ["Task"]);
   assert.deepEqual(assets.roles.find((role) => role.id === "coding").tools, ["Task"]);
+  const taskPlanner = assets.roles.find((role) => role.id === "task-planner");
+  assert.deepEqual(taskPlanner.actions, ["planning.preview_tasks", "planning.revise_task_preview", "planning.write_tasks"]);
+  assert.deepEqual(taskPlanner.tools, ["Read", "Edit", "Write", "Bash"]);
+  assert.equal(assets.policies[taskPlanner.policy].write_scope, "tasks");
   for (const role of assets.roles) assert.equal(role.tools.includes("WorkflowRuntime"), false, role.id);
+});
+
+test("Task Planner alone can edit confirmed task artifacts", () => {
+  const assets = loadAgentAssets();
+  const taskPath = ".ai-work-flow/plans/example/tasks/01-first.md";
+  const taskPlanner = assets.roles.find((role) => role.id === "task-planner");
+  const planningWriter = assets.roles.find((role) => role.id === "planning-writer");
+  const fileExplorer = assets.roles.find((role) => role.id === "file-explorer");
+  assert.equal(evaluateOpenCodePermission(taskPlanner, assets.policies[taskPlanner.policy], "edit", taskPath), "allow");
+  assert.equal(evaluateOpenCodePermission(planningWriter, assets.policies[planningWriter.policy], "edit", taskPath), "deny");
+  assert.equal(evaluateOpenCodePermission(fileExplorer, assets.policies[fileExplorer.policy], "edit", taskPath), "deny");
 });
 
 test("all platforms render primary agents without shell or workflow MCP tools", () => {

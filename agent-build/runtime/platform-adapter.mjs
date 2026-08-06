@@ -240,19 +240,19 @@ export function opencodePermission(role, policy) {
   if (role.controls.some((control) => OPENCODE_EXTERNAL_WORKTREE_CONTROLS.has(control))) permission.external_directory = 'allow';
   if (policy.delegation === 'allowed') permission.task = 'allow';
   if (policy.delegation === 'none') permission.task = 'deny';
-  if (role.id === 'task-planner') {
-    permission.edit = {
-      '*': 'deny',
-      '.ai-work-flow/plans/*/tasks/??-*.md': 'allow',
-      '.ai-work-flow/plans/*/tasks/*/*': 'deny'
-    };
-  }
   if (role.id === 'planning-writer') {
     permission.edit = {
       '*': 'deny',
       '.ai-work-flow/plans/*/spec.md': 'allow',
       '.ai-work-flow/plans/*/plan.md': 'allow',
       '.ai-work-flow/plans/*/*/*': 'deny'
+    };
+  }
+  if (role.id === 'task-planner') {
+    permission.edit = {
+      '*': 'deny',
+      '.ai-work-flow/plans/*/tasks/??-*.md': 'allow',
+      '.ai-work-flow/plans/*/tasks/*/*': 'deny'
     };
   }
   if (policy.write_scope === 'research') {

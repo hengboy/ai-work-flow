@@ -34,4 +34,4 @@
 
 ## 交接
 
-子代理在聊天中只返回一个使用 2 个空格缩进的多行 JSON `TaskResult` 对象；`planning_context`、`change_evidence`、`review_basis`、`review_packet`、`review_disposition`、`review_axis_result` 与 `review_result` 直接携带完整 JSON 内容。`task-result-schemas.json` 约束顶层与嵌套字段类型，主代理验证后将所需对象原样传给下一 action。流程只存在于当前会话；中断后根据计划、Git 状态和仓库事实重新定位。
+子代理在聊天中只返回一个使用 2 个空格缩进的多行 JSON `TaskResult` 对象；`planning_context`、`task_preview`、`task_preview_confirmation`、`task_artifact_manifest`、`change_evidence`、`review_basis`、`review_packet`、`review_disposition`、`review_axis_result` 与 `review_result` 直接携带完整 JSON 内容。`task-result-schemas.json` 约束顶层与嵌套字段类型，主代理验证后将所需对象原样传给下一 action。流程只存在于当前会话；中断后根据计划、Git 状态和仓库事实重新定位。

@@ -21,18 +21,18 @@
       "controls": ["no-direct-workspace-operations", "planning-no-implementation"],
       "delegates": ["file-explorer", "researcher", "planning-writer", "task-planner", "git-operator"],
       "tools": ["Task"],
-      "actions": ["planning.confirm", "planning.complete"]
+      "actions": ["planning.confirm", "planning.select_task_mode", "planning.confirm_task_preview", "planning.complete"]
     },
     {
       "id": "file-explorer",
       "name": "File Explorer",
-      "description": "索引优先执行只读发现并返回仓库事实。",
+      "description": "索引优先执行只读发现，并核验写后的规划工件。",
       "kind": "subagent",
       "policy": "discover",
       "controls": ["read-only-discovery"],
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash", "Skill"],
-      "actions": ["planning.discover"]
+      "actions": ["planning.discover", "planning.verify_tasks"]
     },
     {
       "id": "researcher",
@@ -59,7 +59,7 @@
     {
       "id": "planning-writer",
       "name": "Planning Writer",
-      "description": "单次写入并验证一个 spec 或 plan。",
+      "description": "分别写入并验证指定 spec 或 plan。",
       "kind": "subagent",
       "policy": "write-plans",
       "controls": ["single-planning-artifact-only", "no-git-mutation"],
@@ -70,13 +70,13 @@
     {
       "id": "task-planner",
       "name": "Task Planner",
-      "description": "按已确定模式生成或删除完整 task 集合。",
+      "description": "预览、修订并在用户确认后写入完整 task 集合。",
       "kind": "subagent",
       "policy": "write-tasks",
       "controls": ["task-artifacts-only"],
       "delegates": [],
       "tools": ["Read", "Edit", "Write", "Bash"],
-      "actions": ["planning.write_tasks"]
+      "actions": ["planning.preview_tasks", "planning.revise_task_preview", "planning.write_tasks"]
     },
     {
       "id": "full-stack-coder",
