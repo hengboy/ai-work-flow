@@ -32,7 +32,7 @@ node agent-build/install.mjs validate
 
 [`execution-runtime/workflow-contract.json`](execution-runtime/workflow-contract.json) 是纯生成期流程接口，声明 **Planning**/**Coding** workflow、phase、action owner、I/O contract、转换、`TaskResult` 字段、结构化交接内容、预算和决定代码。[`execution-runtime/task-result-schemas.json`](execution-runtime/task-result-schemas.json) 独立约定每个交付字段的 JSON 类型与嵌套结构，并通过 `contract_digest` 与流程 contract 绑定。
 
-`TaskResult` 是一个可解析的 JSON 对象，固定包含 `result`、`summary` 和当前结果分支声明的字段；`result` 只能是 `completed`、`retryable_failure`、`needs_decision` 或 `failed`。`planning_context`、`change_evidence`、`review_packet`、`review_axis_result` 与 `review_result` 直接携带完整 JSON 内容。数组字段必须返回数组，空数组使用 `[]`，不能以字符串代替。
+`TaskResult` 是一个可解析的 JSON 对象，固定包含 `result`、`summary` 和当前结果分支声明的字段；`result` 只能是 `completed`、`retryable_failure`、`needs_decision` 或 `failed`。`planning_context`、`change_evidence`、`review_basis`、`review_packet`、`review_disposition`、`review_axis_result` 与 `review_result` 直接携带完整 JSON 内容。数组字段必须返回数组，空数组使用 `[]`，不能以字符串代替。
 
 生成提示词会为每类 action 注入返回验收模板，包括允许的结果分支、精确顶层字段、字段类型和复杂对象内部约束。**Planning**/**Coding** 在每次委派末尾附该模板并按字段路径验收；子代理只返回一个 JSON `TaskResult` 对象，格式错误时仅重返对象，不重复实际工作。
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contract_digest": "b514970706ef41afd0d02b1dbdcb0ef0a4ed57700d195640105cf2e1c2b4d5f3",
+  "contract_digest": "aebb4fda2aa5f200fdfdc9cf3d08f317fe27afb3e9dc1dc206175fc1e3301738",
   "envelope": {
     "result": { "type": "string", "enum": ["completed", "retryable_failure", "needs_decision", "failed"], "prompt_type": "result enum" },
     "summary": { "type": "string", "minLength": 1, "prompt_type": "string" }
@@ -27,7 +27,6 @@
     "implementation_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "implementation_kind": { "type": "string", "enum": ["bug", "small_feature"], "prompt_type": "bug|small_feature" },
     "message": { "type": "string", "minLength": 1, "prompt_type": "string" },
-    "mode": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "objective": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "open_decision": { "type": "object", "minProperties": 1, "prompt_type": "object" },
     "open_decisions": { "type": "array", "items": { "type": "object" }, "prompt_type": "object[]" },
@@ -38,7 +37,10 @@
     "report_path": { "type": "string", "minLength": 1, "prompt_type": "path string" },
     "resulting_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "review_axis_result": { "$ref": "#/structured_content_schemas/review_axis_result", "prompt_type": "review_axis_result object" },
+    "review_basis": { "$ref": "#/structured_content_schemas/review_basis", "prompt_type": "review_basis object" },
     "review_packet": { "$ref": "#/structured_content_schemas/review_packet", "prompt_type": "review_packet object" },
+    "review_mode": { "type": "string", "enum": ["dual_axis", "skipped_small_change"], "prompt_type": "dual_axis|skipped_small_change" },
+    "review_disposition": { "$ref": "#/structured_content_schemas/review_disposition", "prompt_type": "review_disposition object" },
     "review_result": { "$ref": "#/structured_content_schemas/review_result", "prompt_type": "review_result object" },
     "scope_evidence": { "type": "array", "items": { "type": "string", "minLength": 1 }, "prompt_type": "string[]" },
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "prompt_type": "sha256" },
@@ -56,10 +58,12 @@
   "structured_content_schemas": {
     "planning_context": {
       "type": "object",
-      "required": ["plan_id", "task_mode", "goal", "users_consumers", "success_criteria", "scope", "constraints", "assumptions", "acceptance_criteria", "decisions", "open_questions"],
+      "required": ["context_id", "plan_id", "task_mode", "task_mode_selection", "goal", "users_consumers", "success_criteria", "scope", "constraints", "assumptions", "acceptance_criteria", "decisions", "open_questions"],
       "properties": {
+        "context_id": { "type": "string", "minLength": 1 },
         "plan_id": { "type": "string", "minLength": 1 },
         "task_mode": { "type": "string", "enum": ["single", "split"] },
+        "task_mode_selection": { "$ref": "#/structured_content_schemas/task_mode_selection" },
         "goal": { "type": "string", "minLength": 1 },
         "users_consumers": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
         "success_criteria": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
@@ -69,6 +73,16 @@
         "acceptance_criteria": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
         "decisions": { "type": "array", "items": { "$ref": "#/structured_content_schemas/decision" } },
         "open_questions": { "type": "array", "maxItems": 0 }
+      },
+      "additionalProperties": false
+    },
+    "task_mode_selection": {
+      "type": "object",
+      "required": ["selected", "confirmed_by", "user_response"],
+      "properties": {
+        "selected": { "type": "string", "enum": ["single", "split"] },
+        "confirmed_by": { "type": "string", "enum": ["user"] },
+        "user_response": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },
@@ -108,10 +122,113 @@
       "properties": { "command": { "type": "string", "minLength": 1 }, "result": { "type": "string", "minLength": 1 } },
       "additionalProperties": false
     },
+    "review_basis": {
+      "type": "object",
+      "required": ["origin", "stage", "objective", "implementation_ids", "acceptance", "scope_evidence", "user_requested_full_review", "scope_match_status", "verification"],
+      "properties": {
+        "origin": { "type": "string", "enum": ["direct_bug", "direct_small_feature", "approved_plan", "finding_fix", "rereview", "resync"] },
+        "stage": { "type": "string", "enum": ["initial", "rereview", "resync"] },
+        "objective": { "type": "string", "minLength": 1 },
+        "implementation_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "acceptance": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "scope_evidence": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "user_requested_full_review": { "type": "boolean" },
+        "scope_match_status": { "type": "string", "enum": ["passed", "failed", "indeterminate"] },
+        "verification": { "type": "array", "items": { "$ref": "#/structured_content_schemas/review_verification" } }
+      },
+      "additionalProperties": false
+    },
+    "review_verification": {
+      "type": "object",
+      "required": ["command", "result", "focused"],
+      "properties": {
+        "command": { "type": "string", "minLength": 1 },
+        "result": { "type": "string", "enum": ["passed", "failed"] },
+        "focused": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "review_context": {
+      "type": "object",
+      "required": ["origin", "stage", "objective", "implementation_ids", "acceptance", "scope_evidence", "user_requested_full_review", "scope_match_status", "verification", "changed_file_count", "changed_line_count", "change_types"],
+      "properties": {
+        "origin": { "type": "string", "enum": ["direct_bug", "direct_small_feature", "approved_plan", "finding_fix", "rereview", "resync"] },
+        "stage": { "type": "string", "enum": ["initial", "rereview", "resync"] },
+        "objective": { "type": "string", "minLength": 1 },
+        "implementation_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "acceptance": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "scope_evidence": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "user_requested_full_review": { "type": "boolean" },
+        "scope_match_status": { "type": "string", "enum": ["passed", "failed", "indeterminate"] },
+        "verification": { "type": "array", "items": { "$ref": "#/structured_content_schemas/review_verification" } },
+        "changed_file_count": { "type": "integer", "minimum": 0 },
+        "changed_line_count": { "type": "integer", "minimum": 0 },
+        "change_types": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["modified", "added", "deleted", "renamed", "copied", "type_changed", "binary"] },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
     "review_packet": {
       "type": "object",
       "required": ["base_sha", "review_sha", "review_context", "slices"],
-      "properties": { "base_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" }, "review_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" }, "review_context": { "type": "object", "minProperties": 1 }, "slices": { "type": "array", "items": { "type": "object" }, "minItems": 1 } },
+      "properties": { "base_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" }, "review_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" }, "review_context": { "$ref": "#/structured_content_schemas/review_context" }, "slices": { "type": "array", "items": { "type": "object" }, "minItems": 1 } },
+      "additionalProperties": false
+    },
+    "review_disposition": {
+      "type": "object",
+      "required": ["mode", "origin", "stage", "changed_file_count", "changed_line_count", "change_types", "sensitive_areas", "criteria", "user_notice"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["dual_axis", "skipped_small_change"] },
+        "origin": { "type": "string", "enum": ["direct_bug", "direct_small_feature", "approved_plan", "finding_fix", "rereview", "resync"] },
+        "stage": { "type": "string", "enum": ["initial", "rereview", "resync"] },
+        "changed_file_count": { "type": "integer", "minimum": 0 },
+        "changed_line_count": { "type": "integer", "minimum": 0 },
+        "change_types": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["modified", "added", "deleted", "renamed", "copied", "type_changed", "binary"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "sensitive_areas": {
+          "type": "array",
+          "items": { "$ref": "#/structured_content_schemas/sensitive_area" },
+          "minItems": 7,
+          "maxItems": 7,
+          "uniqueItems": true
+        },
+        "criteria": {
+          "type": "array",
+          "items": { "$ref": "#/structured_content_schemas/review_criterion" },
+          "minItems": 9,
+          "maxItems": 9,
+          "uniqueItems": true
+        },
+        "user_notice": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "sensitive_area": {
+      "type": "object",
+      "required": ["area", "status", "evidence"],
+      "properties": {
+        "area": { "type": "string", "enum": ["public_api_contract", "data_schema", "permissions_security", "dependencies", "build_release", "cross_module_behavior", "persistence"] },
+        "status": { "type": "string", "enum": ["clear", "present", "unknown"] },
+        "evidence": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "review_criterion": {
+      "type": "object",
+      "required": ["criterion", "status", "evidence"],
+      "properties": {
+        "criterion": { "type": "string", "enum": ["direct_request_origin", "initial_review_stage", "full_review_not_requested", "modified_text_files_only", "changed_file_limit", "changed_line_limit", "no_sensitive_changes", "triage_scope_match", "automated_verification_passed"] },
+        "status": { "type": "string", "enum": ["passed", "failed", "indeterminate"] },
+        "evidence": { "type": "string", "minLength": 1 }
+      },
       "additionalProperties": false
     },
     "review_axis_result": {

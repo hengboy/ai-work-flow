@@ -1,5 +1,5 @@
 {
-  "digest": "b514970706ef41afd0d02b1dbdcb0ef0a4ed57700d195640105cf2e1c2b4d5f3",
+  "digest": "aebb4fda2aa5f200fdfdc9cf3d08f317fe27afb3e9dc1dc206175fc1e3301738",
   "task_result": {
     "required_fields": ["result", "summary"],
     "results": ["completed", "retryable_failure", "needs_decision", "failed"],
@@ -7,16 +7,24 @@
   },
   "structured_content": {
     "planning_context": {
-      "required_fields": ["plan_id", "task_mode", "goal", "users_consumers", "success_criteria", "scope", "constraints", "assumptions", "acceptance_criteria", "decisions", "open_questions"],
-      "field_guidance": { "task_mode": "single|split", "decisions": "array<{code,revision,summary}>", "open_questions": "must be [] when completed" }
+      "required_fields": ["context_id", "plan_id", "task_mode", "task_mode_selection", "goal", "users_consumers", "success_criteria", "scope", "constraints", "assumptions", "acceptance_criteria", "decisions", "open_questions"],
+      "field_guidance": { "context_id": "source_context_id metadata value; independent from plan_id", "task_mode": "single|split; must equal task_mode_selection.selected", "task_mode_selection": "{selected:single|split,confirmed_by:user,user_response:non-empty original user answer}", "decisions": "array<{code,revision,summary}>", "open_questions": "must be [] when completed" }
     },
     "change_evidence": {
       "required_fields": ["base_sha", "head_sha", "path_changes", "acceptance_evidence", "verification"],
       "field_guidance": { "path_changes": "array<{record_type,index_status,worktree_status,path,source_path?}>", "acceptance_evidence": "array<{criterion,evidence}>", "verification": "array<{command,result}>" }
     },
+    "review_basis": {
+      "required_fields": ["origin", "stage", "objective", "implementation_ids", "acceptance", "scope_evidence", "user_requested_full_review", "scope_match_status", "verification"],
+      "field_guidance": { "origin": "direct_bug|direct_small_feature|approved_plan|finding_fix|rereview|resync", "stage": "initial|rereview|resync", "scope_match_status": "passed|failed|indeterminate", "verification": "array<{command,result:passed|failed,focused:boolean}>" }
+    },
     "review_packet": {
       "required_fields": ["base_sha", "review_sha", "review_context", "slices"],
-      "field_guidance": { "review_context": "non-empty object", "slices": "non-empty array of complete committed slice objects" }
+      "field_guidance": { "review_context": "review_basis fields plus changed_file_count,changed_line_count,change_types", "slices": "non-empty array of complete committed slice objects" }
+    },
+    "review_disposition": {
+      "required_fields": ["mode", "origin", "stage", "changed_file_count", "changed_line_count", "change_types", "sensitive_areas", "criteria", "user_notice"],
+      "field_guidance": { "mode": "dual_axis|skipped_small_change", "criteria": "nine fixed {criterion,status,evidence} objects; status=passed|failed|indeterminate", "sensitive_areas": "seven fixed {area,status,evidence} objects; status=clear|present|unknown" }
     },
     "review_axis_result": {
       "required_fields": ["axis", "findings", "advisory_findings", "coverage"],
@@ -70,9 +78,9 @@
       }
     },
     "planning_write": {
-      "input_contract": { "required_fields": ["target", "source_content", "source_digest", "mode"], "optional_fields": ["deletion_decision"] },
+      "input_contract": { "required_fields": ["target", "source_content", "source_digest", "task_mode"], "optional_fields": ["deletion_decision"] },
       "result_contracts": {
-        "completed": { "required_fields": ["target", "sha256", "changed_paths", "mode"], "optional_fields": ["deleted_paths"] },
+        "completed": { "required_fields": ["target", "sha256", "changed_paths", "task_mode"], "optional_fields": ["deleted_paths"] },
         "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
         "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [] }
       }
@@ -127,9 +135,18 @@
       }
     },
     "review_prepare": {
-      "input_contract": { "required_fields": ["base_sha", "review_sha", "review_context", "slices"], "optional_fields": [] },
+      "input_contract": { "required_fields": ["base_sha", "review_sha", "review_basis", "slices"], "optional_fields": [] },
       "result_contracts": {
-        "completed": { "required_fields": ["review_packet"], "optional_fields": [] },
+        "completed": { "required_fields": ["review_packet", "review_mode", "review_disposition"], "optional_fields": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["drift"], "optional_fields": [] }
+      }
+    },
+    "review_integration": {
+      "input_contract": { "required_fields": ["main_sha", "feature_sha", "review_sha", "frozen_state", "review_packet", "review_disposition"], "optional_fields": ["review_result"] },
+      "result_contracts": {
+        "completed": { "required_fields": ["resulting_sha", "state", "cleanup_evidence"], "optional_fields": [] },
+        "retryable_failure": { "required_fields": ["resulting_sha", "state", "cleanup_evidence"], "optional_fields": [], "required_error_fields": ["code", "message"] },
         "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
         "needs_decision": { "required_fields": ["drift"], "optional_fields": [] }
       }
@@ -236,7 +253,7 @@
     "coding.prepare": { "owner": "git-operator", "workflow": "coding", "from": "started", "completed_to": "prepared", "io_contract": "coding_prepare" },
     "coding.implement": { "owner": "full-stack-coder", "workflow": "coding", "from": "prepared", "completed_to": "implemented", "retryable_to": "prepared", "io_contract": "implementation" },
     "coding.commit": { "owner": "git-operator", "workflow": "coding", "from": "implemented", "completed_to": "committed", "io_contract": "local_commit" },
-    "coding.prepare_review": { "owner": "git-operator", "workflow": "coding", "from": "committed", "completed_to": "review_ready", "io_contract": "review_prepare" },
+    "coding.prepare_review": { "owner": "git-operator", "workflow": "coding", "from": "committed", "completed_to": "review_ready", "completed_to_by_output": { "field": "review_mode", "values": { "dual_axis": "review_ready", "skipped_small_change": "review_passed" } }, "io_contract": "review_prepare" },
     "coding.review": { "owner": "code-reviewer", "workflow": "coding", "from": "review_ready", "completed_to": "review_passed", "retryable_to": "fix_required_1", "io_contract": "dual_axis_review" },
     "coding.fix_1": { "owner": "bug-fixer", "workflow": "coding", "from": "fix_required_1", "completed_to": "fixed_1", "budget": "review_fix_rounds", "io_contract": "finding_fix" },
     "coding.commit_fix_1": { "owner": "git-operator", "workflow": "coding", "from": "fixed_1", "completed_to": "fixed_committed_1", "io_contract": "local_commit" },
@@ -246,15 +263,15 @@
     "coding.commit_fix_2": { "owner": "git-operator", "workflow": "coding", "from": "fixed_2", "completed_to": "fixed_committed_2", "io_contract": "local_commit" },
     "coding.prepare_rereview_2": { "owner": "git-operator", "workflow": "coding", "from": "fixed_committed_2", "completed_to": "rereview_ready_2", "io_contract": "review_prepare" },
     "coding.rereview_2": { "owner": "code-reviewer", "workflow": "coding", "from": "rereview_ready_2", "completed_to": "review_passed", "retryable_to": "awaiting_decision", "decision_code": "REVIEW_FIX_BUDGET_EXHAUSTED", "io_contract": "dual_axis_review" },
-    "coding.integrate": { "owner": "git-operator", "workflow": "coding", "from": "review_passed", "completed_to": "integrated", "retryable_to": "resync_required_1", "budget": "main_resyncs", "io_contract": "git_lifecycle" },
+    "coding.integrate": { "owner": "git-operator", "workflow": "coding", "from": "review_passed", "completed_to": "integrated", "retryable_to": "resync_required_1", "budget": "main_resyncs", "io_contract": "review_integration" },
     "coding.resync_1": { "owner": "git-operator", "workflow": "coding", "from": "resync_required_1", "completed_to": "resynced_1", "budget": "main_resyncs", "io_contract": "git_lifecycle" },
     "coding.prepare_resync_review_1": { "owner": "git-operator", "workflow": "coding", "from": "resynced_1", "completed_to": "resync_review_ready_1", "io_contract": "review_prepare" },
     "coding.resync_review_1": { "owner": "code-reviewer", "workflow": "coding", "from": "resync_review_ready_1", "completed_to": "review_passed_1", "retryable_to": "awaiting_decision", "decision_code": "REPEATED_REVIEW_FINDING", "io_contract": "dual_axis_review" },
-    "coding.integrate_1": { "owner": "git-operator", "workflow": "coding", "from": "review_passed_1", "completed_to": "integrated", "retryable_to": "resync_required_2", "budget": "main_resyncs", "io_contract": "git_lifecycle" },
+    "coding.integrate_1": { "owner": "git-operator", "workflow": "coding", "from": "review_passed_1", "completed_to": "integrated", "retryable_to": "resync_required_2", "budget": "main_resyncs", "io_contract": "review_integration" },
     "coding.resync_2": { "owner": "git-operator", "workflow": "coding", "from": "resync_required_2", "completed_to": "resynced_2", "budget": "main_resyncs", "io_contract": "git_lifecycle" },
     "coding.prepare_resync_review_2": { "owner": "git-operator", "workflow": "coding", "from": "resynced_2", "completed_to": "resync_review_ready_2", "io_contract": "review_prepare" },
     "coding.resync_review_2": { "owner": "code-reviewer", "workflow": "coding", "from": "resync_review_ready_2", "completed_to": "review_passed_2", "retryable_to": "awaiting_decision", "decision_code": "REPEATED_REVIEW_FINDING", "io_contract": "dual_axis_review" },
-    "coding.integrate_2": { "owner": "git-operator", "workflow": "coding", "from": "review_passed_2", "completed_to": "integrated", "retryable_to": "awaiting_decision", "decision_code": "MAIN_RESYNC_BUDGET_EXHAUSTED", "io_contract": "git_lifecycle" },
+    "coding.integrate_2": { "owner": "git-operator", "workflow": "coding", "from": "review_passed_2", "completed_to": "integrated", "retryable_to": "awaiting_decision", "decision_code": "MAIN_RESYNC_BUDGET_EXHAUSTED", "io_contract": "review_integration" },
     "coding.cleanup": { "owner": "git-operator", "workflow": "coding", "from": "integrated", "completed_to": "complete", "io_contract": "git_lifecycle" }
   }
 }

@@ -12,7 +12,7 @@
 
 ## 执行循环
 
-先验证 `review_packet` 的 base/review SHA、干净状态、ancestry、review context 和 slices。必须实际以同一完整对象、全部 slice IDs 和各自 assigned axis 调度 **Review Standards** 与 **Review Spec**，等待并验证两份固定 `TaskResult` 后聚合；不得自行代替任一审查轴或把一个轴的结论交给另一轴修改。
+本角色只能在 `review_mode=dual_axis` 时被调用。先验证 `review_packet` 的 base/review SHA、干净状态、ancestry、结构化 review context 和 slices。必须实际以同一完整对象、全部 slice IDs 和各自 assigned axis 调度 **Review Standards** 与 **Review Spec**，等待并验证两份固定 `TaskResult` 后聚合；不得自行代替任一审查轴或把一个轴的结论交给另一轴修改。
 
 每个成功的轴 `TaskResult` 必须含一个裸 `review_axis_result={axis,findings,advisory_findings,coverage}`。只提取这两个对象并按 standards、spec 放入 `review_result.axis_results`；不得放入子代理的 result/summary 包装或 `review_axis_result` 外层。standards finding 的字段严格为 `id,summary,observable_impact,slice_id,path,hunk,minimum_fix`，spec finding 还必须且只能增加 `requirement`。
 

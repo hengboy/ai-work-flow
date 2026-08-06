@@ -5,6 +5,15 @@ import { dirname, resolve } from "node:path";
 const CONTRACT_PATH = resolve(import.meta.dirname, "..", "workflow-contract.json");
 const TASK_RESULT_SCHEMAS_PATH = resolve(import.meta.dirname, "..", "task-result-schemas.json");
 const EMPTY_COLLECTION_FIELDS = new Set(["changed_paths", "decision_history", "deleted_paths", "finding_ids", "known_paths", "open_decisions"]);
+const REVIEW_CRITERIA = [
+  "direct_request_origin", "initial_review_stage", "full_review_not_requested", "modified_text_files_only", "changed_file_limit",
+  "changed_line_limit", "no_sensitive_changes", "triage_scope_match", "automated_verification_passed",
+];
+const SENSITIVE_AREAS = [
+  "public_api_contract", "data_schema", "permissions_security", "dependencies", "build_release", "cross_module_behavior", "persistence",
+];
+const CHANGE_TYPES = ["modified", "added", "deleted", "renamed", "copied", "type_changed", "binary"];
+const SMALL_CHANGE_NOTICE = "本次变更符合低风险小改动快速通道，未执行 Standards/Spec 双轴审查；已完成聚焦自动化验证和 Git 状态校验。";
 const schemasByContract = new WeakMap();
 let cachedContract;
 let cachedTaskResultSchemas;
@@ -82,6 +91,24 @@ function validatePathChange(change) {
   } else if (Object.hasOwn(change, "source_path")) throw new Error("PathChange source_path is invalid");
 }
 
+function reviewVerificationStatus(verification) {
+  if (verification.some((entry) => entry.result === "failed")) return "failed";
+  if (verification.some((entry) => entry.focused && entry.result === "passed")) return "passed";
+  return "indeterminate";
+}
+
+function validateReviewDispositionBinding(disposition, packet) {
+  const context = packet.review_context;
+  const criteria = Object.fromEntries(disposition.criteria.map((criterion) => [criterion.criterion, criterion.status]));
+  const sameChangeTypes = JSON.stringify([...disposition.change_types].sort()) === JSON.stringify([...context.change_types].sort());
+  if (disposition.origin !== context.origin || disposition.stage !== context.stage ||
+    disposition.changed_file_count !== context.changed_file_count || disposition.changed_line_count !== context.changed_line_count || !sameChangeTypes ||
+    criteria.full_review_not_requested !== (context.user_requested_full_review ? "failed" : "passed") ||
+    criteria.triage_scope_match !== context.scope_match_status || criteria.automated_verification_passed !== reviewVerificationStatus(context.verification)) {
+    throw new Error("review_disposition is not bound to review_packet evidence");
+  }
+}
+
 export function digestValue(value) {
   return createHash("sha256").update(JSON.stringify(canonicalize(value))).digest("hex");
 }
@@ -153,6 +180,7 @@ export function validateJsonSchema(value, schema, root = schema, path = "value")
   const matchesType = {
     string: () => typeof value === "string",
     integer: () => Number.isSafeInteger(value),
+    boolean: () => typeof value === "boolean",
     array: () => Array.isArray(value),
     object: () => isPlainObject(value),
   }[schema.type];
@@ -245,7 +273,20 @@ export function validateActionInput(actionId, input, contract) {
   const allowed = [...schema.required_fields, ...schema.optional_fields];
   if (Object.keys(input).some((field) => !allowed.includes(field))) throw new Error("Action input contains an unsupported field");
   for (const field of schema.required_fields) if (!nonEmpty(input[field], field)) throw new Error(`Action input requires non-empty ${field}`);
+  const schemas = schemasByContract.get(contract);
+  if (!schemas) throw new Error("TaskResult schemas were not loaded with the workflow contract");
+  for (const [field, value] of Object.entries(input)) {
+    const fieldSchema = schemas.envelope[field] ?? schemas.field_schemas[field];
+    if (fieldSchema) validateJsonSchema(value, fieldSchema, schemas, `Action input.${field}`);
+  }
   for (const [field, value] of Object.entries(input)) if (contract.structured_content[field]) validateStructuredContent(field, value, contract);
+  if (contract.actions[actionId].io_contract === "review_integration") {
+    const skipped = input.review_disposition.mode === "skipped_small_change";
+    validateReviewDispositionBinding(input.review_disposition, input.review_packet);
+    if (input.review_sha !== input.feature_sha || input.review_sha !== input.review_packet.review_sha) throw new Error("Review integration SHA identity is invalid");
+    if (skipped && Object.hasOwn(input, "review_result")) throw new Error("Skipped review integration must not include review_result");
+    if (!skipped && (!input.review_result || input.review_result.verdict !== "passed")) throw new Error("Dual-axis review integration requires a passed review_result");
+  }
   return input;
 }
 
@@ -268,6 +309,16 @@ function validateTaskResultShape(label, resultContracts, taskResult, contract) {
     validateJsonSchema(value, fieldSchema, schemas, `TaskResult.${field}`);
   }
   for (const [field, value] of Object.entries(taskResult)) if (contract.structured_content[field]) validateStructuredContent(field, value, contract);
+  if (taskResult.result === "completed" && Object.hasOwn(taskResult, "review_disposition")) {
+    if (taskResult.review_mode !== taskResult.review_disposition.mode) throw new Error("review_mode must match review_disposition.mode");
+    if (label !== "coding.prepare_review" && taskResult.review_mode !== "dual_axis") throw new Error("Only coding.prepare_review may skip dual-axis review");
+    validateReviewDispositionBinding(taskResult.review_disposition, taskResult.review_packet);
+  }
+  if (label === "planning.confirm" && taskResult.result === "completed" &&
+    (taskResult.task_mode !== taskResult.planning_context.task_mode ||
+      taskResult.task_mode !== taskResult.planning_context.task_mode_selection.selected)) {
+    throw new Error("planning.confirm task_mode is not bound to the user selection");
+  }
   return taskResult;
 }
 
@@ -285,6 +336,9 @@ export function validateStructuredContent(kind, content, contract) {
   const schema = contract.structured_content[kind];
   if (!schema) throw new Error(`Unknown structured content: ${kind}`);
   assertObjectFields(content, schema.required_fields, kind, true);
+  const schemas = schemasByContract.get(contract);
+  const jsonSchema = schemas?.structured_content_schemas[kind];
+  if (jsonSchema) validateJsonSchema(content, jsonSchema, schemas, kind);
   if (kind === "planning_context") {
     if (typeof content.plan_id !== "string" || !content.plan_id.trim() || !["single", "split"].includes(content.task_mode) ||
       typeof content.goal !== "string" || !content.goal.trim() || !stringArray(content.users_consumers) || !stringArray(content.success_criteria) ||
@@ -292,7 +346,8 @@ export function validateStructuredContent(kind, content, contract) {
       !stringArray(content.acceptance_criteria) || !Array.isArray(content.decisions) || content.decisions.some((decision) =>
         !isPlainObject(decision) || Object.keys(decision).sort().join() !== "code,revision,summary" ||
         typeof decision.code !== "string" || !decision.code.trim() || !Number.isSafeInteger(decision.revision) || decision.revision < 1 ||
-        typeof decision.summary !== "string" || !decision.summary.trim()) || !Array.isArray(content.open_questions) || content.open_questions.length !== 0) throw new Error("planning_context is invalid");
+        typeof decision.summary !== "string" || !decision.summary.trim()) || !Array.isArray(content.open_questions) || content.open_questions.length !== 0 ||
+      content.task_mode !== content.task_mode_selection.selected) throw new Error("planning_context is invalid");
   }
   if (kind === "change_evidence") {
     if (!/^[0-9a-f]{40,64}$/.test(content.base_sha) || !/^[0-9a-f]{40,64}$/.test(content.head_sha) ||
@@ -303,6 +358,39 @@ export function validateStructuredContent(kind, content, contract) {
   if (kind === "review_packet" && (!/^[0-9a-f]{40,64}$/.test(content.base_sha) || !/^[0-9a-f]{40,64}$/.test(content.review_sha) ||
     !isPlainObject(content.review_context) || !Object.keys(content.review_context).length || !Array.isArray(content.slices) || !content.slices.length ||
     content.slices.some((slice) => !isPlainObject(slice)))) throw new Error("review_packet is invalid");
+  if (kind === "review_disposition") {
+    if (!["dual_axis", "skipped_small_change"].includes(content.mode) ||
+      !["direct_bug", "direct_small_feature", "approved_plan", "finding_fix", "rereview", "resync"].includes(content.origin) ||
+      !["initial", "rereview", "resync"].includes(content.stage) || !Number.isSafeInteger(content.changed_file_count) || content.changed_file_count < 0 ||
+      !Number.isSafeInteger(content.changed_line_count) || content.changed_line_count < 0 || !stringArray(content.change_types) || content.change_types.some((type) => !CHANGE_TYPES.includes(type)) ||
+      !Array.isArray(content.criteria) || !Array.isArray(content.sensitive_areas) || typeof content.user_notice !== "string" || !content.user_notice.trim() ||
+      content.criteria.some((criterion) => !isPlainObject(criterion) || !["passed", "failed", "indeterminate"].includes(criterion.status) || typeof criterion.evidence !== "string" || !criterion.evidence.trim()) ||
+      content.sensitive_areas.some((area) => !isPlainObject(area) || !["clear", "present", "unknown"].includes(area.status) || typeof area.evidence !== "string" || !area.evidence.trim())) {
+      throw new Error("review_disposition is invalid");
+    }
+    const criterionNames = content.criteria.map((criterion) => criterion.criterion).sort();
+    const areaNames = content.sensitive_areas.map((area) => area.area).sort();
+    if (JSON.stringify(criterionNames) !== JSON.stringify([...REVIEW_CRITERIA].sort()) ||
+      JSON.stringify(areaNames) !== JSON.stringify([...SENSITIVE_AREAS].sort())) throw new Error("review_disposition must cover every fixed criterion and sensitive area exactly once");
+    const criteria = Object.fromEntries(content.criteria.map((criterion) => [criterion.criterion, criterion.status]));
+    const areaStatuses = content.sensitive_areas.map((area) => area.status);
+    const expectedSensitiveStatus = areaStatuses.includes("present") ? "failed" : areaStatuses.includes("unknown") ? "indeterminate" : "passed";
+    const expectedCriteria = {
+      direct_request_origin: ["direct_bug", "direct_small_feature"].includes(content.origin) ? "passed" : "failed",
+      initial_review_stage: content.stage === "initial" ? "passed" : "failed",
+      modified_text_files_only: content.change_types.length === 1 && content.change_types[0] === "modified" ? "passed" : "failed",
+      changed_file_limit: content.changed_file_count >= 1 && content.changed_file_count <= 2 ? "passed" : "failed",
+      changed_line_limit: content.changed_line_count <= 50 ? "passed" : "failed",
+      no_sensitive_changes: expectedSensitiveStatus,
+    };
+    if (Object.entries(expectedCriteria).some(([criterion, status]) => criteria[criterion] !== status)) throw new Error("review_disposition evidence is inconsistent");
+    const eligible = ["direct_bug", "direct_small_feature"].includes(content.origin) && content.stage === "initial" &&
+      content.changed_file_count >= 1 && content.changed_file_count <= 2 && content.changed_line_count <= 50 &&
+      content.change_types.length === 1 && content.change_types[0] === "modified" &&
+      Object.values(criteria).every((status) => status === "passed") && areaStatuses.every((status) => status === "clear");
+    if ((content.mode === "skipped_small_change") !== eligible) throw new Error("review_disposition mode is inconsistent with fail-closed criteria");
+    if (content.mode === "skipped_small_change" && content.user_notice !== SMALL_CHANGE_NOTICE) throw new Error("review_disposition skip notice is invalid");
+  }
   if (kind === "review_axis_result") {
     if (!["standards", "spec"].includes(content.axis) || !Array.isArray(content.findings) || !Array.isArray(content.advisory_findings) || !stringArray(content.coverage)) throw new Error("review_axis_result is invalid");
     for (const finding of [...content.findings, ...content.advisory_findings]) validateFinding(finding, content.axis === "spec");

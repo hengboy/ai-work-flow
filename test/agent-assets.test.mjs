@@ -44,6 +44,15 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
     assert.doesNotMatch(body, forbiddenPromptTerms, role);
   }
   assert.match(assets.compiledBodies.get("planning"), /discover → confirm → write_spec → write_plan/);
+  assert.match(assets.compiledBodies.get("planning"), /planning_context=\{context_id,plan_id.*context_id=source_context_id metadata value; independent from plan_id/s);
+  assert.match(assets.compiledBodies.get("planning"), /`task_mode` 是必选的用户决定/);
+  assert.match(assets.compiledBodies.get("planning"), /`single` 只生成 spec\/plan、不生成 tasks，`split` 还会生成/);
+  assert.match(assets.compiledBodies.get("planning"), /不得根据复杂度、文件数量、工件内容或代理偏好代替用户选择/);
+  assert.match(assets.compiledBodies.get("planning"), /task_mode_selection=\{selected,confirmed_by:"user",user_response\}/);
+  assert.match(assets.compiledBodies.get("planning"), /`planning\.write_\*` 输入的 `task_mode` 必须逐字等于 `planning_context\.task_mode`/);
+  assert.match(assets.compiledBodies.get("planning-writer"), /source_context_id.*planning_context\.context_id.*不得从 `plan_id` 推断/);
+  assert.match(assets.compiledBodies.get("planning-writer"), /计划元数据的 `task_mode` 必须逐字等于 `input\.task_mode`，不得默认 `single`/);
+  assert.match(assets.compiledBodies.get("task-planner"), /`input\.task_mode` 与 plan 元数据的 `task_mode` 逐字一致且都为 `split`/);
   assert.match(assets.compiledBodies.get("coding"), /当前会话/);
   assert.match(assets.compiledBodies.get("code-reviewer"), /同一完整对象/);
   assert.match(assets.compiledBodies.get("full-stack-coder"), /\*\*File Explorer\*\*/);
@@ -54,6 +63,22 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("researcher"), /可解析的 JSON `TaskResult`/);
   assert.match(assets.compiledBodies.get("coding"), /`TaskResult` 使用 2 个空格缩进的多行 JSON/);
   assert.match(assets.compiledBodies.get("researcher"), /`TaskResult` 对象，并使用 2 个空格缩进的多行格式/);
+  assert.match(assets.compiledBodies.get("coding"), /review_mode=skipped_small_change/);
+  assert.match(assets.compiledBodies.get("coding"), /未执行 Standards\/Spec 双轴审查/);
+  assert.match(assets.compiledBodies.get("git-operator"), /最多 2 个被修改的文本文件/);
+  assert.match(assets.compiledBodies.get("git-operator"), /增删总和不超过 50/);
+  assert.match(assets.compiledBodies.get("git-operator"), /failed\|indeterminate/);
+  assert.match(assets.compiledBodies.get("git-operator"), /skipped_small_change.*禁止携带伪造的 `review_result`/);
+  assert.match(assets.compiledBodies.get("code-reviewer"), /只能在 `review_mode=dual_axis` 时被调用/);
+  const gitOperator = assets.compiledBodies.get("git-operator");
+  for (const literal of [
+    "direct_request_origin", "initial_review_stage", "full_review_not_requested", "modified_text_files_only", "changed_file_limit",
+    "changed_line_limit", "no_sensitive_changes", "triage_scope_match", "automated_verification_passed", "public_api_contract", "data_schema",
+    "permissions_security", "dependencies", "build_release", "cross_module_behavior", "persistence",
+  ]) assert.match(gitOperator, new RegExp(literal));
+  assert.match(gitOperator, /本次变更符合低风险小改动快速通道，未执行 Standards\/Spec 双轴审查；已完成聚焦自动化验证和 Git 状态校验。/);
+  assert.match(gitOperator, /review_basis/);
+  assert.match(gitOperator, /review_packet.*review_disposition.*feature\/review\/packet SHA 一致/s);
 });
 
 test("Planning and Coding have Task only", () => {

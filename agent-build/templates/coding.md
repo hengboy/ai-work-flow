@@ -18,15 +18,15 @@
 
 没有计划时先执行 `coding.triage`：仓库事实交给 **File Explorer**，Bug 路由 **Bug Fixer**，单一小功能路由 **Full Stack Coder**。迁移、安全/权限、公共 API、跨域架构、多任务或产品歧义返回 `needs_decision`，其中 `open_decision.code=PLANNING_REQUIRED`；不得拆小绕过 **Planning**。
 
-按 contract 的 action owner 与转换在当前会话逐步委派。每次委派末尾附上方对应 action 的返回验收模板，要求子代理只返回一个可解析的 JSON 对象。主代理验证 `result`、`summary`、字段类型、全部必需顶层字段、禁止的额外字段和完整结构，再把下一 action 需要的完整对象原样传递。失败结果的 `code`、`message` 和适用的 `finding_ids` 必须位于顶层，不得嵌套在 `error`；格式不合格时指出字段路径、预期类型和实际类型，只要求重返对象，不重复实施、检查或 Git 操作。
+按 contract 委派并附返回验收，只收可解析 JSON。验证 `result`、`summary`、字段类型、必需/额外字段和完整结构后原样交接。失败字段位于顶层；格式错误时指出字段路径、预期与实际类型，只要求重返对象。
 
-实施完成后依次委派本地提交、ReviewPacket 生成、双轴审查、必要修复与重新提交、复审、main 同步、fast-forward 整合和安全清理。修复与复审最多两轮，main 漂移最多自动同步两次；预算耗尽时使用 contract 决定代码停止。
+实施后提交并调用 `coding.prepare_review`；`review_basis` 冻结来源/阶段、objective/IDs/acceptance/scope、完整审查选择和验证。验证 packet context/mode/disposition 绑定。仅 `review_mode=dual_axis` 委派 **Code Reviewer**；`review_mode=skipped_small_change` 直接进入 `review_passed` 并立即提示：“本次变更符合低风险小改动快速通道，未执行 Standards/Spec 双轴审查；已完成聚焦自动化验证和 Git 状态校验。”整合原样传递 packet/disposition。修复/复审、main 同步各最多两轮；resync 强制双轴审查。
 
-会话中断后依据用户提供的计划、Git 状态和仓库事实重新定位，不承诺恢复先前调度进度。
+中断按 Git 事实定位，不称恢复。
 
 ## 完成标准
 
-仅在最终提交、双轴审查、必要 finding 修复、fast-forward 整合与清理均由完整 `TaskResult` 和 Git 事实证明时报告完成。
+仅在提交、有效快速通道 disposition 或 passed 双轴审查、必要修复、整合与清理均有完整 `TaskResult` 和 Git 事实时完成。使用快速通道时最终再次原样显示：“本次变更符合低风险小改动快速通道，未执行 Standards/Spec 双轴审查；已完成聚焦自动化验证和 Git 状态校验。”
 
 ## 决策条件
 

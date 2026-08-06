@@ -254,16 +254,21 @@ function structuredSchemaText(fields, contract) {
   }).join("；");
 }
 
-function contractGroupText(ids, ioName, contract, roleNames) {
+function contractGroupText(ids, ioName, contract, roleNames, includeStructures = true) {
   const io = contract.io_contracts[ioName];
   const input = io.input_contract;
-  const actions = ids.map((id) => `\`${id}\` -> **${roleNames.get(contract.actions[id].owner) ?? contract.actions[id].owner}**`).join("；");
+  const actionsByOwner = new Map();
+  for (const id of ids) {
+    const owner = roleNames.get(contract.actions[id].owner) ?? contract.actions[id].owner;
+    actionsByOwner.set(owner, [...(actionsByOwner.get(owner) ?? []), `\`${id}\``]);
+  }
+  const actions = [...actionsByOwner].map(([owner, actionIds]) => `**${owner}**=${actionIds.join("、")}`).join("；");
   const results = Object.entries(io.result_contracts).map(([name, output]) => resultTemplate(name, output)).join("；");
   const structuredFields = [
     ...input.required_fields, ...input.optional_fields,
     ...Object.values(io.result_contracts).flatMap((output) => [...output.required_fields, ...output.optional_fields]),
   ];
-  const structures = structuredSchemaText(structuredFields, contract);
+  const structures = includeStructures ? structuredSchemaText(structuredFields, contract) : "";
   return `- Actions：${actions}\n  - 输入：必需=${input.required_fields.join(",") || "无"}；可选=${input.optional_fields.join(",") || "无"}。\n  - \`TaskResult\` 验收：${results}。${structures ? `\n  - 完整结构：${structures}。` : ""}`;
 }
 
@@ -286,7 +291,15 @@ function actionText(role, contract, schemas, roles) {
   }
   const resultContracts = Object.fromEntries([...groups].flatMap(([ioName]) => Object.entries(contract.io_contracts[ioName].result_contracts)
     .map(([name, output], index) => [`${ioName}:${name}:${index}`, output])));
-  return `- 字段类型：${fieldTypes(resultContracts, schemas)}。\n${[...groups].map(([ioName, ids]) => contractGroupText(ids, ioName, contract, roleNames)).join("\n")}`;
+  const primaryStructures = role.kind === "primary" ? structuredSchemaText([...groups].flatMap(([ioName]) => {
+    const io = contract.io_contracts[ioName];
+    return [
+      ...io.input_contract.required_fields, ...io.input_contract.optional_fields,
+      ...Object.values(io.result_contracts).flatMap((output) => [...output.required_fields, ...output.optional_fields]),
+    ];
+  }), contract) : "";
+  const groupText = [...groups].map(([ioName, ids]) => contractGroupText(ids, ioName, contract, roleNames, role.kind !== "primary")).join("\n");
+  return `- 字段类型：${fieldTypes(resultContracts, schemas)}。\n${groupText}${primaryStructures ? `\n- 完整结构：${primaryStructures}。` : ""}`;
 }
 
 function controlsText(role, controls, policies) {

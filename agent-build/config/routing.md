@@ -31,7 +31,8 @@
 - 直接 Bug 与当前 blocking finding 的最小修复交给 **Bug Fixer**。
 - 本地 Git 生命周期交给 **Git Operator**，并始终串行。
 - Agent 生成与环境切换交给 **Environment Operator**。
-- 双轴审查编排交给 **Code Reviewer**，叶子轴分别交给 **Review Standards** 和 **Review Spec**。
+- `coding.prepare_review` 的首次直接 Bug/小功能由 **Git Operator** 基于 committed diff 和完整结构化证据保守判定快速通道；任一证据失败或不确定都执行双轴审查。
+- 仅 `review_mode=dual_axis` 时把双轴审查编排交给 **Code Reviewer**，叶子轴分别交给 **Review Standards** 和 **Review Spec**。
 - 角色选择以 contract owner 为准，类别说明只帮助理解。
 
 ## 4. Action 交接
@@ -43,13 +44,15 @@
 - 子代理不加前言、后记或 code fence，不使用 `outputs`/`error` 包装，不用省略号代替内容；空数组显式返回 `[]`，不得用字符串代替数组。
 - 主代理先验证 `result`、`summary`、该结果分支的全部必需字段、禁止的额外字段和嵌套结构，再将下一 action 需要的完整对象原样传递。
 - 返回格式不合格时，主代理只列出字段路径、预期类型、实际类型、缺失字段、多余字段或结构错误，要求子代理基于已完成工作原地重返对象；不得重新执行发现、实现、检查或 Git 操作。
-- `planning_context`、`change_evidence`、`review_packet`、`review_axis_result` 与 `review_result` 不写内部文件，只作为直接内容交接。
+- `planning_context`、`change_evidence`、`review_basis`、`review_packet`、`review_disposition`、`review_axis_result` 与 `review_result` 不写内部文件，只作为直接内容交接。
+- `review_basis` 冻结来源、阶段、objective/IDs/acceptance/scope、用户完整审查选择和验证记录；ReviewPacket context、disposition 与 integration SHA 必须逐字段绑定，冲突时不得跳过审查或整合。
 
 ## 5. 调度与并发
 
 - 写入 action 默认串行；所有 Git mutation 始终串行，不与其他 Git action 重叠。
 - 只有写入范围明确互斥的 actions 才可并行；共享规划工件或同一 worktree 视为相交范围。
 - **Review Standards** 与 **Review Spec** 可用同一完整 ReviewPacket 并行执行。
+- 快速通道不增加代理调用；批准计划、finding 修复、复审和 main resync 始终执行完整双轴审查。
 - 每个 `TaskResult` 验证后再决定下一 action，不根据预计结果提前调度。
 - **Coding** 的 finding 修复与完整复审最多两轮，main 漂移最多自动同步两次；预算耗尽时使用 contract 决定代码停止。
 
