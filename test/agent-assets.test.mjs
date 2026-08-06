@@ -64,7 +64,10 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   }
   assert.match(assets.compiledBodies.get("planning"), /discover → confirm → write_spec → write_plan/);
   assert.match(assets.compiledBodies.get("planning"), /planning_context=\{context_id,plan_id.*context_id=source_context_id metadata value; independent from plan_id/s);
-  assert.match(assets.compiledBodies.get("planning"), /`task_mode` 是必选的用户决定/);
+  assert.match(assets.compiledBodies.get("planning"), /`planning\.confirm` 在 `write_spec` 前持续澄清共享需求/);
+  assert.match(assets.compiledBodies.get("planning"), /不得在仍有开放问题时询问 `task_mode`/);
+  assert.match(assets.compiledBodies.get("planning"), /先向用户输出完整的共享需求列表，再在同一次确认中要求用户确认该列表并选择 `single` 或 `split`/);
+  assert.match(assets.compiledBodies.get("planning"), /只有用户同时确认需求列表并明确选择模式才可完成确认/);
   assert.match(assets.compiledBodies.get("planning"), /`single` 只生成 spec\/plan、不生成 tasks，`split` 还会生成/);
   assert.match(assets.compiledBodies.get("planning"), /不得根据复杂度、文件数量、工件内容或代理偏好代替用户选择/);
   assert.match(assets.compiledBodies.get("planning"), /task_mode_selection=\{selected,confirmed_by:"user",user_response\}/);
