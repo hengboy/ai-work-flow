@@ -85,9 +85,10 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("task-planner"), /`input\.task_mode` 与 plan 元数据必须同为 `split`/);
   assert.match(assets.compiledBodies.get("task-planner"), /`planning\.preview_tasks`.*不得创建、修改或删除 task 文件/s);
   assert.match(assets.compiledBodies.get("task-planner"), /`planning\.revise_task_preview`.*revision 严格增加 1/s);
-  assert.match(assets.compiledBodies.get("task-planner"), /`planning\.write_tasks`.*用户确认的当前 revision.*逐字写 preview ID\/order\/title\/summary/s);
+  assert.match(assets.compiledBodies.get("task-planner"), /`planning\.write_tasks`.*用户确认的当前 revision.*逐字写 preview ID\/order\/title\/summary.*写入后.*`task_artifact_manifest`/s);
   assert.match(assets.compiledBodies.get("task-planner"), /write_scope_mode: `exhaustive`/);
-  assert.match(assets.compiledBodies.get("file-explorer"), /`planning\.verify_tasks`.*实际文件重建的 `task_artifact_manifest`.*不信任 writer 回执/s);
+  assert.doesNotMatch(assets.compiledBodies.get("file-explorer"), /planning\.verify_tasks|task_artifact_manifest/);
+  assert.match(assets.compiledBodies.get("git-operator"), /planning task verify.*`shasum -a 256 -- <path>`.*`sha256sum -- <path>`.*Task Planner.*`task_artifact_manifest`.*不执行 Git mutation/s);
   assert.match(assets.compiledBodies.get("coding"), /当前会话/);
   assert.match(assets.compiledBodies.get("code-reviewer"), /同一完整对象/);
   assert.match(assets.compiledBodies.get("full-stack-coder"), /\*\*File Explorer\*\*/);
@@ -141,7 +142,7 @@ test("compiled prompt character limits accept the boundary and reject one charac
   extendPrompt(individual.templates, "coding", MAX_COMPILED_PROMPT_CHARACTERS - codingLength);
   assert.equal(loadAgentAssets(undefined, individual.templates).compiledBodies.get("coding").length, MAX_COMPILED_PROMPT_CHARACTERS);
   extendPrompt(individual.templates, "coding", 1);
-  assert.throws(() => loadAgentAssets(undefined, individual.templates), /Compiled prompt coding exceeds 10000 characters: 10001\./);
+  assert.throws(() => loadAgentAssets(undefined, individual.templates), /Compiled prompt coding exceeds 11500 characters: 11501\./);
 
   const aggregate = promptFixture();
   t.after(() => rmSync(aggregate.root, { recursive: true, force: true }));
@@ -158,7 +159,7 @@ test("compiled prompt character limits accept the boundary and reject one charac
   assert.equal([...atLimit.compiledBodies.values()].reduce((sum, prompt) => sum + prompt.length, 0), MAX_COMPILED_PROMPTS_CHARACTERS);
   const expandable = [...atLimit.compiledBodies].find(([, prompt]) => prompt.length < MAX_COMPILED_PROMPT_CHARACTERS)[0];
   extendPrompt(aggregate.templates, expandable, 1);
-  assert.throws(() => loadAgentAssets(undefined, aggregate.templates), /Compiled prompts exceed 55000 characters: 55001\./);
+  assert.throws(() => loadAgentAssets(undefined, aggregate.templates), /Compiled prompts exceed 57000 characters: 57001\./);
 });
 
 test("primary agents have Task only and Task Planner owns the complete split lifecycle", () => {
@@ -170,6 +171,18 @@ test("primary agents have Task only and Task Planner owns the complete split lif
   assert.deepEqual(taskPlanner.tools, ["Read", "Edit", "Write", "Bash"]);
   assert.equal(assets.policies[taskPlanner.policy].write_scope, "tasks");
   for (const role of assets.roles) assert.equal(role.tools.includes("WorkflowRuntime"), false, role.id);
+});
+
+test("File Explorer only discovers facts and Git Operator verifies task manifests", () => {
+  const assets = loadAgentAssets();
+  const fileExplorer = assets.roles.find((role) => role.id === "file-explorer");
+  const gitOperator = assets.roles.find((role) => role.id === "git-operator");
+  const taskPath = ".ai-work-flow/plans/example/tasks/01-first.md";
+  assert.deepEqual(fileExplorer.actions, ["planning.discover"]);
+  assert.equal(gitOperator.actions.includes("planning.verify_tasks"), true);
+  assert.equal(assets.contract.actions["planning.verify_tasks"].owner, "git-operator");
+  assert.equal(evaluateOpenCodePermission(fileExplorer, assets.policies[fileExplorer.policy], "bash", `shasum -a 256 -- ${taskPath}`), "deny");
+  assert.equal(evaluateOpenCodePermission(gitOperator, assets.policies[gitOperator.policy], "bash", `shasum -a 256 -- ${taskPath}`), "allow");
 });
 
 test("Task Planner alone can edit confirmed task artifacts", () => {

@@ -32,8 +32,8 @@ const HEADINGS = ["角色结果", "能力与控制", "允许的 Actions 与输�
 const CONTROL_MARKER = "<!-- ai-work-flow:controls -->";
 const ACTION_MARKER = "<!-- ai-work-flow:actions -->";
 const RESULT_MARKER = "<!-- ai-work-flow:task-result -->";
-export const MAX_COMPILED_PROMPT_CHARACTERS = 10_000;
-export const MAX_COMPILED_PROMPTS_CHARACTERS = 55_000;
+export const MAX_COMPILED_PROMPT_CHARACTERS = 11_500;
+export const MAX_COMPILED_PROMPTS_CHARACTERS = 57_000;
 export const MAX_AGENT_DEPTH = 2;
 
 function unique(values) {

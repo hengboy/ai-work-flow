@@ -15,7 +15,6 @@
 先读导航索引；命中后只开入口和必需直接依赖，失效时才聚焦搜索。
 
 - `planning.discover`：围绕 objective/terms/known paths 返回事实、证据来源与尚未解决的产品决定，不替 **Planning** 做决定。
-- `planning.verify_tasks`：枚举 target 全部 tasks，解析 ID/order/标题/预期结果并计算原始字节 SHA-256；路径、plan digest、revision 必须匹配输入，返回从实际文件重建的 `task_artifact_manifest`，不信任 writer 回执。
 - 只读导航请求直接使用 `$project-code-navigation`。
 
 **Coding** 计划预检规则：
@@ -29,7 +28,7 @@
 
 ## 完成标准
 
-路径存在、依赖直接、事实有来源；verify manifest 来自实际文件。
+路径存在、依赖直接、事实有来源。
 
 ## 决策条件
 

@@ -15,11 +15,11 @@
       "policy_requirements": {}
     },
     "planning-no-implementation": {
-      "instruction": "**Planning** 只调度需求事实发现、产品决定和规划 workflow；事实发现与 task 写后核验交给 **File Explorer**，spec/plan 写入交给 **Planning Writer**，task 拆分预览、修订及确认后写入交给 **Task Planner**，提交交给 **Git Operator**。**Planning** 不自行操作文件、研究网络资料、实施、评审或自动进入实施。",
+      "instruction": "**Planning** 只调度需求事实发现、产品决定和规划 workflow；事实发现交给 **File Explorer**，spec/plan 写入交给 **Planning Writer**，task 拆分预览、修订、确认后写入及 manifest 生成交给 **Task Planner**，task manifest 独立复验与提交交给 **Git Operator**。**Planning** 不自行操作文件、研究网络资料、实施、评审或自动进入实施。",
       "policy_requirements": {}
     },
     "read-only-discovery": {
-      "instruction": "**File Explorer** 只读定位或核验指定规划工件，不编辑、联网或委派。",
+      "instruction": "**File Explorer** 只读定位入口并检索指定事实，不承担写后工件校验，不编辑、联网或委派。",
       "policy_requirements": {
         "filesystem": ["read"],
         "network": ["none"],
@@ -59,7 +59,7 @@
       }
     },
     "task-artifacts-only": {
-      "instruction": "`planning.preview_tasks` 与 `planning.revise_task_preview` 只返回预览，禁止修改工作区；`planning.write_tasks` 只全量维护用户已确认 revision 的 `tasks/NN-*.md`。不得修改其他内容、操作 Git 或委派。",
+      "instruction": "`planning.preview_tasks` 与 `planning.revise_task_preview` 只返回预览，禁止修改工作区；`planning.write_tasks` 只全量维护用户已确认 revision 的 `tasks/NN-*.md`，并从写后文件生成完整 `task_artifact_manifest`。不得修改其他内容、操作 Git 或委派。",
       "policy_requirements": {
         "git": ["none"],
         "write_scope": ["tasks"],
@@ -87,7 +87,7 @@
       "policy_requirements": {}
     },
     "safe-local-git-only": {
-      "instruction": "禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑；仅 `coding.integrate_task` 可勾选并提交当前 task 的既有复选框；review prepare 只构造并返回 ReviewPacket，不调度审查。",
+      "instruction": "禁止 push、amend、reset、clean、隐式 stash、标签修改、跳 hook 和实现编辑；`planning.verify_tasks` 只读复验 task manifest，不执行 Git mutation；仅 `coding.integrate_task` 可勾选并提交当前 task 的既有复选框；review prepare 只构造并返回 ReviewPacket，不调度审查。",
       "policy_requirements": {
         "git": ["write"],
         "write_scope": ["git"],

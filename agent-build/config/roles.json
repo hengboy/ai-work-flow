@@ -26,13 +26,13 @@
     {
       "id": "file-explorer",
       "name": "File Explorer",
-      "description": "索引优先执行只读发现，并核验写后的规划工件。",
+      "description": "索引优先执行只读发现与事实检索。",
       "kind": "subagent",
       "policy": "discover",
       "controls": ["read-only-discovery"],
       "delegates": [],
       "tools": ["Read", "Glob", "Grep", "Bash", "Skill"],
-      "actions": ["planning.discover", "planning.verify_tasks"]
+      "actions": ["planning.discover"]
     },
     {
       "id": "researcher",
@@ -109,7 +109,7 @@
       "controls": ["safe-local-git-only"],
       "delegates": [],
       "tools": ["Read", "Bash", "Skill"],
-      "actions": ["planning.commit", "coding.prepare", "coding.prepare_direct_bug", "coding.prepare_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task", "coding.commit", "coding.commit_fix_1", "coding.commit_fix_2", "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2", "coding.integrate", "coding.resync_1", "coding.prepare_resync_review_1", "coding.integrate_1", "coding.resync_2", "coding.prepare_resync_review_2", "coding.integrate_2", "coding.cleanup"]
+      "actions": ["planning.verify_tasks", "planning.commit", "coding.prepare", "coding.prepare_direct_bug", "coding.prepare_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task", "coding.commit", "coding.commit_fix_1", "coding.commit_fix_2", "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2", "coding.integrate", "coding.resync_1", "coding.prepare_resync_review_1", "coding.integrate_1", "coding.resync_2", "coding.prepare_resync_review_2", "coding.integrate_2", "coding.cleanup"]
     },
     {
       "id": "environment-operator",

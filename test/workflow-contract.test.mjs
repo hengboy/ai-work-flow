@@ -125,6 +125,7 @@ test("contract is generation-only and assigns valid action transitions", async (
   assert.equal(contract.actions["planning.write_tasks"].owner, "task-planner");
   assert.equal(contract.actions["planning.write_tasks"].from, "task_split_confirmed");
   assert.equal(contract.actions["planning.write_tasks"].completed_to, "tasks_written");
+  assert.equal(contract.actions["planning.verify_tasks"].owner, "git-operator");
   assert.equal(contract.actions["planning.verify_tasks"].from, "tasks_written");
   assert.equal(contract.actions["planning.verify_tasks"].completed_to, "tasks_ready");
 });
@@ -262,13 +263,26 @@ test("action inputs and change evidence use complete objects", async () => {
     task_mode: "split", task_preview: revisedPreview, task_preview_confirmation: confirmation,
   };
   assert.equal(validateActionInput("planning.write_tasks", taskWriteInput, contract), taskWriteInput);
+  const taskPath = ".ai-work-flow/plans/example/tasks/01-app.md";
+  const manifest = {
+    plan_id: "example", plan_digest: taskWriteInput.source_digest, preview_revision: 2,
+    files: [{
+      path: taskPath, sha256: "9".repeat(64), task_id: "app", order: 1,
+      title: "App", summary: "Implement the complete app",
+    }],
+  };
   const taskWriteResult = {
     result: "completed", summary: "Tasks written", target: taskWriteInput.target, sha256: "d".repeat(64),
-    changed_paths: [".ai-work-flow/plans/example/tasks/01-app.md"], task_mode: "split",
+    changed_paths: [taskPath], task_mode: "split", task_artifact_manifest: manifest,
   };
   assert.equal(validateTaskResult("planning.write_tasks", taskWriteResult, contract, taskWriteInput).task_mode, "split");
   assert.throws(() => validateTaskResult("planning.write_tasks", {
     ...taskWriteResult, changed_paths: [".ai-work-flow/plans/example/tasks/01-unrelated.md", ".ai-work-flow/plans/example/tasks/02-extra.md"],
+  }, contract, taskWriteInput), /confirmed preview and target/);
+  assert.throws(() => validateTaskResult("planning.write_tasks", {
+    ...taskWriteResult, task_artifact_manifest: {
+      ...manifest, files: [{ ...manifest.files[0], title: "Different title" }],
+    },
   }, contract, taskWriteInput), /confirmed preview and target/);
   assert.throws(() => validateActionInput("planning.write_tasks", {
     target: ".ai-work-flow/plans/example/tasks", source_content: "# Ready plan", source_digest: previewInput.source_digest,
@@ -276,14 +290,7 @@ test("action inputs and change evidence use complete objects", async () => {
   }, contract), /current task preview/);
   const verifyInput = {
     target: taskWriteInput.target, source_digest: taskWriteInput.source_digest, changed_paths: taskWriteResult.changed_paths,
-    task_preview: revisedPreview, task_preview_confirmation: confirmation,
-  };
-  const manifest = {
-    plan_id: "example", plan_digest: taskWriteInput.source_digest, preview_revision: 2,
-    files: [{
-      path: taskWriteResult.changed_paths[0], sha256: "9".repeat(64), task_id: "app", order: 1,
-      title: "App", summary: "Implement the complete app",
-    }],
+    task_preview: revisedPreview, task_preview_confirmation: confirmation, task_artifact_manifest: manifest,
   };
   const verifyResult = {
     result: "completed", summary: "Task files verified", changed_paths: taskWriteResult.changed_paths,
@@ -294,7 +301,7 @@ test("action inputs and change evidence use complete objects", async () => {
     ...verifyResult, task_artifact_manifest: {
       ...manifest, files: [{ ...manifest.files[0], title: "Different title" }],
     },
-  }, contract, verifyInput), /actual files and the confirmed preview/);
+  }, contract, verifyInput), /unchanged independently verified writer manifest/);
   const changeEvidence = {
     base_sha: sha("a"),
     head_sha: sha("b"),

@@ -14,6 +14,7 @@
 
 先验证 input、worktree、branch、SHA、PathChange 和冻结内容：
 
+- planning task verify：用 `shasum -a 256 -- <path>` 或 `sha256sum -- <path>` 逐文件重算摘要；结果须等于 **Task Planner** 返回的 `task_artifact_manifest`。原样返回 manifest 并附 checks，不执行 Git mutation。
 - prepare：single 保持 `ai-work-flow/<plan_id>` 与 `<repository>/.worktrees/<plan_id>`。split 从冻结 main 创建 `ai-work-flow/<plan_id>/integration` 与 `<repository>/.worktrees/<plan_id>`，task 从最新 plan 创建 `ai-work-flow/<plan_id>/tasks/<task_id>` 与 `<repository>/.worktrees/<plan_id>--<task_id>`。绑定安全 ID、digest、acceptance/scope；串行执行，拒绝 stale/ref/worktree 风险，先建 integration ref。direct Bug 不变。
 - commit：使用 `$git-commit` 和 `--` 精确暂存 PathChange；task 绑定 ID、SHA、paths、scope 与验证。hook 失败保留现场。
 - task integrate：校验当前 plan 的 `task_path`/`task_digest`，在干净 plan 上串行 `git merge --no-ff <task_sha>`。成功后仅把该文件既有 `- [ ]` 改为 `- [x]`；至少一项、无遗漏或其他差异，再单独提交。返回 base/source/merge SHA、不同的 `task_completion_sha=resulting_plan_sha`、原样 path 与 checked=true。失败保留现场、不 cleanup；冲突立即 `git merge --abort`，返回 `merge_aborted=true`、`clean_state.clean=true` 及冲突证据。后续使用完成提交 SHA。

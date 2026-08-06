@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contract_digest": "20fa36f8efd851ede02c68f086cfd45a224b706b641733c8fb7dae4965f20d8d",
+  "contract_digest": "ad85e80d0a496bc30a19a29d88197ef3d90f0491c777c9e363ae951c11c12138",
   "envelope": {
     "result": { "type": "string", "enum": ["completed", "retryable_failure", "needs_decision", "failed"], "prompt_type": "result enum" },
     "summary": { "type": "string", "minLength": 1, "prompt_type": "string" }

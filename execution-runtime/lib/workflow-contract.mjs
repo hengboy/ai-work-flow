@@ -112,6 +112,20 @@ function sameStringSet(left, right) {
     JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
 }
 
+function taskArtifactManifestMatches(manifest, { target, source_digest: sourceDigest, changed_paths: changedPaths, task_preview: taskPreview }) {
+  if (!manifest || !taskPreview || !sameStringSet(manifest.files.map((file) => file.path), changedPaths)) return false;
+  const projected = manifest.files.map(({ task_id, order, title, summary }) => ({ task_id, order, title, summary }))
+    .sort((left, right) => left.order - right.order);
+  const expected = [...taskPreview.tasks].sort((left, right) => left.order - right.order);
+  return manifest.plan_id === taskPreview.plan_id && manifest.plan_digest === sourceDigest &&
+    manifest.preview_revision === taskPreview.revision && digestValue(projected) === digestValue(expected) &&
+    manifest.files.every((file) => {
+      const basename = file.path.slice(target.length + 1);
+      return pathIsWithinScope(file.path, [`${target}/`]) && /^\d{2}-[a-z0-9][a-z0-9-]*\.md$/.test(basename) &&
+        Number(basename.slice(0, 2)) === file.order;
+    });
+}
+
 function taskIntegrationIds(integrations) {
   return Array.isArray(integrations) ? integrations.map((integration) => integration.task_id) : [];
 }
@@ -403,8 +417,9 @@ export function validateActionInput(actionId, input, contract) {
   if (actionId === "planning.verify_tasks" &&
     (input.target !== planningPath(input.task_preview.plan_id, "tasks") || input.task_preview.plan_digest !== input.source_digest ||
       input.task_preview_confirmation.preview_revision !== input.task_preview.revision || !stringArray(input.changed_paths) ||
-      input.changed_paths.some((path) => !pathIsWithinScope(path, [`${input.target}/`])))) {
-    throw new Error("planning.verify_tasks requires the confirmed preview and task paths from planning.write_tasks");
+      input.changed_paths.some((path) => !pathIsWithinScope(path, [`${input.target}/`])) ||
+      !taskArtifactManifestMatches(input.task_artifact_manifest, input))) {
+    throw new Error("planning.verify_tasks requires the writer manifest bound to the confirmed preview and task paths");
   }
   if (["coding.prepare_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task",
     "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"].includes(actionId) &&
@@ -536,24 +551,14 @@ export function validateTaskResult(actionId, taskResult, contract, actionInput) 
   if (actionId === "planning.write_tasks" && taskResult.result === "completed" &&
     (taskResult.target !== actionInput.target || taskResult.task_mode !== actionInput.task_mode ||
       taskResult.changed_paths.length !== actionInput.task_preview.tasks.length ||
-      taskResult.changed_paths.some((path) => !pathIsWithinScope(path, [`${actionInput.target}/`])))) {
+      taskResult.changed_paths.some((path) => !pathIsWithinScope(path, [`${actionInput.target}/`])) ||
+      !taskArtifactManifestMatches(taskResult.task_artifact_manifest, { ...actionInput, changed_paths: taskResult.changed_paths }))) {
     throw new Error("planning.write_tasks result is not bound to the confirmed preview and target");
   }
   if (actionId === "planning.verify_tasks" && taskResult.result === "completed") {
-    const manifest = taskResult.task_artifact_manifest;
-    const projected = manifest.files.map(({ task_id, order, title, summary }) => ({ task_id, order, title, summary }))
-      .sort((left, right) => left.order - right.order);
-    const expected = [...actionInput.task_preview.tasks].sort((left, right) => left.order - right.order);
-    if (manifest.plan_id !== actionInput.task_preview.plan_id || manifest.plan_digest !== actionInput.source_digest ||
-      manifest.preview_revision !== actionInput.task_preview.revision || digestValue(projected) !== digestValue(expected) ||
-      !sameStringSet(taskResult.changed_paths, actionInput.changed_paths) ||
-      !sameStringSet(manifest.files.map((file) => file.path), actionInput.changed_paths) || !taskResult.checks.length ||
-      manifest.files.some((file) => {
-        const basename = file.path.slice(actionInput.target.length + 1);
-        return !pathIsWithinScope(file.path, [`${actionInput.target}/`]) || !/^\d{2}-[a-z0-9][a-z0-9-]*\.md$/.test(basename) ||
-          Number(basename.slice(0, 2)) !== file.order;
-      })) {
-      throw new Error("planning.verify_tasks result is not bound to actual files and the confirmed preview");
+    if (!sameStringSet(taskResult.changed_paths, actionInput.changed_paths) || !taskResult.checks.length ||
+      digestValue(taskResult.task_artifact_manifest) !== digestValue(actionInput.task_artifact_manifest)) {
+      throw new Error("planning.verify_tasks must return the unchanged independently verified writer manifest");
     }
   }
   if (actionId === "coding.prepare_task" && taskResult.result === "completed") {
