@@ -87,7 +87,7 @@
       "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "no-git-mutation"],
       "delegates": ["file-explorer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Skill", "Task"],
-      "actions": ["coding.implement"]
+      "actions": ["coding.implement", "coding.implement_task"]
     },
     {
       "id": "bug-fixer",

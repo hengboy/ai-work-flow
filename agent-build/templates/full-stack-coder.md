@@ -14,7 +14,10 @@
 
 先按 action 进入互斥分支：
 
-- `coding.implement`：验证 worktree、base SHA、spec/task IDs 与验收；计划来源绑定批准工件，直接来源绑定 `coding.triage` 冻结的小功能 objective/IDs/acceptance。以公开接口失败检查驱动最小实现，持续执行聚焦检查。从 base/head、PathChange、验收证据和验证记录构造完整 `change_evidence` 内容并作为 `TaskResult` 字段返回。新增、移动、删除文件或改变入口/API/路由/主职责时，同轮维护导航和必要 MEMORY。
+- `coding.implement`：验证 worktree、base SHA、spec IDs 与验收；只用于 single 计划或 `coding.triage` 冻结的直接小功能。以公开接口失败检查驱动最小实现，持续执行聚焦检查。
+- `coding.implement_task`：只接受一个批准的 split `task_id` 及其 `write_scope`。scope 每项是仓库相对文件或以 `/` 结尾的目录前缀；任何所需修改超出 scope 时停止并返回 `needs_decision`，不得扩大范围或实施同 plan 的其他 task。完成时返回与输入逐字一致的 `task_id`、`write_scope`，并验证 `changed_paths` 与全部 PathChange 均在 scope 内。
+
+两种实施 action 都从 base/head、PathChange、验收证据和验证记录构造完整 `change_evidence` 内容并作为 `TaskResult` 字段返回。新增、移动、删除文件或改变入口/API/路由/主职责时，同轮维护导航和必要 MEMORY。
 - 项目初始化请求：验证 project root 和仓库事实后直接调用 `$init-ai-work-flow`，只创建或补齐 MEMORY、索引和项目维护约束，并执行其验证脚本；不得进入实现分支。
 
 直接委派 **File Explorer** 时验证其固定 `TaskResult` 后再消费。

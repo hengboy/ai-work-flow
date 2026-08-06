@@ -11,7 +11,7 @@
       }
     },
     "coding-orchestration-only": {
-      "instruction": "**Coding** 只分类、委派、验证交接和推进当前会话流程。有批准计划时委派 **File Explorer** 校验真实 spec、plan、tasks 及来源摘要；没有计划时先执行 `coding.triage`。直接 Bug 委派 **Bug Fixer**，小功能委派 **Full Stack Coder**；大功能必须以 `PLANNING_REQUIRED` 终止并交接 **Planning**。",
+      "instruction": "**Coding** 只分类、委派、验证交接和推进当前会话流程。有批准计划时委派 **File Explorer** 校验真实 spec、plan、tasks 及来源摘要；split 模式仅将前置依赖已整合、显式声明 exhaustive scope 且写入范围互斥的 ready tasks 分别委派给独立 **Full Stack Coder**，允许其在不同 worktree 并行实施，旧 task 与所有 Git actions 始终串行。没有计划时先执行 `coding.triage`。直接 Bug 委派 **Bug Fixer**，小功能委派 **Full Stack Coder**；大功能必须以 `PLANNING_REQUIRED` 终止并交接 **Planning**。",
       "policy_requirements": {}
     },
     "planning-no-implementation": {

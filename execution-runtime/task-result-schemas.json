@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contract_digest": "f80db6d07294fedd1ab7fd14e555fb6d722de937b94a8a3f933bdeb560cc042c",
+  "contract_digest": "db8f062137a96749bcdb7a0e516b992f430ab63dc71ae01a4d7e5f9eb5e4fc3f",
   "envelope": {
     "result": { "type": "string", "enum": ["completed", "retryable_failure", "needs_decision", "failed"], "prompt_type": "result enum" },
     "summary": { "type": "string", "minLength": 1, "prompt_type": "string" }
@@ -49,6 +49,8 @@
     "summary": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "target": { "type": "string", "minLength": 1, "prompt_type": "path string" },
     "task_mode": { "type": "string", "enum": ["single", "split"], "prompt_type": "single|split" },
+    "task_id": { "type": "string", "pattern": "^(?!.*\\.\\.)(?!.*\\.lock$)[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9_-])?$", "prompt_type": "safe task identifier" },
+    "write_scope": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true, "prompt_type": "repository-relative path prefix[]" },
     "worktree": { "type": "string", "minLength": 1, "prompt_type": "absolute path" },
     "branch": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "base_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },

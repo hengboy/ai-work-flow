@@ -12,19 +12,21 @@
 
 ## 执行循环
 
-校验 plan 原始字节摘要，并要求 `input.task_mode` 与 plan 元数据的 `task_mode` 逐字一致且都为 `split`；任一不满足就拒绝执行，因为 single workflow 不会进入本 action。建立 requirement-to-task 覆盖，按依赖形成 tracer-bullet tasks；每项含稳定 ID、顺序、`blocked_by`、plan 路径与摘要、非穷举 `write_scope`、独立验收和验证。确认所有 plan 步骤恰有覆盖、依赖无环后事务式全量替换。
+校验 plan 原始字节摘要，并要求 `input.task_mode` 与 plan 元数据的 `task_mode` 逐字一致且都为 `split`；任一不满足就拒绝执行，因为 single workflow 不会进入本 action。建立 requirement-to-task 覆盖，按依赖形成 tracer-bullet tasks；每项含小写 kebab-case 稳定 ID、顺序、`blocked_by`、plan 路径与摘要、`write_scope_mode=exhaustive`、完整允许写入边界 `write_scope`、独立验收和验证。scope 每项只能是仓库相对文件，或以 `/` 结尾的仓库相对目录前缀，禁止绝对路径、`.`、`..`、反斜杠和 glob。可并行 task 的 scope 必须明确互斥；无法划出互斥写入边界时用 `blocked_by` 排定先后。确认所有 plan 步骤恰有覆盖、依赖无环后事务式全量替换。
 
 每个 `tasks/NN-<short-name>.md` 文件使用以下统一模板；完整文件内容必须单独放在带 `markdown` info string 的 fenced code block 中：
 
 ```markdown
 # NN - <任务标题>
 
-- task_id: `<unique-task-id>`
+- task_id: `<lowercase-kebab-case-id>`
 - order: `NN`
 - blocked_by: `<task IDs or none>`
 - source_plan: `../plan.md`
 - source_plan_digest: `<sha256>`
-- write_scope: `<expected primary paths or modules; non-exhaustive>`
+- write_scope_mode: `exhaustive`
+- write_scope:
+  - `<repository/relative/file-or-directory/>`
 
 ## 预期结果
 

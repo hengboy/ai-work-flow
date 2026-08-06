@@ -341,17 +341,73 @@ test("review evidence binding rejects conflicting or incomplete handoffs", async
   }, contract).review_mode, "dual_axis");
 });
 
-test("planned worktree preparation requires the plan ID", async () => {
+test("planned worktree preparation binds split tasks to distinct task IDs", async () => {
   const contract = await loadWorkflowContract();
   const planned = { plan_id: "worktree-plan-name", plan_digest: "digest", task_mode: "single", target_base: "main" };
   assert.equal(validateActionInput("coding.prepare", planned, contract), planned);
   assert.throws(() => validateActionInput("coding.prepare", {
     plan_digest: "digest", task_mode: "single", target_base: "main",
   }, contract), /plan_id/);
+  assert.throws(() => validateActionInput("coding.prepare", { ...planned, task_id: "task-01" }, contract), /does not accept task_id/);
+
+  const split = { ...planned, task_mode: "split", task_id: "task-01" };
+  assert.equal(validateActionInput("coding.prepare", split, contract), split);
+  assert.throws(() => validateActionInput("coding.prepare", {
+    ...planned, task_mode: "split",
+  }, contract), /requires task_id/);
+  for (const taskId of ["../../outside", "task/01", ".lock", "task..01", "task.lock", "task."]) {
+    assert.throws(() => validateActionInput("coding.prepare", { ...split, task_id: taskId }, contract), /Action input\.task_id/);
+  }
+  for (const legacySafeTaskId of ["Task-01", "task_01"]) {
+    assert.equal(validateActionInput("coding.prepare", { ...split, task_id: legacySafeTaskId }, contract).task_id, legacySafeTaskId);
+  }
 
   const direct = { plan_digest: "digest", task_mode: "single", target_base: "main" };
   assert.equal(validateActionInput("coding.prepare_direct_bug", direct, contract), direct);
   assert.throws(() => validateActionInput("coding.prepare_direct_bug", { ...direct, plan_id: "not-applicable" }, contract), /does not accept plan_id/);
+  assert.throws(() => validateActionInput("coding.prepare_direct_bug", { ...direct, task_id: "not-applicable" }, contract), /does not accept plan_id or task_id/);
+});
+
+test("split task implementation binds exhaustive scope and rejects path escapes", async () => {
+  const contract = await loadWorkflowContract();
+  const input = {
+    worktree: "/tmp/worktree",
+    base_sha: sha("a"),
+    task_id: "task-01",
+    acceptance: ["focused behavior works"],
+    write_scope: ["src/feature/", "test/feature.test.mjs"],
+  };
+  assert.equal(validateActionInput("coding.implement_task", input, contract), input);
+  for (const writeScope of [["../outside/"], ["/absolute/"], ["src/**"], ["src\\feature\\"]]) {
+    assert.throws(() => validateActionInput("coding.implement_task", { ...input, write_scope: writeScope }, contract), /unsafe repository-relative path/);
+  }
+
+  const changeEvidence = {
+    base_sha: sha("a"),
+    head_sha: sha("b"),
+    path_changes: [{ ...pathChange, path: "src/feature/app.mjs" }],
+    acceptance_evidence: [{ criterion: "focused behavior works", evidence: "focused test passed" }],
+    verification: [{ command: "node --test test/feature.test.mjs", result: "passed" }],
+  };
+  const result = {
+    result: "completed",
+    summary: "Task implemented",
+    task_id: "task-01",
+    head_sha: sha("b"),
+    changed_paths: ["src/feature/app.mjs"],
+    change_evidence: changeEvidence,
+    write_scope: input.write_scope,
+  };
+  assert.throws(() => validateTaskResult("coding.implement_task", result, contract), /requires action input/);
+  assert.equal(validateTaskResult("coding.implement_task", result, contract, input), result);
+  assert.throws(() => validateTaskResult("coding.implement_task", {
+    ...result,
+    changed_paths: ["src/shared.mjs"],
+    change_evidence: { ...changeEvidence, path_changes: [{ ...pathChange, path: "src/shared.mjs" }] },
+  }, contract, input), /changed paths must stay within write_scope/);
+  assert.throws(() => validateTaskResult("coding.implement_task", {
+    ...result, write_scope: ["src/"],
+  }, contract, input), /not bound to task_id and write_scope input/);
 });
 
 test("execution-runtime contains only the contract, typed schemas, and validator", async () => {

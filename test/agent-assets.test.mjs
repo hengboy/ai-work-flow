@@ -72,12 +72,19 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("planning-writer"), /source_context_id.*planning_context\.context_id.*不得从 `plan_id` 推断/);
   assert.match(assets.compiledBodies.get("planning-writer"), /计划元数据的 `task_mode` 必须逐字等于 `input\.task_mode`，不得默认 `single`/);
   assert.match(assets.compiledBodies.get("task-planner"), /`input\.task_mode` 与 plan 元数据的 `task_mode` 逐字一致且都为 `split`/);
+  assert.match(assets.compiledBodies.get("task-planner"), /可并行 task 的 scope 必须明确互斥/);
+  assert.match(assets.compiledBodies.get("task-planner"), /write_scope_mode: `exhaustive`/);
   assert.match(assets.compiledBodies.get("coding"), /当前会话/);
   assert.match(assets.compiledBodies.get("code-reviewer"), /同一完整对象/);
   assert.match(assets.compiledBodies.get("full-stack-coder"), /\*\*File Explorer\*\*/);
   assert.match(assets.compiledBodies.get("full-stack-coder"), /`TaskResult`/);
   assert.match(assets.compiledBodies.get("coding"), /changed_paths:string\[\]/);
-  assert.match(assets.compiledBodies.get("coding"), /worktree basename 与 branch 末段必须等于它/);
+  assert.match(assets.compiledBodies.get("coding"), /`single` 只推进一条 action 链/);
+  assert.match(assets.compiledBodies.get("coding"), /旧格式.*保持串行/);
+  assert.match(assets.compiledBodies.get("coding"), /每个 task 恰好委派一个独立 \*\*Full Stack Coder\*\* 执行 `coding\.implement_task`/);
+  assert.match(assets.compiledBodies.get("coding"), /同一 ready batch 可并行调用/);
+  assert.match(assets.compiledBodies.get("coding"), /commit、review、integrate、cleanup 仍按 task 串行推进/);
+  assert.match(assets.compiledBodies.get("full-stack-coder"), /全部 PathChange 均在 scope 内/);
   assert.match(assets.compiledBodies.get("researcher"), /checks:array/);
   assert.match(assets.compiledBodies.get("coding"), /可解析 JSON 对象/);
   assert.match(assets.compiledBodies.get("researcher"), /可解析的 JSON `TaskResult`/);
@@ -90,6 +97,7 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("git-operator"), /failed\|indeterminate/);
   assert.match(assets.compiledBodies.get("git-operator"), /skipped_small_change.*禁止携带伪造的 `review_result`/);
   assert.match(assets.compiledBodies.get("git-operator"), /`ai-work-flow\/<plan_id>`.*`<repository>\/\.worktrees\/<plan_id>`/);
+  assert.match(assets.compiledBodies.get("git-operator"), /`ai-work-flow\/<plan_id>\/<task_id>`.*`<repository>\/\.worktrees\/<plan_id>--<task_id>`/);
   assert.match(assets.compiledBodies.get("code-reviewer"), /只能在 `review_mode=dual_axis` 时被调用/);
   const gitOperator = assets.compiledBodies.get("git-operator");
   for (const literal of [

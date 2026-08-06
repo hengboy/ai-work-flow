@@ -67,6 +67,29 @@ function stringArray(value, allowEmpty = false) {
   return Array.isArray(value) && (allowEmpty || value.length > 0) && value.every((entry) => typeof entry === "string" && entry.trim()) && new Set(value).size === value.length;
 }
 
+function validateWriteScope(scope, label = "write_scope") {
+  if (!stringArray(scope)) throw new Error(`${label} must be a non-empty unique string array`);
+  for (const entry of scope) {
+    const path = entry.endsWith("/") ? entry.slice(0, -1) : entry;
+    const segments = path.split("/");
+    if (!path || entry.startsWith("/") || entry.includes("\\") || entry.includes("\0") || /[*?[\]{}]/.test(entry) ||
+      segments.some((segment) => !segment || segment === "." || segment === "..")) {
+      throw new Error(`${label} contains an unsafe repository-relative path`);
+    }
+  }
+  return scope;
+}
+
+function pathIsWithinScope(path, scope) {
+  if (typeof path !== "string" || !path || path.endsWith("/")) return false;
+  try {
+    validateWriteScope([path], "changed path");
+  } catch {
+    return false;
+  }
+  return scope.some((entry) => entry.endsWith("/") ? path.startsWith(entry) : path === entry);
+}
+
 function evidenceArray(value, fields) {
   return Array.isArray(value) && value.length > 0 && value.every((entry) =>
     isPlainObject(entry) && Object.keys(entry).sort().join() === [...fields].sort().join() &&
@@ -272,8 +295,14 @@ export function validateActionInput(actionId, input, contract) {
   assertObjectFields(input, schema.required_fields, "Action input");
   const allowed = [...schema.required_fields, ...schema.optional_fields];
   if (Object.keys(input).some((field) => !allowed.includes(field))) throw new Error("Action input contains an unsupported field");
-  if (actionId === "coding.prepare" && !Object.hasOwn(input, "plan_id")) throw new Error("Action input requires plan_id");
-  if (actionId === "coding.prepare_direct_bug" && Object.hasOwn(input, "plan_id")) throw new Error("Direct Bug preparation does not accept plan_id");
+  if (actionId === "coding.prepare") {
+    if (!Object.hasOwn(input, "plan_id")) throw new Error("Action input requires plan_id");
+    if (input.task_mode === "split" && !Object.hasOwn(input, "task_id")) throw new Error("Split task preparation requires task_id");
+    if (input.task_mode === "single" && Object.hasOwn(input, "task_id")) throw new Error("Single task preparation does not accept task_id");
+  }
+  if (actionId === "coding.prepare_direct_bug" && (Object.hasOwn(input, "plan_id") || Object.hasOwn(input, "task_id"))) {
+    throw new Error("Direct Bug preparation does not accept plan_id or task_id");
+  }
   for (const field of schema.required_fields) if (!nonEmpty(input[field], field)) throw new Error(`Action input requires non-empty ${field}`);
   const schemas = schemasByContract.get(contract);
   if (!schemas) throw new Error("TaskResult schemas were not loaded with the workflow contract");
@@ -281,6 +310,7 @@ export function validateActionInput(actionId, input, contract) {
     const fieldSchema = schemas.envelope[field] ?? schemas.field_schemas[field];
     if (fieldSchema) validateJsonSchema(value, fieldSchema, schemas, `Action input.${field}`);
   }
+  if (actionId === "coding.implement_task") validateWriteScope(input.write_scope, "Action input.write_scope");
   for (const [field, value] of Object.entries(input)) if (contract.structured_content[field]) validateStructuredContent(field, value, contract);
   if (contract.actions[actionId].io_contract === "review_integration") {
     const skipped = input.review_disposition.mode === "skipped_small_change";
@@ -321,11 +351,29 @@ function validateTaskResultShape(label, resultContracts, taskResult, contract) {
       taskResult.task_mode !== taskResult.planning_context.task_mode_selection.selected)) {
     throw new Error("planning.confirm task_mode is not bound to the user selection");
   }
+  if (label === "coding.implement_task" && taskResult.result === "completed") {
+    validateWriteScope(taskResult.write_scope, "TaskResult.write_scope");
+    const changedPaths = [
+      ...taskResult.changed_paths,
+      ...taskResult.change_evidence.path_changes.flatMap((change) => [change.path, ...(change.source_path ? [change.source_path] : [])]),
+    ];
+    if (changedPaths.some((path) => !pathIsWithinScope(path, taskResult.write_scope))) {
+      throw new Error("coding.implement_task changed paths must stay within write_scope");
+    }
+  }
   return taskResult;
 }
 
-export function validateTaskResult(actionId, taskResult, contract) {
-  return validateTaskResultShape(actionId, actionIo(actionId, contract).result_contracts, taskResult, contract);
+export function validateTaskResult(actionId, taskResult, contract, actionInput) {
+  const result = validateTaskResultShape(actionId, actionIo(actionId, contract).result_contracts, taskResult, contract);
+  if (actionId === "coding.implement_task" && taskResult.result === "completed") {
+    if (!actionInput) throw new Error("coding.implement_task result validation requires action input");
+    validateActionInput(actionId, actionInput, contract);
+    if (taskResult.task_id !== actionInput.task_id || JSON.stringify(taskResult.write_scope) !== JSON.stringify(actionInput.write_scope)) {
+      throw new Error("coding.implement_task result is not bound to task_id and write_scope input");
+    }
+  }
+  return result;
 }
 
 export function validateSupportTaskResult(roleId, taskResult, contract) {
