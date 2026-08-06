@@ -32,8 +32,8 @@ const HEADINGS = ["角色结果", "能力与控制", "允许的 Actions 与输�
 const CONTROL_MARKER = "<!-- ai-work-flow:controls -->";
 const ACTION_MARKER = "<!-- ai-work-flow:actions -->";
 const RESULT_MARKER = "<!-- ai-work-flow:task-result -->";
-const MAX_PROMPT = 8_000;
-const MAX_TOTAL = 45_000;
+export const MAX_COMPILED_PROMPT_CHARACTERS = 10_000;
+export const MAX_COMPILED_PROMPTS_CHARACTERS = 55_000;
 export const MAX_AGENT_DEPTH = 2;
 
 function unique(values) {
@@ -351,10 +351,10 @@ export function loadAgentAssets(configRoot = resolve(import.meta.dirname, "..", 
       .replace(CONTROL_MARKER, controlsText(role, controls, policies))
       .replace(ACTION_MARKER, actionText(role, contract, schemas, roles))
       .replace(RESULT_MARKER, resultText(role));
-    if (compiled.length > MAX_PROMPT) fail(`Compiled prompt ${role.id} exceeds ${MAX_PROMPT} characters: ${compiled.length}.`);
+    if (compiled.length > MAX_COMPILED_PROMPT_CHARACTERS) fail(`Compiled prompt ${role.id} exceeds ${MAX_COMPILED_PROMPT_CHARACTERS} characters: ${compiled.length}.`);
     return [role.id, compiled];
   }));
   const total = [...compiledBodies.values()].reduce((sum, prompt) => sum + prompt.length, 0);
-  if (total > MAX_TOTAL) fail(`Compiled prompts exceed ${MAX_TOTAL} characters: ${total}.`);
+  if (total > MAX_COMPILED_PROMPTS_CHARACTERS) fail(`Compiled prompts exceed ${MAX_COMPILED_PROMPTS_CHARACTERS} characters: ${total}.`);
   return { configRoot: config, templatesRoot: templateRoot, roles, controls, policies, defaults, bodies, compiledBodies, routing, contract, taskResultSchemas: schemas, skills: skillAssets.skills };
 }

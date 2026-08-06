@@ -16,7 +16,7 @@
 
 编译器必须验证：每个 contract action 恰有一个 owner；owner 的角色声明该 action；能力、工具和 control 一致；所有 action/结果字段均在 `task-result-schemas.json` 中有类型覆盖，且其 `contract_digest` 与 workflow contract 一致。禁止用中文短语、表格行或历史 marker 判断转换完整性。
 
-单个编译 prompt 不超过 8,000 字符，14 个总量不超过 45,000 字符。**Coding**、**Code Reviewer** 和 **Git Operator** 不携带完整 schema 或 ReviewPacket 正文。
+单个编译 prompt 不超过 10,000 字符，14 个总量不超过 55,000 字符。**Coding**、**Code Reviewer** 和 **Git Operator** 不携带完整 schema 或 ReviewPacket 正文。
 
 ## Skill 接口
 

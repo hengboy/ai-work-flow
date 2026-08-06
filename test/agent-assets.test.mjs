@@ -5,7 +5,11 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 
-import { loadAgentAssets } from "../agent-build/runtime/asset-catalog.mjs";
+import {
+  loadAgentAssets,
+  MAX_COMPILED_PROMPT_CHARACTERS,
+  MAX_COMPILED_PROMPTS_CHARACTERS,
+} from "../agent-build/runtime/asset-catalog.mjs";
 import { evaluateOpenCodePermission, planGeneration } from "../agent-build/runtime/platform-adapter.mjs";
 import { loadSkillAssets } from "../agent-build/runtime/skill-catalog.mjs";
 
@@ -24,6 +28,21 @@ function generationFixture() {
 
 function generation(platform, paths, assets = loadAgentAssets()) {
   return planGeneration({ platform, paths, roles: assets.roles, policies: assets.policies, config: assets.defaults, bodies: assets.compiledBodies });
+}
+
+function promptFixture() {
+  const root = mkdtempSync(resolve(tmpdir(), "agent-prompts-"));
+  const templates = resolve(root, "templates");
+  mkdirSync(templates);
+  for (const name of readdirSync(resolve(import.meta.dirname, "..", "agent-build", "templates"))) {
+    writeFileSync(resolve(templates, name), readFileSync(resolve(import.meta.dirname, "..", "agent-build", "templates", name), "utf8"));
+  }
+  return { root, templates };
+}
+
+function extendPrompt(templates, role, count) {
+  const path = resolve(templates, `${role}.md`);
+  writeFileSync(path, `${readFileSync(path, "utf8").trimEnd()}${"x".repeat(count)}`);
 }
 
 test("machine contract assigns every action to exactly one of 14 roles", () => {
@@ -81,6 +100,33 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(gitOperator, /本次变更符合低风险小改动快速通道，未执行 Standards\/Spec 双轴审查；已完成聚焦自动化验证和 Git 状态校验。/);
   assert.match(gitOperator, /review_basis/);
   assert.match(gitOperator, /review_packet.*review_disposition.*feature\/review\/packet SHA 一致/s);
+});
+
+test("compiled prompt character limits accept the boundary and reject one character over", (t) => {
+  const individual = promptFixture();
+  t.after(() => rmSync(individual.root, { recursive: true, force: true }));
+  const codingLength = loadAgentAssets().compiledBodies.get("coding").length;
+  extendPrompt(individual.templates, "coding", MAX_COMPILED_PROMPT_CHARACTERS - codingLength);
+  assert.equal(loadAgentAssets(undefined, individual.templates).compiledBodies.get("coding").length, MAX_COMPILED_PROMPT_CHARACTERS);
+  extendPrompt(individual.templates, "coding", 1);
+  assert.throws(() => loadAgentAssets(undefined, individual.templates), /Compiled prompt coding exceeds 10000 characters: 10001\./);
+
+  const aggregate = promptFixture();
+  t.after(() => rmSync(aggregate.root, { recursive: true, force: true }));
+  const initial = loadAgentAssets(undefined, aggregate.templates);
+  let remaining = MAX_COMPILED_PROMPTS_CHARACTERS - [...initial.compiledBodies.values()].reduce((sum, prompt) => sum + prompt.length, 0);
+  for (const [role, prompt] of initial.compiledBodies) {
+    const added = Math.min(remaining, MAX_COMPILED_PROMPT_CHARACTERS - prompt.length);
+    extendPrompt(aggregate.templates, role, added);
+    remaining -= added;
+    if (remaining === 0) break;
+  }
+  assert.equal(remaining, 0);
+  const atLimit = loadAgentAssets(undefined, aggregate.templates);
+  assert.equal([...atLimit.compiledBodies.values()].reduce((sum, prompt) => sum + prompt.length, 0), MAX_COMPILED_PROMPTS_CHARACTERS);
+  const expandable = [...atLimit.compiledBodies].find(([, prompt]) => prompt.length < MAX_COMPILED_PROMPT_CHARACTERS)[0];
+  extendPrompt(aggregate.templates, expandable, 1);
+  assert.throws(() => loadAgentAssets(undefined, aggregate.templates), /Compiled prompts exceed 55000 characters: 55001\./);
 });
 
 test("Planning and Coding have Task only", () => {
