@@ -21,7 +21,7 @@
 
 - `spec.md`：`plan-id` 与目录一致，`status=approved`，存在 `source_context_id` 和小写 SHA-256 `source_context_digest`，必需章节完整且开放问题为 `N/A`。
 - `plan.md`：`plan-id` 与 spec 一致，`status=ready-for-implementation`，`source_spec` 指向该 spec，`source_spec_digest` 等于 spec 原始字节 SHA-256，`task_mode` 为 `single|split`，必需章节完整。
-- split tasks：每项要求小写 kebab-case `task_id`、`order`、`blocked_by`、`source_plan`、`source_plan_digest`、`write_scope` 及任务模板章节；来源摘要等于 plan 原始字节 SHA-256，ID/order 唯一，依赖存在且无环。只有显式包含 `write_scope_mode: exhaustive` 的新格式 task 才可作为并行候选；缺少该字段的旧格式 task 保持有效但必须串行。新格式 scope 每项只能是仓库相对文件，或以 `/` 结尾的仓库相对目录前缀，禁止绝对路径、`.`、`..`、反斜杠和 glob；并行候选 scope 必须明确互斥，无法证明时返回不可并行的事实。当前 task 格式没有 `status` 字段，不得要求或推断该字段。
+- split tasks：每项要求小写 kebab-case `task_id`、`order`、`blocked_by`、`source_plan`、`source_plan_digest`、`write_scope` 及任务模板章节；来源摘要等于 plan 原始字节 SHA-256，ID/order 唯一，依赖存在且无环。`blocked_by` 完成只表示前置 task 已整合到 plan 并完成 cleanup，不以实施或 commit 完成代替。只有显式包含 `write_scope_mode: exhaustive` 的新格式 task 才可作为并行候选；缺少该字段的旧格式 task 保持有效但必须串行。新格式 scope 每项只能是仓库相对文件，或以 `/` 结尾的仓库相对目录前缀，禁止绝对路径、`.`、`..`、反斜杠和 glob；并行候选 scope 必须明确互斥，无法证明时返回不可并行的事实。当前 task 格式没有 `status` 字段，不得要求或推断该字段。
 - single：不要求 task 文件或 task `status`，忽略遗留 tasks；实施 IDs 与验收从 spec/plan 提取。
 
 **File Explorer** 返回完整计划输入与仓库事实，不推导未读取的 repository、action 或结构化内容。

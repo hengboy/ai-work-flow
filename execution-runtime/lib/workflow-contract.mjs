@@ -13,6 +13,8 @@ const SENSITIVE_AREAS = [
   "public_api_contract", "data_schema", "permissions_security", "dependencies", "build_release", "cross_module_behavior", "persistence",
 ];
 const CHANGE_TYPES = ["modified", "added", "deleted", "renamed", "copied", "type_changed", "binary"];
+const LOWERCASE_KEBAB_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SHA256 = /^[0-9a-f]{64}$/;
 const SMALL_CHANGE_NOTICE = "本次变更符合低风险小改动快速通道，未执行 Standards/Spec 双轴审查；已完成聚焦自动化验证和 Git 状态校验。";
 const schemasByContract = new WeakMap();
 let cachedContract;
@@ -88,6 +90,61 @@ function pathIsWithinScope(path, scope) {
     return false;
   }
   return scope.some((entry) => entry.endsWith("/") ? path.startsWith(entry) : path === entry);
+}
+
+function validTaskPath(path, planId) {
+  if (typeof path !== "string" || !path.endsWith(".md") ||
+    !path.startsWith(`.ai-work-flow/plans/${planId}/tasks/`)) return false;
+  try {
+    validateWriteScope([path], "task_path");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sameStringSet(left, right) {
+  return stringArray(left) && stringArray(right) &&
+    JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
+}
+
+function taskIntegrationIds(integrations) {
+  return Array.isArray(integrations) ? integrations.map((integration) => integration.task_id) : [];
+}
+
+function taskCleanupIds(cleanups) {
+  return Array.isArray(cleanups) ? cleanups.map((cleanup) => cleanup.task_id) : [];
+}
+
+function taskCleanupCompleted(evidence) {
+  return isPlainObject(evidence) && evidence.task_ancestor_verified === true &&
+    evidence.worktree_removed === true && evidence.branch_removed === true;
+}
+
+function validatePlanTaskEvidence(input) {
+  const integrationIds = taskIntegrationIds(input.task_integrations);
+  const cleanupIds = taskCleanupIds(input.task_cleanups);
+  if (!sameStringSet(input.expected_task_ids, integrationIds) || !sameStringSet(input.expected_task_ids, cleanupIds) ||
+    input.task_integrations.at(-1)?.resulting_plan_sha !== input.plan_sha) {
+    throw new Error("Plan validation requires complete task integration and cleanup sets at the latest plan SHA");
+  }
+  const integrations = new Map(input.task_integrations.map((integration) => [integration.task_id, integration]));
+  for (let index = 0; index < input.task_integrations.length; index += 1) {
+    const integration = input.task_integrations[index];
+    const expectedBase = index === 0 ? input.main_base_sha : input.task_integrations[index - 1].resulting_plan_sha;
+    if (integration.base_plan_sha !== expectedBase || integration.merge_sha === integration.base_plan_sha ||
+      integration.task_completion_sha !== integration.resulting_plan_sha || integration.task_completion_sha === integration.merge_sha ||
+      integration.task_checkboxes_checked !== true || !validTaskPath(integration.task_path, input.plan_id)) {
+      throw new Error("Plan validation requires a continuous no-ff integration and task completion chain");
+    }
+  }
+  for (const cleanup of input.task_cleanups) {
+    const integration = integrations.get(cleanup.task_id);
+    if (!integration || cleanup.task_sha !== integration.source_task_sha ||
+      cleanup.resulting_plan_sha !== integration.resulting_plan_sha || !taskCleanupCompleted(cleanup.cleanup_evidence)) {
+      throw new Error("Plan validation requires completed cleanup bound to every task integration");
+    }
+  }
 }
 
 function evidenceArray(value, fields) {
@@ -297,8 +354,10 @@ export function validateActionInput(actionId, input, contract) {
   if (Object.keys(input).some((field) => !allowed.includes(field))) throw new Error("Action input contains an unsupported field");
   if (actionId === "coding.prepare") {
     if (!Object.hasOwn(input, "plan_id")) throw new Error("Action input requires plan_id");
-    if (input.task_mode === "split" && !Object.hasOwn(input, "task_id")) throw new Error("Split task preparation requires task_id");
-    if (input.task_mode === "single" && Object.hasOwn(input, "task_id")) throw new Error("Single task preparation does not accept task_id");
+    if (Object.hasOwn(input, "task_id")) throw new Error("Plan preparation does not accept task_id");
+    if (input.task_mode === "split" && (!LOWERCASE_KEBAB_ID.test(input.plan_id) || !SHA256.test(input.plan_digest))) {
+      throw new Error("Split plan preparation requires a lowercase kebab-case plan_id and SHA-256 plan_digest");
+    }
   }
   if (actionId === "coding.prepare_direct_bug" && (Object.hasOwn(input, "plan_id") || Object.hasOwn(input, "task_id"))) {
     throw new Error("Direct Bug preparation does not accept plan_id or task_id");
@@ -310,8 +369,43 @@ export function validateActionInput(actionId, input, contract) {
     const fieldSchema = schemas.envelope[field] ?? schemas.field_schemas[field];
     if (fieldSchema) validateJsonSchema(value, fieldSchema, schemas, `Action input.${field}`);
   }
-  if (actionId === "coding.implement_task") validateWriteScope(input.write_scope, "Action input.write_scope");
+  if (["coding.prepare_task", "coding.implement_task", "coding.commit_task"].includes(actionId)) {
+    validateWriteScope(input.write_scope, "Action input.write_scope");
+  }
   for (const [field, value] of Object.entries(input)) if (contract.structured_content[field]) validateStructuredContent(field, value, contract);
+  if (["coding.prepare_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task",
+    "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"].includes(actionId) &&
+    (!LOWERCASE_KEBAB_ID.test(input.plan_id) || (Object.hasOwn(input, "task_id") && !LOWERCASE_KEBAB_ID.test(input.task_id)))) {
+    throw new Error("Split task actions require lowercase kebab-case plan_id and task_id");
+  }
+  if (["coding.prepare_task", "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"].includes(actionId) &&
+    !SHA256.test(input.plan_digest)) {
+    throw new Error("Split plan actions require a SHA-256 plan_digest");
+  }
+  if (actionId === "coding.commit_task") {
+    const changedPaths = [
+      ...input.change_evidence.path_changes.flatMap((change) => [change.path, ...(change.source_path ? [change.source_path] : [])]),
+    ];
+    if (input.base_sha !== input.change_evidence.base_sha ||
+      JSON.stringify(input.path_changes) !== JSON.stringify(input.change_evidence.path_changes) ||
+      JSON.stringify(input.checks) !== JSON.stringify(input.change_evidence.verification) ||
+      changedPaths.some((path) => !pathIsWithinScope(path, input.write_scope))) {
+      throw new Error("coding.commit_task evidence is not bound to base_sha and write_scope");
+    }
+  }
+  if (actionId === "coding.integrate_task") {
+    if (input.plan_branch !== `ai-work-flow/${input.plan_id}/integration` ||
+      input.task_branch !== `ai-work-flow/${input.plan_id}/tasks/${input.task_id}` || input.plan_worktree === input.task_worktree ||
+      !validTaskPath(input.task_path, input.plan_id)) {
+      throw new Error("coding.integrate_task branch/worktree identity is invalid");
+    }
+  }
+  if (actionId === "coding.cleanup_task" && input.task_branch !== `ai-work-flow/${input.plan_id}/tasks/${input.task_id}`) {
+    throw new Error("coding.cleanup_task branch identity is invalid");
+  }
+  if (["coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"].includes(actionId)) {
+    validatePlanTaskEvidence(input);
+  }
   if (contract.actions[actionId].io_contract === "review_integration") {
     const skipped = input.review_disposition.mode === "skipped_small_change";
     validateReviewDispositionBinding(input.review_disposition, input.review_packet);
@@ -366,11 +460,70 @@ function validateTaskResultShape(label, resultContracts, taskResult, contract) {
 
 export function validateTaskResult(actionId, taskResult, contract, actionInput) {
   const result = validateTaskResultShape(actionId, actionIo(actionId, contract).result_contracts, taskResult, contract);
-  if (actionId === "coding.implement_task" && taskResult.result === "completed") {
+  const inputBoundActions = new Set([
+    "coding.prepare_task", "coding.implement_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task",
+    "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2",
+  ]);
+  if (inputBoundActions.has(actionId) && (taskResult.result === "completed" ||
+    (actionId === "coding.integrate_task" && taskResult.result === "needs_decision"))) {
     if (!actionInput) throw new Error("coding.implement_task result validation requires action input");
     validateActionInput(actionId, actionInput, contract);
+  }
+  if (actionId === "coding.prepare_task" && taskResult.result === "completed") {
+    if (taskResult.plan_id !== actionInput.plan_id || taskResult.task_id !== actionInput.task_id || taskResult.base_sha !== actionInput.plan_sha ||
+      taskResult.branch !== `ai-work-flow/${actionInput.plan_id}/tasks/${actionInput.task_id}`) {
+      throw new Error("coding.prepare_task result is not bound to plan/task identity and latest plan SHA");
+    }
+  }
+  if (actionId === "coding.implement_task" && taskResult.result === "completed") {
     if (taskResult.task_id !== actionInput.task_id || JSON.stringify(taskResult.write_scope) !== JSON.stringify(actionInput.write_scope)) {
       throw new Error("coding.implement_task result is not bound to task_id and write_scope input");
+    }
+  }
+  if (actionId === "coding.commit_task" && taskResult.result === "completed") {
+    const evidencePaths = actionInput.change_evidence.path_changes.flatMap((change) =>
+      [change.path, ...(change.source_path ? [change.source_path] : [])]);
+    if (taskResult.plan_id !== actionInput.plan_id || taskResult.task_id !== actionInput.task_id || taskResult.base_sha !== actionInput.base_sha ||
+      taskResult.task_sha !== actionInput.change_evidence.head_sha || !sameStringSet(taskResult.changed_paths, evidencePaths) ||
+      JSON.stringify(taskResult.verification) !== JSON.stringify(actionInput.change_evidence.verification)) {
+      throw new Error("coding.commit_task result is not bound to task identity, base, changed paths, and verification");
+    }
+  }
+  if (actionId === "coding.integrate_task" && taskResult.result === "completed") {
+    if (taskResult.plan_id !== actionInput.plan_id || taskResult.task_id !== actionInput.task_id ||
+      taskResult.task_path !== actionInput.task_path ||
+      taskResult.base_plan_sha !== actionInput.plan_sha || taskResult.source_task_sha !== actionInput.task_sha ||
+      taskResult.merge_sha === actionInput.plan_sha || taskResult.task_completion_sha !== taskResult.resulting_plan_sha ||
+      taskResult.task_completion_sha === taskResult.merge_sha || taskResult.task_checkboxes_checked !== true ||
+      taskResult.clean_state.clean !== true) {
+      throw new Error("coding.integrate_task result is not a clean no-ff integration and checked task completion bound to its input");
+    }
+  }
+  if (actionId === "coding.integrate_task" && taskResult.result === "needs_decision" &&
+    (taskResult.merge_aborted !== true || taskResult.clean_state.clean !== true)) {
+    throw new Error("coding.integrate_task conflict must prove merge abort and a clean plan worktree");
+  }
+  if (actionId === "coding.cleanup_task" && taskResult.result === "completed") {
+    if (taskResult.plan_id !== actionInput.plan_id || taskResult.task_id !== actionInput.task_id || taskResult.task_sha !== actionInput.task_sha ||
+      taskResult.resulting_plan_sha !== actionInput.resulting_plan_sha || !taskCleanupCompleted(taskResult.cleanup_evidence)) {
+      throw new Error("coding.cleanup_task requires task ancestry and branch/worktree removal proof with exact SHA identity");
+    }
+  }
+  if (["coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"].includes(actionId) && taskResult.result === "completed") {
+    const sliceTaskIds = taskResult.slices.map((slice) => slice.task_id);
+    const reviewVerification = taskResult.review_basis.verification.map(({ command, result }) => ({ command, result }));
+    if (taskResult.plan_id !== actionInput.plan_id || taskResult.main_base_sha !== actionInput.main_base_sha ||
+      taskResult.plan_review_sha !== actionInput.plan_sha || !sameStringSet(taskResult.expected_task_ids, actionInput.expected_task_ids) ||
+      JSON.stringify(taskResult.task_integrations) !== JSON.stringify(actionInput.task_integrations) ||
+      JSON.stringify(taskResult.task_cleanups) !== JSON.stringify(actionInput.task_cleanups) ||
+      !sameStringSet([...new Set(sliceTaskIds)], actionInput.expected_task_ids) || taskResult.review_basis.origin !== "approved_plan" ||
+      taskResult.review_basis.stage !== (actionId === "coding.validate_plan" ? "initial" : "resync") ||
+      !sameStringSet(taskResult.review_basis.implementation_ids, actionInput.expected_task_ids) ||
+      JSON.stringify(taskResult.review_basis.acceptance) !== JSON.stringify(actionInput.acceptance) ||
+      !sameStringSet([...new Set(taskResult.acceptance_evidence.map((entry) => entry.criterion))], [...new Set(actionInput.acceptance)]) ||
+      JSON.stringify(reviewVerification) !== JSON.stringify(taskResult.verification) ||
+      taskResult.verification.some((entry) => entry.result !== "passed") || taskResult.clean_state.clean !== true) {
+      throw new Error("Plan validation result is not bound to the complete clean plan review range and task slices");
     }
   }
   return result;

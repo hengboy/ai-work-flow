@@ -87,7 +87,7 @@
       "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "no-git-mutation"],
       "delegates": ["file-explorer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Skill", "Task"],
-      "actions": ["coding.implement", "coding.implement_task"]
+      "actions": ["coding.implement", "coding.implement_task", "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"]
     },
     {
       "id": "bug-fixer",
@@ -109,7 +109,7 @@
       "controls": ["safe-local-git-only"],
       "delegates": [],
       "tools": ["Read", "Bash", "Skill"],
-      "actions": ["planning.commit", "coding.prepare", "coding.prepare_direct_bug", "coding.commit", "coding.commit_fix_1", "coding.commit_fix_2", "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2", "coding.integrate", "coding.resync_1", "coding.prepare_resync_review_1", "coding.integrate_1", "coding.resync_2", "coding.prepare_resync_review_2", "coding.integrate_2", "coding.cleanup"]
+      "actions": ["planning.commit", "coding.prepare", "coding.prepare_direct_bug", "coding.prepare_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task", "coding.commit", "coding.commit_fix_1", "coding.commit_fix_2", "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2", "coding.integrate", "coding.resync_1", "coding.prepare_resync_review_1", "coding.integrate_1", "coding.resync_2", "coding.prepare_resync_review_2", "coding.integrate_2", "coding.cleanup"]
     },
     {
       "id": "environment-operator",

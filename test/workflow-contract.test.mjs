@@ -106,6 +106,12 @@ test("contract is generation-only and assigns valid action transitions", async (
     assert.ok(action.owner, id);
     assert.ok(contract.io_contracts[action.io_contract], id);
   }
+  assert.deepEqual(contract.actions["coding.resync_1"].completed_to_by_task_mode, {
+    single: "revalidated_1", split: "resynced_1",
+  });
+  assert.deepEqual(contract.actions["coding.resync_2"].completed_to_by_task_mode, {
+    single: "revalidated_2", split: "resynced_2",
+  });
 });
 
 test("TaskResult carries direct structured content", async () => {
@@ -341,31 +347,42 @@ test("review evidence binding rejects conflicting or incomplete handoffs", async
   }, contract).review_mode, "dual_axis");
 });
 
-test("planned worktree preparation binds split tasks to distinct task IDs", async () => {
+test("split preparation creates one plan integration workflow and safe task workflows", async () => {
   const contract = await loadWorkflowContract();
-  const planned = { plan_id: "worktree-plan-name", plan_digest: "digest", task_mode: "single", target_base: "main" };
+  const planned = { plan_id: "Legacy_Plan.Name", plan_digest: "legacy-digest", task_mode: "single", target_base: "main" };
   assert.equal(validateActionInput("coding.prepare", planned, contract), planned);
   assert.throws(() => validateActionInput("coding.prepare", {
-    plan_digest: "digest", task_mode: "single", target_base: "main",
+    plan_digest: "d".repeat(64), task_mode: "single", target_base: "main",
   }, contract), /plan_id/);
-  assert.throws(() => validateActionInput("coding.prepare", { ...planned, task_id: "task-01" }, contract), /does not accept task_id/);
+  assert.throws(() => validateActionInput("coding.prepare", { ...planned, task_id: "task-01" }, contract), /unsupported field|does not accept task_id/);
 
-  const split = { ...planned, task_mode: "split", task_id: "task-01" };
+  const split = { ...planned, plan_id: "worktree-plan-name", plan_digest: "d".repeat(64), task_mode: "split" };
   assert.equal(validateActionInput("coding.prepare", split, contract), split);
-  assert.throws(() => validateActionInput("coding.prepare", {
-    ...planned, task_mode: "split",
-  }, contract), /requires task_id/);
-  for (const taskId of ["../../outside", "task/01", ".lock", "task..01", "task.lock", "task."]) {
-    assert.throws(() => validateActionInput("coding.prepare", { ...split, task_id: taskId }, contract), /Action input\.task_id/);
-  }
-  for (const legacySafeTaskId of ["Task-01", "task_01"]) {
-    assert.equal(validateActionInput("coding.prepare", { ...split, task_id: legacySafeTaskId }, contract).task_id, legacySafeTaskId);
-  }
+  assert.throws(() => validateActionInput("coding.prepare", { ...split, task_id: "task-01" }, contract), /unsupported field|does not accept task_id/);
+  assert.throws(() => validateActionInput("coding.prepare", { ...split, plan_digest: "legacy-digest" }, contract), /SHA-256 plan_digest/);
+  assert.throws(() => validateActionInput("coding.prepare", { ...split, plan_id: "Legacy_Plan.Name" }, contract), /lowercase kebab-case plan_id/);
 
-  const direct = { plan_digest: "digest", task_mode: "single", target_base: "main" };
+  const task = {
+    plan_id: split.plan_id, plan_digest: split.plan_digest, task_id: "task-01", task_digest: "e".repeat(64),
+    plan_sha: sha("a"), acceptance: ["focused behavior works"], write_scope: ["src/feature/"],
+  };
+  assert.equal(validateActionInput("coding.prepare_task", task, contract), task);
+  for (const taskId of ["../../outside", "task/01", ".lock", "Task-01", "task_01"]) {
+    assert.throws(() => validateActionInput("coding.prepare_task", { ...task, task_id: taskId }, contract), /task_id|lowercase kebab-case/);
+  }
+  assert.throws(() => validateActionInput("coding.prepare_task", { ...task, task_digest: "stale" }, contract), /task_digest/);
+  const prepared = {
+    result: "completed", summary: "Task prepared", plan_id: task.plan_id, task_id: task.task_id,
+    worktree: "/tmp/task", branch: `ai-work-flow/${task.plan_id}/tasks/${task.task_id}`,
+    base_sha: task.plan_sha, initial_status: { clean: true },
+  };
+  assert.equal(validateTaskResult("coding.prepare_task", prepared, contract, task), prepared);
+  assert.throws(() => validateTaskResult("coding.prepare_task", { ...prepared, base_sha: sha("b") }, contract, task), /latest plan SHA/);
+
+  const direct = { plan_digest: "legacy-digest", task_mode: "single", target_base: "main" };
   assert.equal(validateActionInput("coding.prepare_direct_bug", direct, contract), direct);
-  assert.throws(() => validateActionInput("coding.prepare_direct_bug", { ...direct, plan_id: "not-applicable" }, contract), /does not accept plan_id/);
-  assert.throws(() => validateActionInput("coding.prepare_direct_bug", { ...direct, task_id: "not-applicable" }, contract), /does not accept plan_id or task_id/);
+  assert.throws(() => validateActionInput("coding.prepare_direct_bug", { ...direct, plan_id: "not-applicable" }, contract), /unsupported field|does not accept plan_id/);
+  assert.throws(() => validateActionInput("coding.prepare_direct_bug", { ...direct, task_id: "not-applicable" }, contract), /unsupported field|does not accept plan_id or task_id/);
 });
 
 test("split task implementation binds exhaustive scope and rejects path escapes", async () => {
@@ -408,6 +425,165 @@ test("split task implementation binds exhaustive scope and rejects path escapes"
   assert.throws(() => validateTaskResult("coding.implement_task", {
     ...result, write_scope: ["src/"],
   }, contract, input), /not bound to task_id and write_scope input/);
+});
+
+test("task commit, no-ff integration, and cleanup bind every task SHA", async () => {
+  const contract = await loadWorkflowContract();
+  const changeEvidence = {
+    base_sha: sha("a"), head_sha: sha("b"),
+    path_changes: [{ ...pathChange, path: "src/feature/app.mjs" }],
+    acceptance_evidence: [{ criterion: "focused behavior works", evidence: "focused test passed" }],
+    verification: [{ command: "node --test test/feature.test.mjs", result: "passed" }],
+  };
+  const commitInput = {
+    plan_id: "example-plan", task_id: "task-01", task_digest: "c".repeat(64), base_sha: sha("a"),
+    path_changes: changeEvidence.path_changes, checks: changeEvidence.verification, change_evidence: changeEvidence,
+    write_scope: ["src/feature/"],
+  };
+  assert.equal(validateActionInput("coding.commit_task", commitInput, contract), commitInput);
+  const committed = {
+    result: "completed", summary: "Task committed", plan_id: commitInput.plan_id, task_id: commitInput.task_id,
+    base_sha: commitInput.base_sha, task_sha: sha("b"), changed_paths: ["src/feature/app.mjs"],
+    verification: changeEvidence.verification, clean_state: { clean: true },
+  };
+  assert.equal(validateTaskResult("coding.commit_task", committed, contract, commitInput), committed);
+  assert.throws(() => validateTaskResult("coding.commit_task", { ...committed, task_sha: sha("c") }, contract, commitInput), /not bound/);
+
+  const integrateInput = {
+    plan_id: commitInput.plan_id, task_id: commitInput.task_id,
+    task_path: ".ai-work-flow/plans/example-plan/tasks/01-task-01.md", task_digest: "c".repeat(64),
+    plan_sha: sha("a"), task_sha: committed.task_sha,
+    plan_worktree: "/tmp/plan", plan_branch: "ai-work-flow/example-plan/integration",
+    task_worktree: "/tmp/task", task_branch: "ai-work-flow/example-plan/tasks/task-01",
+  };
+  const integrated = {
+    result: "completed", summary: "Task integrated", plan_id: integrateInput.plan_id, task_id: integrateInput.task_id,
+    task_path: integrateInput.task_path, base_plan_sha: integrateInput.plan_sha, source_task_sha: integrateInput.task_sha,
+    merge_sha: sha("d"), task_completion_sha: sha("e"), resulting_plan_sha: sha("e"),
+    task_checkboxes_checked: true, clean_state: { clean: true },
+  };
+  assert.equal(validateTaskResult("coding.integrate_task", integrated, contract, integrateInput), integrated);
+  assert.throws(() => validateTaskResult("coding.integrate_task", {
+    ...integrated, task_completion_sha: integrated.merge_sha, resulting_plan_sha: integrated.merge_sha,
+  }, contract, integrateInput), /checked task completion/);
+  assert.throws(() => validateTaskResult("coding.integrate_task", {
+    ...integrated, task_checkboxes_checked: false,
+  }, contract, integrateInput), /checked task completion/);
+  assert.throws(() => validateActionInput("coding.integrate_task", {
+    ...integrateInput, task_path: ".ai-work-flow/plans/other-plan/tasks/01-task-01.md",
+  }, contract), /branch\/worktree identity/);
+  const conflict = {
+    result: "needs_decision", summary: "Merge conflicted", conflict_paths: ["src/feature/app.mjs"],
+    merge_aborted: true, clean_state: { clean: true },
+  };
+  assert.equal(validateTaskResult("coding.integrate_task", conflict, contract, integrateInput), conflict);
+  assert.throws(() => validateTaskResult("coding.integrate_task", { ...conflict, merge_aborted: false }, contract, integrateInput), /prove merge abort/);
+  assert.throws(() => validateTaskResult("coding.integrate_task", { ...conflict, clean_state: { clean: false } }, contract, integrateInput), /clean plan worktree/);
+
+  const cleanupInput = {
+    plan_id: integrateInput.plan_id, task_id: integrateInput.task_id, task_sha: integrateInput.task_sha,
+    resulting_plan_sha: integrated.resulting_plan_sha, task_worktree: integrateInput.task_worktree, task_branch: integrateInput.task_branch,
+  };
+  const cleaned = {
+    result: "completed", summary: "Task cleaned", plan_id: cleanupInput.plan_id, task_id: cleanupInput.task_id,
+    task_sha: cleanupInput.task_sha, resulting_plan_sha: cleanupInput.resulting_plan_sha,
+    cleanup_evidence: { task_ancestor_verified: true, worktree_removed: true, branch_removed: true },
+  };
+  assert.equal(validateTaskResult("coding.cleanup_task", cleaned, contract, cleanupInput), cleaned);
+  assert.throws(() => validateTaskResult("coding.cleanup_task", {
+    ...cleaned, cleanup_evidence: { ...cleaned.cleanup_evidence, task_ancestor_verified: false },
+  }, contract, cleanupInput), /ancestry/);
+  assert.throws(() => validateTaskResult("coding.cleanup_task", {
+    ...cleaned, cleanup_evidence: { ...cleaned.cleanup_evidence, worktree_removed: false },
+  }, contract, cleanupInput), /removal proof/);
+  assert.throws(() => validateTaskResult("coding.cleanup_task", {
+    ...cleaned, cleanup_evidence: { ...cleaned.cleanup_evidence, branch_removed: false },
+  }, contract, cleanupInput), /removal proof/);
+});
+
+test("plan validation requires the complete integration set and full review slices", async () => {
+  const contract = await loadWorkflowContract();
+  const expectedTaskIds = ["task-01", "task-02"];
+  const taskIntegrations = [
+    {
+      task_id: "task-01", task_path: ".ai-work-flow/plans/example-plan/tasks/01-task-01.md",
+      base_plan_sha: sha("a"), source_task_sha: sha("b"), merge_sha: sha("c"),
+      task_completion_sha: sha("d"), resulting_plan_sha: sha("d"), task_checkboxes_checked: true,
+    },
+    {
+      task_id: "task-02", task_path: ".ai-work-flow/plans/example-plan/tasks/02-task-02.md",
+      base_plan_sha: sha("d"), source_task_sha: sha("e"), merge_sha: sha("f"),
+      task_completion_sha: sha("1"), resulting_plan_sha: sha("1"), task_checkboxes_checked: true,
+    },
+  ];
+  const taskCleanups = taskIntegrations.map((integration) => ({
+    task_id: integration.task_id, task_sha: integration.source_task_sha, resulting_plan_sha: integration.resulting_plan_sha,
+    cleanup_evidence: { task_ancestor_verified: true, worktree_removed: true, branch_removed: true },
+  }));
+  const input = {
+    plan_id: "example-plan", plan_digest: "f".repeat(64), main_base_sha: sha("a"), plan_sha: sha("1"),
+    plan_worktree: "/tmp/plan", expected_task_ids: expectedTaskIds, task_integrations: taskIntegrations,
+    task_cleanups: taskCleanups, acceptance: ["complete plan behavior works", "all tasks are represented"],
+  };
+  assert.equal(validateActionInput("coding.validate_plan", input, contract), input);
+  assert.throws(() => validateActionInput("coding.validate_plan", {
+    ...input, expected_task_ids: ["task-01"],
+  }, contract), /complete task integration and cleanup sets/);
+  assert.throws(() => validateActionInput("coding.validate_plan", {
+    ...input, task_integrations: [taskIntegrations[0], { ...taskIntegrations[1], task_id: "task-01" }],
+  }, contract), /complete task integration and cleanup sets/);
+  assert.throws(() => validateActionInput("coding.validate_plan", { ...input, plan_sha: sha("f") }, contract), /latest plan SHA/);
+  assert.throws(() => validateActionInput("coding.validate_plan", {
+    ...input, task_integrations: [taskIntegrations[0], { ...taskIntegrations[1], base_plan_sha: sha("a") }],
+  }, contract), /continuous no-ff integration and task completion/);
+  assert.throws(() => validateActionInput("coding.validate_plan", {
+    ...input, task_integrations: [taskIntegrations[0], { ...taskIntegrations[1], task_checkboxes_checked: false }],
+  }, contract), /task completion chain/);
+  assert.throws(() => validateActionInput("coding.validate_plan", {
+    ...input, task_cleanups: taskCleanups.slice(0, 1),
+  }, contract), /complete task integration and cleanup sets/);
+  assert.throws(() => validateActionInput("coding.validate_plan", {
+    ...input, task_cleanups: [taskCleanups[0], { ...taskCleanups[1], cleanup_evidence: { ...taskCleanups[1].cleanup_evidence, branch_removed: false } }],
+  }, contract), /completed cleanup/);
+
+  const result = {
+    result: "completed", summary: "Plan validated", plan_id: input.plan_id, main_base_sha: input.main_base_sha,
+    plan_review_sha: input.plan_sha, expected_task_ids: expectedTaskIds, task_integrations: taskIntegrations, task_cleanups: taskCleanups,
+    changed_paths: ["src/one.mjs", "src/two.mjs"],
+    acceptance_evidence: [
+      { criterion: "complete plan behavior works", evidence: "cumulative suite passed" },
+      { criterion: "all tasks are represented", evidence: "task slices checked" },
+    ],
+    verification: [{ command: "npm test", result: "passed" }],
+    review_basis: {
+      ...reviewBasis({ origin: "approved_plan" }), implementation_ids: expectedTaskIds,
+      acceptance: input.acceptance, scope_evidence: ["all task integrations are included"],
+      verification: [{ command: "npm test", result: "passed", focused: false }],
+    },
+    slices: [{ id: "slice-1", task_id: "task-01" }, { id: "slice-2", task_id: "task-02" }],
+    clean_state: { clean: true },
+  };
+  assert.equal(validateTaskResult("coding.validate_plan", result, contract, input), result);
+  assert.throws(() => validateTaskResult("coding.validate_plan", {
+    ...result, slices: [{ id: "slice-1", task_id: "task-01" }],
+  }, contract, input), /task slices/);
+  assert.throws(() => validateTaskResult("coding.validate_plan", {
+    ...result, review_basis: { ...result.review_basis, origin: "direct_bug" },
+  }, contract, input), /complete clean plan review range/);
+  assert.throws(() => validateTaskResult("coding.validate_plan", {
+    ...result, acceptance_evidence: result.acceptance_evidence.slice(0, 1),
+  }, contract, input), /complete clean plan review range/);
+  assert.throws(() => validateTaskResult("coding.validate_plan", {
+    ...result,
+    verification: [{ command: "npm test", result: "failed" }],
+    review_basis: { ...result.review_basis, verification: [{ command: "npm test", result: "failed", focused: false }] },
+  }, contract, input), /complete clean plan review range/);
+
+  const resyncResult = {
+    ...result,
+    review_basis: { ...result.review_basis, stage: "resync" },
+  };
+  assert.equal(validateTaskResult("coding.validate_plan_resync_1", resyncResult, contract, input), resyncResult);
 });
 
 test("execution-runtime contains only the contract, typed schemas, and validator", async () => {

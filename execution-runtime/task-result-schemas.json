@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contract_digest": "db8f062137a96749bcdb7a0e516b992f430ab63dc71ae01a4d7e5f9eb5e4fc3f",
+  "contract_digest": "17ab9a5d6a66383b894abaebf6c308dd5cda52dd75c82e72e25a97465b3af5c4",
   "envelope": {
     "result": { "type": "string", "enum": ["completed", "retryable_failure", "needs_decision", "failed"], "prompt_type": "result enum" },
     "summary": { "type": "string", "minLength": 1, "prompt_type": "string" }
   },
   "field_schemas": {
     "acceptance": { "type": "array", "items": { "type": "string", "minLength": 1 }, "prompt_type": "string[]" },
+    "acceptance_evidence": { "type": "array", "items": { "$ref": "#/structured_content_schemas/acceptance_evidence" }, "minItems": 1, "prompt_type": "acceptance evidence[]" },
     "changed_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "checks": { "type": "array", "items": {}, "prompt_type": "array" },
     "citation_urls": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
@@ -15,11 +16,13 @@
     "code": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "committed_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
+    "conflict_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true, "prompt_type": "repository-relative path[]" },
     "coverage": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "deleted_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "direct_dependencies": { "type": "array", "items": {}, "prompt_type": "array" },
     "drift": { "type": "object", "prompt_type": "object" },
     "entry_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
+    "expected_task_ids": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" }, "minItems": 1, "uniqueItems": true, "prompt_type": "lowercase kebab-case task id[]" },
     "facts": { "type": "array", "items": {}, "prompt_type": "array" },
     "finding_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "fixed_finding_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
@@ -33,9 +36,15 @@
     "operation": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "plan_id": { "type": "string", "minLength": 1, "prompt_type": "string" },
+    "plan_branch": { "type": "string", "minLength": 1, "prompt_type": "string" },
+    "plan_digest": { "type": "string", "minLength": 1, "prompt_type": "string" },
+    "plan_review_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
+    "plan_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
+    "plan_worktree": { "type": "string", "minLength": 1, "prompt_type": "absolute path" },
     "planning_context": { "$ref": "#/structured_content_schemas/planning_context", "prompt_type": "planning_context object" },
     "report_path": { "type": "string", "minLength": 1, "prompt_type": "path string" },
     "resulting_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
+    "resulting_plan_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "review_axis_result": { "$ref": "#/structured_content_schemas/review_axis_result", "prompt_type": "review_axis_result object" },
     "review_basis": { "$ref": "#/structured_content_schemas/review_basis", "prompt_type": "review_basis object" },
     "review_packet": { "$ref": "#/structured_content_schemas/review_packet", "prompt_type": "review_packet object" },
@@ -44,12 +53,28 @@
     "review_result": { "$ref": "#/structured_content_schemas/review_result", "prompt_type": "review_result object" },
     "scope_evidence": { "type": "array", "items": { "type": "string", "minLength": 1 }, "prompt_type": "string[]" },
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "prompt_type": "sha256" },
+    "slices": { "type": "array", "items": { "type": "object", "minProperties": 1 }, "minItems": 1, "prompt_type": "review slice[]" },
+    "source_task_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "state": { "type": "object", "prompt_type": "object" },
     "status": { "type": "object", "prompt_type": "object" },
     "summary": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "target": { "type": "string", "minLength": 1, "prompt_type": "path string" },
     "task_mode": { "type": "string", "enum": ["single", "split"], "prompt_type": "single|split" },
     "task_id": { "type": "string", "pattern": "^(?!.*\\.\\.)(?!.*\\.lock$)[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9_-])?$", "prompt_type": "safe task identifier" },
+    "task_path": { "type": "string", "minLength": 1, "prompt_type": "repository-relative task markdown path" },
+    "task_branch": { "type": "string", "minLength": 1, "prompt_type": "string" },
+    "task_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$", "prompt_type": "sha256" },
+    "task_integrations": { "type": "array", "items": { "$ref": "#/structured_content_schemas/task_integration" }, "minItems": 1, "uniqueItems": true, "prompt_type": "task integration[]" },
+    "task_cleanups": { "type": "array", "items": { "$ref": "#/structured_content_schemas/task_cleanup" }, "minItems": 1, "uniqueItems": true, "prompt_type": "task cleanup[]" },
+    "task_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
+    "task_worktree": { "type": "string", "minLength": 1, "prompt_type": "absolute path" },
+    "main_base_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
+    "merge_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
+    "base_plan_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
+    "task_completion_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
+    "task_checkboxes_checked": { "type": "boolean", "prompt_type": "boolean" },
+    "merge_aborted": { "type": "boolean", "prompt_type": "boolean" },
+    "verification": { "type": "array", "items": { "$ref": "#/structured_content_schemas/verification" }, "minItems": 1, "prompt_type": "verification[]" },
     "write_scope": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true, "prompt_type": "repository-relative path prefix[]" },
     "worktree": { "type": "string", "minLength": 1, "prompt_type": "absolute path" },
     "branch": { "type": "string", "minLength": 1, "prompt_type": "string" },
@@ -122,6 +147,41 @@
       "type": "object",
       "required": ["command", "result"],
       "properties": { "command": { "type": "string", "minLength": 1 }, "result": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
+    "task_integration": {
+      "type": "object",
+      "required": ["task_id", "task_path", "base_plan_sha", "source_task_sha", "merge_sha", "task_completion_sha", "resulting_plan_sha", "task_checkboxes_checked"],
+      "properties": {
+        "task_id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "task_path": { "type": "string", "minLength": 1 },
+        "base_plan_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+        "source_task_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+        "merge_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+        "task_completion_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+        "resulting_plan_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+        "task_checkboxes_checked": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "task_cleanup": {
+      "type": "object",
+      "required": ["task_id", "task_sha", "resulting_plan_sha", "cleanup_evidence"],
+      "properties": {
+        "task_id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "task_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+        "resulting_plan_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+        "cleanup_evidence": {
+          "type": "object",
+          "required": ["task_ancestor_verified", "worktree_removed", "branch_removed"],
+          "properties": {
+            "task_ancestor_verified": { "type": "boolean" },
+            "worktree_removed": { "type": "boolean" },
+            "branch_removed": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      },
       "additionalProperties": false
     },
     "review_basis": {

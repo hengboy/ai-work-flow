@@ -38,7 +38,11 @@ node agent-build/install.mjs validate
 
 ## 自动流程
 
-**Planning** 在当前会话执行 `discover → confirm → write_spec → write_plan → (split: write_tasks) → commit`。**Coding** 在当前会话完成分诊、实施、本地提交、ReviewPacket、双轴审查、blocking finding 修复、复审、main 同步、fast-forward 整合和安全清理。
+**Planning** 在当前会话执行 `discover → confirm → write_spec → write_plan → (split: write_tasks) → commit`。single/direct Coding 保持现有实施、提交、ReviewPacket、审查、修复、main 同步、fast-forward 与清理链。
+
+split Coding 从冻结 main SHA 创建 `ai-work-flow/<plan_id>/integration` 和 `.worktrees/<plan_id>`。每个 task 从最新 plan SHA 创建独立 branch/worktree，只执行 acceptance、write scope 与聚焦验证；提交后以 `--no-ff` 整合到 plan，再将当前 task 文件全部复选框勾选并创建完成提交，最后在 ancestry、worktree 删除和 branch 删除均有证明后 cleanup。plan 累计验证要求整合/完成 SHA 链连续、全部 task cleanup 完整、每项 acceptance 有证据且所有 verification 均通过；`blocked_by` 只有在前置 task 完成整合、勾选和 cleanup 后才满足。
+
+全部预期 task 完成后，流程对原始 main base 到最新 plan SHA 执行累计验收和验证，构造覆盖全部 task slices 的 ReviewPacket，并固定执行 Standards/Spec 双轴评审。main 漂移时最多 resync 两轮，每轮先累计重验再完整复审；最终仅 fast-forward main 到已通过评审的 plan SHA，精确匹配后清理 plan。冲突、失败验证、未通过评审、SHA 漂移或身份不明状态都保留本地现场，不 push。
 
 **Planning**/**Coding** 只有 `Task`，不直接使用 Shell、Git、文件编辑或网络。实施、Git、审查与支持子代理返回固定 `TaskResult`，主代理验证完整内容后传给下一 action。自动授权不包含 push、stash、reset、clean、amend、tag、PR 或远端修改。
 

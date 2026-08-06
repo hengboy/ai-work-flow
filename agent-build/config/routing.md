@@ -51,7 +51,8 @@
 
 - 写入 action 默认串行；所有 Git mutation 始终串行，不与其他 Git action 重叠。
 - 只有写入范围明确互斥的 actions 才可并行；共享规划工件或同一 worktree 视为相交范围。
-- split 计划按 task 维护独立 action 链。只有 `blocked_by` 全部已整合、显式声明 `write_scope_mode=exhaustive`、且结构化 `write_scope` 明确互斥的 ready tasks 才可在各自 worktree 中并行执行 `coding.implement_task`；缺少 scope mode 的旧 task 默认串行，每个 task 分别委派一个 **Full Stack Coder**。prepare、commit、review、integrate 与 cleanup 仍串行，依赖未满足或 scope 相交时不得并行。
+- split 计划先由 `coding.prepare` 创建唯一 plan integration worktree，再按 task 启动独立 `coding_task` workflow。task `--no-ff` 整合后由 Git Operator 在 plan worktree 勾选该 task 全部复选框并创建完成提交，再执行 cleanup。只有 `blocked_by` 全部完成整合、勾选和 cleanup、显式声明 `write_scope_mode=exhaustive`、且 `write_scope` 互斥的 ready tasks 才可并行实施；缺少 scope mode 的旧 task 串行。所有 Git actions 始终串行。
+- task 不执行正式审查；全部预期 task 整合并 cleanup 后，**Full Stack Coder** 对原始 main base 到最新 plan SHA 执行累计验收和验证并生成覆盖全部 task 的 review slices，随后 plan 固定执行完整双轴评审。main 漂移 resync 后必须先累计重验再准备完整复审，最终只 fast-forward main。
 - **Review Standards** 与 **Review Spec** 可用同一完整 ReviewPacket 并行执行。
 - 快速通道不增加代理调用；批准计划、finding 修复、复审和 main resync 始终执行完整双轴审查。
 - 每个 `TaskResult` 验证后再决定下一 action，不根据预计结果提前调度。

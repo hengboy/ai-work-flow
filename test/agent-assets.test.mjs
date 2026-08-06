@@ -79,12 +79,17 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("full-stack-coder"), /\*\*File Explorer\*\*/);
   assert.match(assets.compiledBodies.get("full-stack-coder"), /`TaskResult`/);
   assert.match(assets.compiledBodies.get("coding"), /changed_paths:string\[\]/);
-  assert.match(assets.compiledBodies.get("coding"), /`single` 只推进一条 action 链/);
-  assert.match(assets.compiledBodies.get("coding"), /旧格式.*保持串行/);
-  assert.match(assets.compiledBodies.get("coding"), /每个 task 恰好委派一个独立 \*\*Full Stack Coder\*\* 执行 `coding\.implement_task`/);
-  assert.match(assets.compiledBodies.get("coding"), /同一 ready batch 可并行调用/);
-  assert.match(assets.compiledBodies.get("coding"), /commit、review、integrate、cleanup 仍按 task 串行推进/);
+  assert.match(assets.compiledBodies.get("coding"), /`single` 保持现有 action 链/);
+  assert.match(assets.compiledBodies.get("coding"), /`split` 只执行一次不含 `task_id` 的 `coding\.prepare`/);
+  assert.match(assets.compiledBodies.get("coding"), /`blocked_by` 已完成上述整合、勾选和 cleanup/);
+  assert.match(assets.compiledBodies.get("coding"), /task_path.*task_digest.*复选框.*完成提交/s);
+  assert.match(assets.compiledBodies.get("coding"), /每个 task 恰好委派一个独立 \*\*Full Stack Coder\*\*/);
+  assert.match(assets.compiledBodies.get("coding"), /Git actions 串行/);
+  assert.match(assets.compiledBodies.get("coding"), /`coding\.validate_plan`.*完整无重复 IDs.*slices 覆盖全部 task/s);
+  assert.match(assets.compiledBodies.get("coding"), /连续 integration\/cleanup 证据.*verification 全 passed/s);
+  assert.match(assets.compiledBodies.get("coding"), /task 不审查/);
   assert.match(assets.compiledBodies.get("full-stack-coder"), /全部 PathChange 均在 scope 内/);
+  assert.match(assets.compiledBodies.get("full-stack-coder"), /连续 integration 链.*verification 只有全部 passed 才可 completed/s);
   assert.match(assets.compiledBodies.get("researcher"), /checks:array/);
   assert.match(assets.compiledBodies.get("coding"), /可解析 JSON 对象/);
   assert.match(assets.compiledBodies.get("researcher"), /可解析的 JSON `TaskResult`/);
@@ -96,8 +101,13 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("git-operator"), /增删总和不超过 50/);
   assert.match(assets.compiledBodies.get("git-operator"), /failed\|indeterminate/);
   assert.match(assets.compiledBodies.get("git-operator"), /skipped_small_change.*禁止携带伪造的 `review_result`/);
-  assert.match(assets.compiledBodies.get("git-operator"), /`ai-work-flow\/<plan_id>`.*`<repository>\/\.worktrees\/<plan_id>`/);
-  assert.match(assets.compiledBodies.get("git-operator"), /`ai-work-flow\/<plan_id>\/<task_id>`.*`<repository>\/\.worktrees\/<plan_id>--<task_id>`/);
+  assert.match(assets.compiledBodies.get("git-operator"), /`ai-work-flow\/<plan_id>\/integration`.*`<repository>\/\.worktrees\/<plan_id>`/);
+  assert.match(assets.compiledBodies.get("git-operator"), /`ai-work-flow\/<plan_id>\/tasks\/<task_id>`.*`<repository>\/\.worktrees\/<plan_id>--<task_id>`/);
+  assert.match(assets.compiledBodies.get("git-operator"), /git merge --no-ff.*git merge --abort/s);
+  assert.match(assets.compiledBodies.get("git-operator"), /`- \[ \]`.*`- \[x\]`.*task_completion_sha=resulting_plan_sha/s);
+  assert.match(assets.compiledBodies.get("git-operator"), /merge_aborted=true.*clean_state\.clean=true/s);
+  assert.match(assets.compiledBodies.get("git-operator"), /task SHA 是 resulting plan SHA 祖先/);
+  assert.match(assets.compiledBodies.get("git-operator"), /worktree_removed.*branch_removed.*均为 true/s);
   assert.match(assets.compiledBodies.get("code-reviewer"), /只能在 `review_mode=dual_axis` 时被调用/);
   const gitOperator = assets.compiledBodies.get("git-operator");
   for (const literal of [
