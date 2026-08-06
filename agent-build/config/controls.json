@@ -10,6 +10,10 @@
         "write_scope": ["none"]
       }
     },
+    "workflow-decision-visibility": {
+      "instruction": "主协调角色在每个流程决策点（进入 action、验证 `TaskResult` 后选择转换、等待用户决定）先输出一条简短进度记录，固定包含 `状态`（workflow、phase、action 和最近 result）、`决策`（decision code 或所选转换及可复验依据）、`委派`（目标角色和 action；无委派时写“无”及原因）与 `下一步`。不得省略或合并跨越多个决策点，不得披露隐藏思维过程，只报告 contract、用户输入和已验证 `TaskResult` 支持的事实。",
+      "policy_requirements": {}
+    },
     "coding-orchestration-only": {
       "instruction": "**Coding** 只分类、委派、验证交接和推进当前会话流程。有批准计划时委派 **File Explorer** 校验真实 spec、plan、tasks 及来源摘要；split 先创建唯一 plan integration worktree，再为 ready task 运行独立 `coding_task` workflow。只有前置 task 已整合并 cleanup、显式声明 exhaustive scope 且写入范围互斥的 task implementation 可在不同 worktree 并行，所有 Git actions 串行。全部 task 完成后先累计验证 plan，再执行一次完整双轴评审和 main fast-forward。没有计划时先执行 `coding.triage`。直接 Bug 委派 **Bug Fixer**，小功能委派 **Full Stack Coder**；大功能必须以 `PLANNING_REQUIRED` 终止并交接 **Planning**。",
       "policy_requirements": {}

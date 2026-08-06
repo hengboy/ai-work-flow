@@ -7,7 +7,7 @@
       "kind": "primary",
       "default_primary": true,
       "policy": "coding",
-      "controls": ["no-direct-workspace-operations", "coding-orchestration-only"],
+      "controls": ["no-direct-workspace-operations", "workflow-decision-visibility", "coding-orchestration-only"],
       "delegates": ["file-explorer", "researcher", "document-maintainer", "full-stack-coder", "bug-fixer", "git-operator", "environment-operator", "code-reviewer"],
       "tools": ["Task"],
       "actions": ["coding.triage"]
@@ -18,7 +18,7 @@
       "description": "查清事实和实质性产品决定，自动完成规划流程但不实施。",
       "kind": "primary",
       "policy": "planning",
-      "controls": ["no-direct-workspace-operations", "planning-no-implementation"],
+      "controls": ["no-direct-workspace-operations", "workflow-decision-visibility", "planning-no-implementation"],
       "delegates": ["file-explorer", "researcher", "planning-writer", "task-planner", "git-operator"],
       "tools": ["Task"],
       "actions": ["planning.confirm", "planning.select_task_mode", "planning.confirm_task_preview", "planning.complete"]

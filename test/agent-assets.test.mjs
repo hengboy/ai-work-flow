@@ -176,9 +176,17 @@ test("compiled prompt character limits accept the boundary and reject one charac
 
 test("primary agents have Task only and Task Planner owns the complete split lifecycle", () => {
   const assets = loadAgentAssets();
-  assert.deepEqual(assets.roles.find((role) => role.id === "planning").tools, ["Task"]);
+  const planning = assets.roles.find((role) => role.id === "planning");
+  assert.deepEqual(planning.tools, ["Task"]);
   const coding = assets.roles.find((role) => role.id === "coding");
   assert.deepEqual(coding.tools, ["Task"]);
+  for (const role of [planning, coding]) {
+    assert.equal(role.controls.includes("workflow-decision-visibility"), true, role.id);
+    assert.match(assets.compiledBodies.get(role.id), /每个流程决策点[\s\S]*`状态`[\s\S]*`决策`[\s\S]*`委派`[\s\S]*`下一步`/);
+  }
+  for (const role of assets.roles.filter((role) => role.kind !== "primary")) {
+    assert.equal(role.controls.includes("workflow-decision-visibility"), false, role.id);
+  }
   assert.equal(coding.delegates.includes("planning-writer"), false);
   assert.equal(assets.contract.workflows.coding.orchestrator, "coding");
   assert.equal(assets.contract.workflows.coding_task.orchestrator, "coding");
