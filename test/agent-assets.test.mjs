@@ -88,7 +88,7 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("planning-writer"), /split plan 与最终 task 集合的数量、ID、顺序、标题和概要一致/);
   assert.match(assets.compiledBodies.get("task-planner"), /`input\.task_mode` 与 plan 元数据必须同为 `split`/);
   assert.match(assets.compiledBodies.get("task-planner"), /`planning\.preview_tasks`.*不得创建、修改或删除 task 文件/s);
-  assert.match(assets.compiledBodies.get("task-planner"), /以可独立交付和验收的职责边界确定合理颗粒度.*不以 task 数量为目标.*不按单个文件、代码层或实施步骤机械拆分/);
+  assert.match(assets.compiledBodies.get("task-planner"), /便于独立实施和独立评审的完整变更单元.*以可独立交付和验收的职责边界确定合理颗粒度.*合并强相关工作.*避免颗粒度过细.*不以 task 数量为目标.*不按单个文件、代码层或实施步骤机械拆分/);
   assert.match(assets.compiledBodies.get("task-planner"), /`planning\.revise_task_preview`.*revision 严格增加 1/s);
   assert.match(assets.compiledBodies.get("task-planner"), /`planning\.write_tasks`.*用户确认的当前 revision.*逐字写 preview ID\/order\/title\/summary.*写入后.*`task_artifact_manifest`/s);
   assert.match(assets.compiledBodies.get("task-planner"), /`files\[\]\.sha256`.*对应 task Markdown 文件的原始字节.*SHA-256.*`source_plan_digest` 只能绑定 `plan\.md`，不得代替 task digest.*`planning\.verify_tasks`.*逐文件重算.*拒绝.*混用/s);
