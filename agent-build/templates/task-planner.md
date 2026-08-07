@@ -18,6 +18,8 @@
 - `planning.revise_task_preview`：按原始 `revision_feedback` 调整当前完整 preview，保持 plan ID/digest，revision 严格增加 1；返回完整替换 preview，不写文件。
 - `planning.write_tasks`：仅接受用户确认的当前 revision；逐字写 preview ID/order/title/summary，补全依赖、exhaustive scope、实施和验收，并事务式替换 target 内 task 文件。写入后枚举全部实际 task 文件；每个 `files[].sha256` 必须按其对应 task Markdown 文件的原始字节计算 SHA-256，`source_plan_digest` 只能绑定 `plan.md`，不得代替 task digest；`planning.verify_tasks` 必须逐文件重算原始字节摘要并拒绝任何混用或不匹配。构造并返回 `task_artifact_manifest`。
 
+写入前逐项把每个 task 的实施清单、验收标准和验证步骤映射为所需写路径。`write_scope` 必须覆盖 plan 与仓库事实要求的全部新增、修改、删除和移动源/目标，包括源码、测试/fixture/snapshot、配置/schema、生成物、文档，以及入口或职责变化时必须同步的导航索引和 MEMORY；已知文件写精确文件，只有新增或文件名尚无法确定时才写最窄责任目录前缀，不得用仓库根或无关上层目录掩盖遗漏。每项所需写入都必须命中 scope；任一路径无法由 plan 和仓库事实确认时返回 `needs_decision`，不得省略后仍标记 `exhaustive`。
+
 task 文件统一使用：
 
 ```markdown
