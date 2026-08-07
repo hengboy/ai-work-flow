@@ -9,32 +9,40 @@
     "acceptance": { "type": "array", "items": { "type": "string", "minLength": 1 }, "prompt_type": "string[]" },
     "acceptance_evidence": { "type": "array", "items": { "$ref": "#/structured_content_schemas/acceptance_evidence" }, "minItems": 1, "prompt_type": "acceptance evidence[]" },
     "changed_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
-    "checks": { "type": "array", "items": {}, "prompt_type": "array" },
+    "assigned_axes": { "type": "array", "items": { "type": "string", "enum": ["standards", "spec"] }, "minItems": 2, "maxItems": 2, "uniqueItems": true, "prompt_type": "[standards,spec]" },
+    "checks": { "type": "array", "items": { "anyOf": [{ "type": "string", "minLength": 1 }, { "$ref": "#/structured_content_schemas/verification" }] }, "minItems": 1, "prompt_type": "array<string|{command,result}>" },
     "citation_urls": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
-    "cleanup_evidence": { "type": "object", "prompt_type": "object" },
-    "clean_state": { "type": "object", "prompt_type": "object" },
+    "cleanup_evidence": { "$ref": "#/structured_content_schemas/cleanup_evidence", "prompt_type": "{worktree_removed:boolean,branch_removed:boolean,task_ancestor_verified?:boolean}" },
+    "clean_state": { "$ref": "#/structured_content_schemas/clean_state", "prompt_type": "{clean:boolean}" },
     "code": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "committed_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "conflict_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true, "prompt_type": "repository-relative path[]" },
     "coverage": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "deleted_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
-    "decision_history": { "type": "array", "items": { "type": "object" }, "prompt_type": "object[]" },
-    "direct_dependencies": { "type": "array", "items": {}, "prompt_type": "array" },
-    "drift": { "type": "object", "prompt_type": "object" },
+    "decision_history": { "type": "array", "items": { "$ref": "#/structured_content_schemas/decision_history_item" }, "prompt_type": "array<{user_response:string,question_number?:integer}>" },
+    "deletion_decision": { "$ref": "#/structured_content_schemas/user_confirmation", "prompt_type": "{confirmed_by:user,user_response:string}" },
+    "direct_dependencies": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
+    "discovery_result": { "$ref": "#/structured_content_schemas/discovery_result", "prompt_type": "completed discovery TaskResult object" },
+    "drift": { "$ref": "#/structured_content_schemas/drift", "prompt_type": "{reason:string}" },
     "entry_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "expected_task_ids": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" }, "minItems": 1, "uniqueItems": true, "prompt_type": "lowercase kebab-case task id[]" },
-    "facts": { "type": "array", "items": {}, "prompt_type": "array" },
+    "facts": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
+    "feature_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
+    "frozen_state": { "$ref": "#/structured_content_schemas/clean_state", "prompt_type": "{clean:boolean}" },
     "finding_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "fixed_finding_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "head_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "implementation_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "implementation_kind": { "type": "string", "enum": ["bug", "small_feature"], "prompt_type": "bug|small_feature" },
+    "known_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
+    "main_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "message": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "objective": { "type": "string", "minLength": 1, "prompt_type": "string" },
-    "open_decision": { "type": "object", "minProperties": 1, "prompt_type": "object" },
-    "open_decisions": { "type": "array", "items": { "type": "object" }, "prompt_type": "object[]" },
+    "open_decision": { "$ref": "#/structured_content_schemas/open_decision", "prompt_type": "{code,question,recommendation}" },
+    "open_decisions": { "type": "array", "items": { "$ref": "#/structured_content_schemas/open_decision_item" }, "prompt_type": "array<{question,recommendation}>" },
     "operation": { "type": "string", "minLength": 1, "prompt_type": "string" },
+    "path_changes": { "type": "array", "items": { "$ref": "#/structured_content_schemas/path_change" }, "minItems": 1, "prompt_type": "PathChange[]" },
     "paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "prompt_type": "string[]" },
     "plan_id": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "plan_branch": { "type": "string", "minLength": 1, "prompt_type": "string" },
@@ -43,6 +51,7 @@
     "plan_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "plan_worktree": { "type": "string", "minLength": 1, "prompt_type": "absolute path" },
     "planning_context": { "$ref": "#/structured_content_schemas/planning_context", "prompt_type": "planning_context object" },
+    "request_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$", "prompt_type": "sha256" },
     "revision_feedback": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "report_path": { "type": "string", "minLength": 1, "prompt_type": "path string" },
     "resulting_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
@@ -53,16 +62,19 @@
     "review_mode": { "type": "string", "enum": ["dual_axis", "skipped_small_change"], "prompt_type": "dual_axis|skipped_small_change" },
     "review_disposition": { "$ref": "#/structured_content_schemas/review_disposition", "prompt_type": "review_disposition object" },
     "review_result": { "$ref": "#/structured_content_schemas/review_result", "prompt_type": "review_result object" },
+    "review_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "scope_evidence": { "type": "array", "items": { "type": "string", "minLength": 1 }, "prompt_type": "string[]" },
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "prompt_type": "sha256" },
-    "slices": { "type": "array", "items": { "type": "object", "minProperties": 1 }, "minItems": 1, "prompt_type": "review slice[]" },
+    "slices": { "type": "array", "items": { "$ref": "#/structured_content_schemas/review_slice" }, "minItems": 1, "prompt_type": "array<{id:string}>" },
+    "spec_or_task_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true, "prompt_type": "string[]" },
     "source_task_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "source_content": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "source_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$", "prompt_type": "sha256" },
-    "state": { "type": "object", "prompt_type": "object" },
-    "status": { "type": "object", "prompt_type": "object" },
+    "state": { "$ref": "#/structured_content_schemas/clean_state", "prompt_type": "{clean:boolean}" },
+    "status": { "$ref": "#/structured_content_schemas/environment_status", "prompt_type": "{platforms:[{platform,state,contract_digest}]}" },
     "summary": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "target": { "type": "string", "minLength": 1, "prompt_type": "path string" },
+    "target_base": { "type": "string", "minLength": 1, "prompt_type": "git ref" },
     "task_mode": { "type": "string", "enum": ["single", "split"], "prompt_type": "single|split" },
     "task_mode_selection": { "$ref": "#/structured_content_schemas/task_mode_selection", "prompt_type": "task_mode_selection object" },
     "task_preview": { "$ref": "#/structured_content_schemas/task_preview", "prompt_type": "task_preview object" },
@@ -75,6 +87,7 @@
     "task_cleanups": { "type": "array", "items": { "$ref": "#/structured_content_schemas/task_cleanup" }, "minItems": 1, "uniqueItems": true, "prompt_type": "task cleanup[]" },
     "task_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "task_worktree": { "type": "string", "minLength": 1, "prompt_type": "absolute path" },
+    "terms": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true, "prompt_type": "string[]" },
     "main_base_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "merge_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
     "base_plan_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
@@ -87,10 +100,124 @@
     "worktree": { "type": "string", "minLength": 1, "prompt_type": "absolute path" },
     "branch": { "type": "string", "minLength": 1, "prompt_type": "string" },
     "base_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$", "prompt_type": "git sha" },
-    "initial_status": { "type": "object", "prompt_type": "object" },
+    "initial_status": { "$ref": "#/structured_content_schemas/clean_state", "prompt_type": "{clean:boolean}" },
     "change_evidence": { "$ref": "#/structured_content_schemas/change_evidence", "prompt_type": "change_evidence object" }
   },
   "structured_content_schemas": {
+    "open_decision_item": {
+      "type": "object",
+      "required": ["question", "recommendation"],
+      "properties": {
+        "question": { "type": "string", "minLength": 1 },
+        "recommendation": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "options": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "evidence": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "open_decision": {
+      "type": "object",
+      "required": ["code", "question", "recommendation"],
+      "properties": {
+        "code": { "type": "string", "enum": ["PRODUCT_DECISION_REQUIRED", "REPEATED_REVIEW_FINDING", "REVIEW_FIX_BUDGET_EXHAUSTED", "MAIN_RESYNC_BUDGET_EXHAUSTED", "PLANNING_REQUIRED", "WORKFLOW_STALLED", "UNRECOVERABLE_FAILURE"] },
+        "question": { "type": "string", "minLength": 1 },
+        "recommendation": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "options": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "evidence": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "decision_history_item": {
+      "type": "object",
+      "required": ["user_response"],
+      "properties": {
+        "user_response": { "type": "string", "minLength": 1 },
+        "question_number": { "type": "integer", "minimum": 1 },
+        "question": { "type": "string", "minLength": 1 }
+      }
+    },
+    "user_confirmation": {
+      "type": "object",
+      "required": ["confirmed_by", "user_response"],
+      "properties": {
+        "confirmed_by": { "type": "string", "enum": ["user"] },
+        "user_response": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "discovery_result": {
+      "type": "object",
+      "required": ["result", "summary", "entry_paths", "direct_dependencies", "facts", "open_decisions"],
+      "properties": {
+        "result": { "type": "string", "enum": ["completed"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "entry_paths": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "direct_dependencies": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "facts": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "open_decisions": { "type": "array", "items": { "$ref": "#/structured_content_schemas/open_decision_item" } }
+      },
+      "additionalProperties": false
+    },
+    "clean_state": {
+      "type": "object",
+      "required": ["clean"],
+      "properties": { "clean": { "type": "boolean" } },
+      "additionalProperties": false
+    },
+    "cleanup_evidence": {
+      "type": "object",
+      "required": ["worktree_removed", "branch_removed"],
+      "properties": {
+        "worktree_removed": { "type": "boolean" },
+        "branch_removed": { "type": "boolean" },
+        "task_ancestor_verified": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "drift": {
+      "type": "object",
+      "required": ["reason"],
+      "properties": { "reason": { "type": "string", "minLength": 1 } }
+    },
+    "environment_status": {
+      "type": "object",
+      "required": ["platforms"],
+      "properties": {
+        "platforms": { "type": "array", "items": { "$ref": "#/structured_content_schemas/platform_status" }, "minItems": 1 }
+      },
+      "additionalProperties": false
+    },
+    "platform_status": {
+      "type": "object",
+      "required": ["platform", "state", "contract_digest"],
+      "properties": {
+        "platform": { "type": "string", "enum": ["codex", "claude", "opencode"] },
+        "state": { "type": "string", "minLength": 1 },
+        "contract_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "review_slice": {
+      "type": "object",
+      "required": ["id"],
+      "properties": { "id": { "type": "string", "minLength": 1 }, "task_id": { "type": "string", "minLength": 1 } }
+    },
+    "finding": {
+      "type": "object",
+      "required": ["id", "summary", "observable_impact", "slice_id", "path", "hunk", "minimum_fix"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "observable_impact": { "type": "string", "minLength": 1 },
+        "slice_id": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "hunk": { "type": "string", "minLength": 1 },
+        "minimum_fix": { "type": "string", "minLength": 1 },
+        "requirement": { "type": "string", "minLength": 1 }
+      }
+    },
     "planning_context": {
       "type": "object",
       "required": ["context_id", "plan_id", "goal", "users_consumers", "success_criteria", "scope", "constraints", "assumptions", "acceptance_criteria", "decisions", "open_questions"],
@@ -299,7 +426,7 @@
     "review_packet": {
       "type": "object",
       "required": ["base_sha", "review_sha", "review_context", "slices"],
-      "properties": { "base_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" }, "review_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" }, "review_context": { "$ref": "#/structured_content_schemas/review_context" }, "slices": { "type": "array", "items": { "type": "object" }, "minItems": 1 } },
+      "properties": { "base_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" }, "review_sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" }, "review_context": { "$ref": "#/structured_content_schemas/review_context" }, "slices": { "type": "array", "items": { "$ref": "#/structured_content_schemas/review_slice" }, "minItems": 1 } },
       "additionalProperties": false
     },
     "review_disposition": {
@@ -358,7 +485,7 @@
     "review_axis_result": {
       "type": "object",
       "required": ["axis", "findings", "advisory_findings", "coverage"],
-      "properties": { "axis": { "type": "string", "enum": ["standards", "spec"] }, "findings": { "type": "array", "items": { "type": "object" } }, "advisory_findings": { "type": "array", "items": { "type": "object" } }, "coverage": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true } },
+      "properties": { "axis": { "type": "string", "enum": ["standards", "spec"] }, "findings": { "type": "array", "items": { "$ref": "#/structured_content_schemas/finding" } }, "advisory_findings": { "type": "array", "items": { "$ref": "#/structured_content_schemas/finding" } }, "coverage": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true } },
       "additionalProperties": false
     },
     "review_result": {

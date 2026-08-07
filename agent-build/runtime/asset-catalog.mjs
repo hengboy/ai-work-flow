@@ -53,8 +53,11 @@ function canonicalize(value) {
   return value;
 }
 
-function resultFieldNames(contract) {
+function actionFieldNames(contract) {
   const fields = new Set(["result", "summary"]);
+  for (const io of Object.values(contract.io_contracts ?? {})) {
+    for (const field of [...(io.input_contract?.required_fields ?? []), ...(io.input_contract?.optional_fields ?? [])]) fields.add(field);
+  }
   const groups = [
     ...Object.values(contract.io_contracts ?? {}).map((io) => io.result_contracts ?? {}),
     ...Object.values(contract.support_result_contracts ?? {}),
@@ -78,9 +81,9 @@ function validateContract(contract, schemas, errors) {
     !isPlainObject(schemas.field_schemas) || !isPlainObject(schemas.structured_content_schemas)) {
     errors.push("task-result-schemas.json is invalid or stale.");
   } else {
-    for (const field of resultFieldNames(contract)) {
+    for (const field of actionFieldNames(contract)) {
       const schema = schemas.envelope[field] ?? schemas.field_schemas[field];
-      if (!isPlainObject(schema) || typeof schema.prompt_type !== "string" || !schema.prompt_type.trim()) errors.push(`TaskResult schema is missing: ${field}.`);
+      if (!isPlainObject(schema) || typeof schema.prompt_type !== "string" || !schema.prompt_type.trim()) errors.push(`Action field schema is missing: ${field}.`);
     }
     for (const [name, content] of Object.entries(contract.structured_content)) {
       const schema = schemas.structured_content_schemas[name];

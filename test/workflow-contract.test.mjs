@@ -142,6 +142,48 @@ test("contract is generation-only and assigns valid action transitions", async (
   assert.equal(contract.actions["planning.verify_tasks"].completed_to, "tasks_ready");
 });
 
+test("planning discovery requires an exact recommendation field for every open decision", async () => {
+  const contract = await loadWorkflowContract();
+  const result = {
+    result: "completed",
+    summary: "Discovery completed",
+    entry_paths: ["src/app.mjs"],
+    direct_dependencies: ["src/dependency.mjs"],
+    facts: ["The entry path imports the direct dependency"],
+    open_decisions: [{ question: "Choose a behavior", recommendation: "Keep the existing behavior" }],
+  };
+  assert.equal(validateTaskResult("planning.discover", result, contract), result);
+  assert.throws(() => validateTaskResult("planning.discover", {
+    ...result,
+    open_decisions: [{ question: "Choose a behavior", recommendATION: "Keep the existing behavior" }],
+  }, contract), /TaskResult\.open_decisions\[0\]\.recommendation is required/);
+  assert.throws(() => validateTaskResult("planning.discover", {
+    ...result,
+    open_decisions: [{ question: "Choose a behavior", recommendation: "Keep it", recommendATION: "Keep it" }],
+  }, contract), /unsupported field/);
+});
+
+test("formerly generic action fields enforce their declared nested shapes", async () => {
+  const contract = await loadWorkflowContract();
+  assert.throws(() => validateActionInput("planning.discover", {
+    objective: "Locate the behavior", terms: "behavior", known_paths: [],
+  }, contract), /Action input\.terms must be array/);
+  assert.throws(() => validateActionInput("planning.confirm", {
+    discovery_result: {
+      result: "completed", summary: "Located", entry_paths: [], direct_dependencies: [], facts: ["No implementation exists"],
+      open_decisions: [{ question: "Choose a stack", recommendATION: "Use the repository default" }],
+    },
+    decision_history: [],
+  }, contract), /Action input\.discovery_result\.open_decisions\[0\]\.recommendation is required/);
+  assert.throws(() => validateActionInput("coding.review", {
+    review_packet: reviewPacketFor(reviewDisposition({ origin: "approved_plan" })), assigned_axes: ["standards", "standards"],
+  }, contract), /unique items|too few items/);
+  assert.throws(() => validateSupportTaskResult("researcher", {
+    result: "needs_decision", summary: "A decision is required",
+    open_decision: { code: "PRODUCT_DECISION_REQUIRED", question: "Choose a source", recommendATION: "Use official docs" },
+  }, contract), /TaskResult\.open_decision\.recommendation is required/);
+});
+
 test("TaskResult carries direct structured content", async () => {
   const contract = await loadWorkflowContract();
   const planningContext = {

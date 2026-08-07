@@ -4,7 +4,9 @@ import { dirname, resolve } from "node:path";
 
 const CONTRACT_PATH = resolve(import.meta.dirname, "..", "workflow-contract.json");
 const TASK_RESULT_SCHEMAS_PATH = resolve(import.meta.dirname, "..", "task-result-schemas.json");
-const EMPTY_COLLECTION_FIELDS = new Set(["changed_paths", "decision_history", "deleted_paths", "finding_ids", "known_paths", "open_decisions"]);
+const EMPTY_COLLECTION_FIELDS = new Set([
+  "changed_paths", "decision_history", "deleted_paths", "direct_dependencies", "entry_paths", "finding_ids", "known_paths", "open_decisions",
+]);
 const REVIEW_CRITERIA = [
   "direct_request_origin", "initial_review_stage", "full_review_not_requested", "modified_text_files_only", "changed_file_limit",
   "changed_line_limit", "no_sensitive_changes", "triage_scope_match", "automated_verification_passed",
@@ -238,8 +240,11 @@ export async function loadTaskResultSchemas(path = TASK_RESULT_SCHEMAS_PATH) {
   return schemas;
 }
 
-function resultFieldNames(contract) {
+function actionFieldNames(contract) {
   const fields = new Set(["result", "summary"]);
+  for (const io of Object.values(contract.io_contracts)) {
+    for (const field of [...io.input_contract.required_fields, ...io.input_contract.optional_fields]) fields.add(field);
+  }
   const resultGroups = [
     ...Object.values(contract.io_contracts).map((io) => io.result_contracts),
     ...Object.values(contract.support_result_contracts),
@@ -257,10 +262,10 @@ export function assertTaskResultSchemas(schemas, contract) {
     !isPlainObject(schemas.field_schemas) || !isPlainObject(schemas.structured_content_schemas)) {
     throw new Error("TaskResult schemas are invalid or stale");
   }
-  for (const field of resultFieldNames(contract)) {
+  for (const field of actionFieldNames(contract)) {
     const schema = schemas.envelope[field] ?? schemas.field_schemas[field];
     if (!isPlainObject(schema) || typeof schema.prompt_type !== "string" || !schema.prompt_type.trim()) {
-      throw new Error(`TaskResult schema is missing: ${field}`);
+      throw new Error(`Action field schema is missing: ${field}`);
     }
   }
   for (const [name, contentContract] of Object.entries(contract.structured_content)) {
@@ -279,6 +284,18 @@ function resolveSchemaReference(reference, root) {
 }
 
 export function validateJsonSchema(value, schema, root = schema, path = "value") {
+  if (schema.anyOf) {
+    const matches = schema.anyOf.some((candidate) => {
+      try {
+        validateJsonSchema(value, candidate, root, path);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (!matches) throw new Error(`${path} does not match any allowed schema`);
+    return value;
+  }
   if (schema.$ref) {
     const resolved = resolveSchemaReference(schema.$ref, root);
     if (!isPlainObject(resolved)) throw new Error(`${path} references an unknown schema`);

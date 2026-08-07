@@ -65,6 +65,8 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("planning"), /discover → confirm requirements → write_spec → select task mode → write_plan → \(split: preview\/revise\/confirm → sync_plan_tasks → write_tasks/);
   assert.match(assets.compiledBodies.get("planning"), /planning_context=\{context_id,plan_id.*context_id=source_context_id metadata value; independent from plan_id/s);
   assert.match(assets.compiledBodies.get("planning"), /仅尚未解决的真实需求疑问维护递增且跨轮次不重复的 `question_number`/);
+  assert.match(assets.compiledBodies.get("planning"), /open_decisions:array<\{question,recommendation\}>/);
+  assert.match(assets.compiledBodies.get("file-explorer"), /open_decisions:array<\{question,recommendation\}>/);
   assert.match(assets.compiledBodies.get("planning"), /每次只问一个并以 `问题 <question_number>` 开头，同时给出明确建议及建议原因，存在选项时标明推荐选项/);
   assert.match(assets.compiledBodies.get("planning"), /跨轮次不重复.*中断后从对话或 `decision_history` 最大编号继续/s);
   assert.match(assets.compiledBodies.get("planning"), /完整需求确认、后续 `task_mode` 选择及 task preview 确认或修订均不使用 `问题 <question_number>`，也不递增 `question_number`/);
