@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 
@@ -229,7 +231,14 @@ test("TaskResult carries direct structured content", async () => {
   assert.throws(() => validateStructuredContent("planning_context", { version: 1, ...planningContext }, contract), /unsupported field/);
 });
 
-test("action inputs and change evidence use complete objects", async () => {
+test("action inputs and change evidence use complete objects", async (t) => {
+  const workspaceRoot = mkdtempSync(resolve(tmpdir(), "workflow-contract-"));
+  const previousCwd = process.cwd();
+  process.chdir(workspaceRoot);
+  t.after(() => {
+    process.chdir(previousCwd);
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  });
   const contract = await loadWorkflowContract();
   const planningSpecInput = {
     plan_id: "example",
@@ -337,18 +346,28 @@ test("action inputs and change evidence use complete objects", async () => {
   };
   assert.equal(validateActionInput("planning.write_tasks", taskWriteInput, contract), taskWriteInput);
   const taskPath = ".ai-work-flow/plans/example/tasks/01-app.md";
+  mkdirSync(resolve(workspaceRoot, taskWriteInput.target), { recursive: true });
+  const taskContent = Buffer.from("# 01 - App\n\n- task_id: `app`\n");
+  writeFileSync(resolve(workspaceRoot, taskPath), taskContent);
   const manifest = {
     plan_id: "example", plan_digest: taskWriteInput.source_digest, preview_revision: 2,
     files: [{
-      path: taskPath, sha256: "9".repeat(64), task_id: "app", order: 1,
+      path: taskPath, sha256: sha256(readFileSync(resolve(workspaceRoot, taskPath))), task_id: "app", order: 1,
       title: "App", summary: "Implement the complete app",
     }],
   };
+  assert.notEqual(manifest.files[0].sha256, taskWriteInput.source_digest);
   const taskWriteResult = {
     result: "completed", summary: "Tasks written", target: taskWriteInput.target, sha256: "d".repeat(64),
     changed_paths: [taskPath], task_mode: "split", task_artifact_manifest: manifest,
   };
   assert.equal(validateTaskResult("planning.write_tasks", taskWriteResult, contract, taskWriteInput).task_mode, "split");
+  assert.throws(() => validateTaskResult("planning.write_tasks", {
+    ...taskWriteResult,
+    task_artifact_manifest: {
+      ...manifest, files: [{ ...manifest.files[0], sha256: taskWriteInput.source_digest }],
+    },
+  }, contract, taskWriteInput), /confirmed preview and target/);
   assert.throws(() => validateTaskResult("planning.write_tasks", {
     ...taskWriteResult, changed_paths: [".ai-work-flow/plans/example/tasks/01-unrelated.md", ".ai-work-flow/plans/example/tasks/02-extra.md"],
   }, contract, taskWriteInput), /confirmed preview and target/);
@@ -370,6 +389,15 @@ test("action inputs and change evidence use complete objects", async () => {
     task_artifact_manifest: manifest, checks: ["All task files match preview revision 2"],
   };
   assert.equal(validateTaskResult("planning.verify_tasks", verifyResult, contract, verifyInput), verifyResult);
+  assert.throws(() => validateActionInput("planning.verify_tasks", {
+    ...verifyInput,
+    task_artifact_manifest: {
+      ...manifest, files: [{ ...manifest.files[0], sha256: "9".repeat(64) }],
+    },
+  }, contract), /writer manifest/);
+  writeFileSync(resolve(workspaceRoot, taskPath), Buffer.concat([taskContent, Buffer.from("changed")]));
+  assert.throws(() => validateActionInput("planning.verify_tasks", verifyInput, contract), /writer manifest/);
+  writeFileSync(resolve(workspaceRoot, taskPath), taskContent);
   assert.throws(() => validateTaskResult("planning.verify_tasks", {
     ...verifyResult, task_artifact_manifest: {
       ...manifest, files: [{ ...manifest.files[0], title: "Different title" }],

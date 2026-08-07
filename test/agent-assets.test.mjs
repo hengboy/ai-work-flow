@@ -91,6 +91,7 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("task-planner"), /以可独立交付和验收的职责边界确定合理颗粒度.*不以 task 数量为目标.*不按单个文件、代码层或实施步骤机械拆分/);
   assert.match(assets.compiledBodies.get("task-planner"), /`planning\.revise_task_preview`.*revision 严格增加 1/s);
   assert.match(assets.compiledBodies.get("task-planner"), /`planning\.write_tasks`.*用户确认的当前 revision.*逐字写 preview ID\/order\/title\/summary.*写入后.*`task_artifact_manifest`/s);
+  assert.match(assets.compiledBodies.get("task-planner"), /`files\[\]\.sha256`.*对应 task Markdown 文件的原始字节.*SHA-256.*`source_plan_digest` 只能绑定 `plan\.md`，不得代替 task digest.*`planning\.verify_tasks`.*逐文件重算.*拒绝.*混用/s);
   assert.match(assets.compiledBodies.get("task-planner"), /write_scope_mode: `exhaustive`/);
   assert.doesNotMatch(assets.compiledBodies.get("file-explorer"), /planning\.verify_tasks|task_artifact_manifest/);
   assert.match(assets.compiledBodies.get("git-operator"), /planning task verify.*`shasum -a 256 -- <path>`.*`sha256sum -- <path>`.*Task Planner.*`task_artifact_manifest`.*不执行 Git mutation/s);

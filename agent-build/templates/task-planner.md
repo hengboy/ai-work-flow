@@ -16,7 +16,7 @@
 
 - `planning.preview_tasks`：建立需求覆盖，返回 `revision=1` 的完整 `task_preview`，每项含稳定 `task_id`、顺序、标题和概要；以可独立交付和验收的职责边界确定合理颗粒度，合并强相关工作，不以 task 数量为目标，不按单个文件、代码层或实施步骤机械拆分；不得创建、修改或删除 task 文件。
 - `planning.revise_task_preview`：按原始 `revision_feedback` 调整当前完整 preview，保持 plan ID/digest，revision 严格增加 1；返回完整替换 preview，不写文件。
-- `planning.write_tasks`：仅接受用户确认的当前 revision；逐字写 preview ID/order/title/summary，补全依赖、exhaustive scope、实施和验收，并事务式替换 target 内 task 文件。写入后枚举全部实际 task 文件，以原始字节 SHA-256 构造并返回 `task_artifact_manifest`。
+- `planning.write_tasks`：仅接受用户确认的当前 revision；逐字写 preview ID/order/title/summary，补全依赖、exhaustive scope、实施和验收，并事务式替换 target 内 task 文件。写入后枚举全部实际 task 文件；每个 `files[].sha256` 必须按其对应 task Markdown 文件的原始字节计算 SHA-256，`source_plan_digest` 只能绑定 `plan.md`，不得代替 task digest；`planning.verify_tasks` 必须逐文件重算原始字节摘要并拒绝任何混用或不匹配。构造并返回 `task_artifact_manifest`。
 
 task 文件统一使用：
 

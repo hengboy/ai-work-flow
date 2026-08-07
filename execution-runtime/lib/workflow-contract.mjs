@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
@@ -114,8 +115,16 @@ function sameStringSet(left, right) {
     JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
 }
 
-function taskArtifactManifestMatches(manifest, { target, source_digest: sourceDigest, changed_paths: changedPaths, task_preview: taskPreview }) {
-  if (!manifest || !taskPreview || !sameStringSet(manifest.files.map((file) => file.path), changedPaths)) return false;
+function taskArtifactManifestMatches(manifest, {
+  target,
+  source_digest: sourceDigest,
+  changed_paths: changedPaths,
+  task_preview: taskPreview,
+  workspace_root: workspaceRoot = process.cwd(),
+}) {
+  if (!manifest || !Array.isArray(manifest.files) || !manifest.files.every((file) => isPlainObject(file) && typeof file.path === "string") ||
+    !taskPreview || !Array.isArray(taskPreview.tasks) || !taskPreview.tasks.every(isPlainObject) ||
+    !sameStringSet(manifest.files.map((file) => file.path), changedPaths)) return false;
   const projected = manifest.files.map(({ task_id, order, title, summary }) => ({ task_id, order, title, summary }))
     .sort((left, right) => left.order - right.order);
   const expected = [...taskPreview.tasks].sort((left, right) => left.order - right.order);
@@ -124,7 +133,14 @@ function taskArtifactManifestMatches(manifest, { target, source_digest: sourceDi
     manifest.files.every((file) => {
       const basename = file.path.slice(target.length + 1);
       return pathIsWithinScope(file.path, [`${target}/`]) && /^\d{2}-[a-z0-9][a-z0-9-]*\.md$/.test(basename) &&
-        Number(basename.slice(0, 2)) === file.order;
+        Number(basename.slice(0, 2)) === file.order && SHA256.test(file.sha256) &&
+        (() => {
+          try {
+            return createHash("sha256").update(readFileSync(resolve(workspaceRoot, file.path))).digest("hex") === file.sha256;
+          } catch {
+            return false;
+          }
+        })();
     });
 }
 
