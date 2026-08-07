@@ -45,19 +45,19 @@
 - 子代理不加前言、后记或 code fence，不使用 `outputs`/`error` 包装，不用省略号代替内容；空数组显式返回 `[]`，不得用字符串代替数组。
 - 主代理先验证 `result`、`summary`、该结果分支的全部必需字段、禁止的额外字段和嵌套结构，再将下一 action 需要的完整对象原样传递。
 - 返回格式不合格时，主代理只列出字段路径、预期类型、实际类型、缺失字段、多余字段或结构错误，要求子代理基于已完成工作原地重返对象；不得重新执行发现、实现、检查或 Git 操作。
-- `planning_context`、`task_preview`、`task_preview_confirmation`、`task_artifact_manifest`、`change_evidence`、`review_basis`、`review_packet`、`review_disposition`、`review_axis_result` 与 `review_result` 不写内部文件，只作为直接内容交接。
-- `review_basis` 冻结来源、阶段、objective/IDs/acceptance/scope、用户完整审查选择和验证记录；ReviewPacket context、disposition 与 integration SHA 必须逐字段绑定，冲突时不得跳过审查或整合。
+- `planning_context`、`task_preview`、`task_preview_confirmation`、`task_artifact_manifest`、`change_evidence`、`review_basis`、`review_packet`、`review_disposition`、`review_axis_result`、`review_result` 与 `review_resolution` 不写内部文件，只作为直接内容交接。
+- `review_basis` 冻结来源、阶段、objective/IDs/acceptance/scope、用户完整审查选择和验证记录；ReviewPacket context、disposition、原 review SHA、可选 resolution 与 integration final SHA 必须逐字段绑定，冲突时不得整合。
 
 ## 5. 调度与并发
 
 - 写入 action 默认串行；所有 Git mutation 始终串行，不与其他 Git action 重叠。
 - 只有写入范围明确互斥的 actions 才可并行；共享规划工件或同一 worktree 视为相交范围。
 - split 计划先由 `coding.prepare` 创建唯一 plan integration worktree，再按 task 启动独立 `coding_task` workflow。task `--no-ff` 整合后由 Git Operator 在 plan worktree 勾选该 task 全部复选框并创建完成提交，再执行 cleanup。只有 `blocked_by` 全部完成整合、勾选和 cleanup、显式声明 `write_scope_mode=exhaustive`、且 `write_scope` 互斥的 ready tasks 才可并行实施；缺少 scope mode 的旧 task 串行。所有 Git actions 始终串行。
-- task 不执行正式审查；全部预期 task 整合并 cleanup 后，**Full Stack Coder** 对原始 main base 到最新 plan SHA 执行累计验收和验证并生成覆盖全部 task 的 review slices，随后 plan 固定执行完整双轴评审。main 漂移 resync 后必须先累计重验再准备完整复审，最终只 fast-forward main。
-- **Review Standards** 与 **Review Spec** 可用同一完整 ReviewPacket 并行执行。
-- 快速通道不增加代理调用；批准计划、finding 修复、复审和 main resync 始终执行完整双轴审查。
+- task 不执行正式审查；全部预期 task 整合并 cleanup 后，**Full Stack Coder** 对原始 main base 到最新 plan SHA 执行累计验收和验证并生成覆盖全部 task 的 review slices，随后 plan 执行一次完整双轴评审。main 漂移 resync 后必须先累计重验再评审新的最终 revision，最终只 fast-forward main。
+- **Review Standards** 与 **Review Spec** 必须用同一完整 ReviewPacket 并行执行且保持两轴原样分栏；叶子禁止继续委派。
+- 快速通道不增加代理调用。每个正式评审 revision 的 blocking findings 只批量修复一次，完整 ID 集、全通过验证和干净修复提交形成 `review_resolution` 后直接整合，不复审；advisory 不修复也不阻塞。
 - 每个 `TaskResult` 验证后再决定下一 action，不根据预计结果提前调度。
-- **Coding** 的 finding 修复与完整复审最多两轮，main 漂移最多自动同步两次；预算耗尽时使用 contract 决定代码停止。
+- main 漂移最多自动同步两次；除 main 漂移改变最终 revision 外，不得产生额外正式评审。
 
 ## 6. 会话边界
 

@@ -1,5 +1,5 @@
 {
-  "digest": "05b8c4292155a81d02e93d55f9c13c64a0356c3bbc4cc7e9d97dd0676a634c75",
+  "digest": "b884503446b428753fd5b7c7fd4fd9751f828f3f1391eb91d45cf632e7b28091",
   "task_result": {
     "required_fields": ["result", "summary"],
     "results": ["completed", "retryable_failure", "needs_decision", "failed"],
@@ -28,7 +28,7 @@
     },
     "review_basis": {
       "required_fields": ["origin", "stage", "objective", "implementation_ids", "acceptance", "scope_evidence", "user_requested_full_review", "scope_match_status", "verification"],
-      "field_guidance": { "origin": "direct_bug|direct_small_feature|approved_plan|finding_fix|rereview|resync", "stage": "initial|rereview|resync", "scope_match_status": "passed|failed|indeterminate", "verification": "array<{command,result:passed|failed,focused:boolean}>" }
+      "field_guidance": { "origin": "direct_bug|direct_small_feature|approved_plan|resync", "stage": "initial|resync", "scope_match_status": "passed|failed|indeterminate", "verification": "array<{command,result:passed|failed,focused:boolean}>" }
     },
     "review_packet": {
       "required_fields": ["base_sha", "review_sha", "review_context", "slices"],
@@ -45,6 +45,10 @@
     "review_result": {
       "required_fields": ["axis_results", "verdict", "finding_ids", "coverage"],
       "field_guidance": { "axis_results": "exactly two raw review_axis_result objects: standards and spec", "verdict": "passed iff finding_ids is empty; otherwise blocking", "finding_ids": "sorted unique blocking IDs only", "coverage": "sorted unique union of both axes" }
+    },
+    "review_resolution": {
+      "required_fields": ["review_sha", "resolved_sha", "fixed_finding_ids", "change_evidence"],
+      "field_guidance": { "review_sha": "original reviewed revision", "resolved_sha": "committed revision after the single repair", "fixed_finding_ids": "exact complete blocking ID set from review_result", "change_evidence": "post-fix evidence with all verification passed" }
     }
   },
   "support_result_contracts": {
@@ -257,6 +261,14 @@
         "needs_decision": { "required_fields": ["open_decision"], "optional_fields": [] }
       }
     },
+    "review_fix_commit": {
+      "input_contract": { "required_fields": ["change_evidence", "review_sha", "review_result", "fixed_finding_ids"], "optional_fields": [] },
+      "result_contracts": {
+        "completed": { "required_fields": ["commit_sha", "committed_paths", "clean_state", "review_resolution"], "optional_fields": [] },
+        "failed": { "required_fields": [], "optional_fields": [], "required_error_fields": ["code", "message"] },
+        "needs_decision": { "required_fields": ["drift"], "optional_fields": [] }
+      }
+    },
     "review_prepare": {
       "input_contract": { "required_fields": ["base_sha", "review_sha", "review_basis", "slices"], "optional_fields": [] },
       "result_contracts": {
@@ -266,7 +278,7 @@
       }
     },
     "review_integration": {
-      "input_contract": { "required_fields": ["main_sha", "feature_sha", "review_sha", "frozen_state", "review_packet", "review_disposition"], "optional_fields": ["review_result"] },
+      "input_contract": { "required_fields": ["main_sha", "feature_sha", "review_sha", "frozen_state", "review_packet", "review_disposition"], "optional_fields": ["review_result", "review_resolution"] },
       "result_contracts": {
         "completed": { "required_fields": ["resulting_sha", "state", "cleanup_evidence"], "optional_fields": [] },
         "retryable_failure": { "required_fields": ["resulting_sha", "state", "cleanup_evidence"], "optional_fields": [], "required_error_fields": ["code", "message"] },
@@ -279,8 +291,7 @@
       "result_contracts": {
         "completed": { "required_fields": ["review_result", "finding_ids", "coverage"], "optional_fields": [] },
         "retryable_failure": { "required_fields": ["review_result", "finding_ids", "coverage"], "optional_fields": [], "required_error_fields": ["code", "message"] },
-        "failed": { "required_fields": [], "optional_fields": ["review_result"], "required_error_fields": ["code", "message"] },
-        "needs_decision": { "required_fields": ["review_result", "finding_ids", "coverage"], "optional_fields": [] }
+        "failed": { "required_fields": [], "optional_fields": ["review_result"], "required_error_fields": ["code", "message"] }
       }
     },
     "git_lifecycle": {
@@ -303,13 +314,10 @@
   },
   "budgets": {
     "transient_retries": 2,
-    "main_resyncs": 2,
-    "review_fix_rounds": 2
+    "main_resyncs": 2
   },
   "decision_codes": [
     "PRODUCT_DECISION_REQUIRED",
-    "REPEATED_REVIEW_FINDING",
-    "REVIEW_FIX_BUDGET_EXHAUSTED",
     "MAIN_RESYNC_BUDGET_EXHAUSTED",
     "PLANNING_REQUIRED",
     "WORKFLOW_STALLED",
@@ -349,25 +357,23 @@
         "implemented": ["coding.commit"],
         "committed": ["coding.prepare_review"],
         "review_ready": ["coding.review"],
-        "fix_required_1": ["coding.fix_1"],
-        "fixed_1": ["coding.commit_fix_1"],
-        "fixed_committed_1": ["coding.prepare_rereview_1"],
-        "rereview_ready_1": ["coding.rereview_1"],
-        "fix_required_2": ["coding.fix_2"],
-        "fixed_2": ["coding.commit_fix_2"],
-        "fixed_committed_2": ["coding.prepare_rereview_2"],
-        "rereview_ready_2": ["coding.rereview_2"],
-        "review_passed": ["coding.integrate"],
-        "resync_required_1": ["coding.resync_1"],
-        "resynced_1": ["coding.validate_plan_resync_1"],
-        "revalidated_1": ["coding.prepare_resync_review_1"],
-        "resync_review_ready_1": ["coding.resync_review_1"],
-        "review_passed_1": ["coding.integrate_1"],
-        "resync_required_2": ["coding.resync_2"],
-        "resynced_2": ["coding.validate_plan_resync_2"],
-        "revalidated_2": ["coding.prepare_resync_review_2"],
-        "resync_review_ready_2": ["coding.resync_review_2"],
-        "review_passed_2": ["coding.integrate_2"],
+        "review_fix_required": ["coding.fix_review"],
+        "review_fixed": ["coding.commit_review_fix"],
+        "review_resolved": ["coding.integrate"],
+        "resync_required": ["coding.resync_main"],
+        "resynced": ["coding.validate_resynced_plan"],
+        "resynced_plan_validated": ["coding.prepare_resynced_review"],
+        "resynced_review_ready": ["coding.review_resynced"],
+        "resynced_review_fix_required": ["coding.fix_resynced_review"],
+        "resynced_review_fixed": ["coding.commit_resynced_review_fix"],
+        "resynced_review_resolved": ["coding.integrate_resynced"],
+        "final_resync_required": ["coding.final_resync_main"],
+        "final_resynced": ["coding.validate_final_resynced_plan"],
+        "final_resynced_plan_validated": ["coding.prepare_final_resynced_review"],
+        "final_resynced_review_ready": ["coding.review_final_resynced"],
+        "final_resynced_review_fix_required": ["coding.fix_final_resynced_review"],
+        "final_resynced_review_fixed": ["coding.commit_final_resynced_review_fix"],
+        "final_resynced_review_resolved": ["coding.integrate_final_resynced"],
         "integrated": ["coding.cleanup"]
       }
     },
@@ -405,27 +411,25 @@
     "coding.implement": { "owner": "full-stack-coder", "workflow": "coding", "from": "prepared", "completed_to": "implemented", "retryable_to": "prepared", "io_contract": "implementation" },
     "coding.validate_plan": { "owner": "full-stack-coder", "workflow": "coding", "from": "tasks_running", "completed_to": "committed", "io_contract": "coding_plan_validation" },
     "coding.commit": { "owner": "git-operator", "workflow": "coding", "from": "implemented", "completed_to": "committed", "io_contract": "local_commit" },
-    "coding.prepare_review": { "owner": "git-operator", "workflow": "coding", "from": "committed", "completed_to": "review_ready", "completed_to_by_output": { "field": "review_mode", "values": { "dual_axis": "review_ready", "skipped_small_change": "review_passed" } }, "io_contract": "review_prepare" },
-    "coding.review": { "owner": "code-reviewer", "workflow": "coding", "from": "review_ready", "completed_to": "review_passed", "retryable_to": "fix_required_1", "io_contract": "dual_axis_review" },
-    "coding.fix_1": { "owner": "bug-fixer", "workflow": "coding", "from": "fix_required_1", "completed_to": "fixed_1", "budget": "review_fix_rounds", "io_contract": "finding_fix" },
-    "coding.commit_fix_1": { "owner": "git-operator", "workflow": "coding", "from": "fixed_1", "completed_to": "fixed_committed_1", "io_contract": "local_commit" },
-    "coding.prepare_rereview_1": { "owner": "git-operator", "workflow": "coding", "from": "fixed_committed_1", "completed_to": "rereview_ready_1", "io_contract": "review_prepare" },
-    "coding.rereview_1": { "owner": "code-reviewer", "workflow": "coding", "from": "rereview_ready_1", "completed_to": "review_passed", "retryable_to": "fix_required_2", "io_contract": "dual_axis_review" },
-    "coding.fix_2": { "owner": "bug-fixer", "workflow": "coding", "from": "fix_required_2", "completed_to": "fixed_2", "budget": "review_fix_rounds", "io_contract": "finding_fix" },
-    "coding.commit_fix_2": { "owner": "git-operator", "workflow": "coding", "from": "fixed_2", "completed_to": "fixed_committed_2", "io_contract": "local_commit" },
-    "coding.prepare_rereview_2": { "owner": "git-operator", "workflow": "coding", "from": "fixed_committed_2", "completed_to": "rereview_ready_2", "io_contract": "review_prepare" },
-    "coding.rereview_2": { "owner": "code-reviewer", "workflow": "coding", "from": "rereview_ready_2", "completed_to": "review_passed", "retryable_to": "awaiting_decision", "decision_code": "REVIEW_FIX_BUDGET_EXHAUSTED", "io_contract": "dual_axis_review" },
-    "coding.integrate": { "owner": "git-operator", "workflow": "coding", "from": "review_passed", "completed_to": "integrated", "retryable_to": "resync_required_1", "budget": "main_resyncs", "io_contract": "review_integration" },
-    "coding.resync_1": { "owner": "git-operator", "workflow": "coding", "from": "resync_required_1", "completed_to": "resynced_1", "completed_to_by_task_mode": { "single": "revalidated_1", "split": "resynced_1" }, "budget": "main_resyncs", "io_contract": "git_lifecycle" },
-    "coding.validate_plan_resync_1": { "owner": "full-stack-coder", "workflow": "coding", "from": "resynced_1", "completed_to": "revalidated_1", "io_contract": "coding_plan_validation" },
-    "coding.prepare_resync_review_1": { "owner": "git-operator", "workflow": "coding", "from": "revalidated_1", "completed_to": "resync_review_ready_1", "io_contract": "review_prepare" },
-    "coding.resync_review_1": { "owner": "code-reviewer", "workflow": "coding", "from": "resync_review_ready_1", "completed_to": "review_passed_1", "retryable_to": "awaiting_decision", "decision_code": "REPEATED_REVIEW_FINDING", "io_contract": "dual_axis_review" },
-    "coding.integrate_1": { "owner": "git-operator", "workflow": "coding", "from": "review_passed_1", "completed_to": "integrated", "retryable_to": "resync_required_2", "budget": "main_resyncs", "io_contract": "review_integration" },
-    "coding.resync_2": { "owner": "git-operator", "workflow": "coding", "from": "resync_required_2", "completed_to": "resynced_2", "completed_to_by_task_mode": { "single": "revalidated_2", "split": "resynced_2" }, "budget": "main_resyncs", "io_contract": "git_lifecycle" },
-    "coding.validate_plan_resync_2": { "owner": "full-stack-coder", "workflow": "coding", "from": "resynced_2", "completed_to": "revalidated_2", "io_contract": "coding_plan_validation" },
-    "coding.prepare_resync_review_2": { "owner": "git-operator", "workflow": "coding", "from": "revalidated_2", "completed_to": "resync_review_ready_2", "io_contract": "review_prepare" },
-    "coding.resync_review_2": { "owner": "code-reviewer", "workflow": "coding", "from": "resync_review_ready_2", "completed_to": "review_passed_2", "retryable_to": "awaiting_decision", "decision_code": "REPEATED_REVIEW_FINDING", "io_contract": "dual_axis_review" },
-    "coding.integrate_2": { "owner": "git-operator", "workflow": "coding", "from": "review_passed_2", "completed_to": "integrated", "retryable_to": "awaiting_decision", "decision_code": "MAIN_RESYNC_BUDGET_EXHAUSTED", "io_contract": "review_integration" },
+    "coding.prepare_review": { "owner": "git-operator", "workflow": "coding", "from": "committed", "completed_to": "review_ready", "completed_to_by_output": { "field": "review_mode", "values": { "dual_axis": "review_ready", "skipped_small_change": "review_resolved" } }, "io_contract": "review_prepare" },
+    "coding.review": { "owner": "code-reviewer", "workflow": "coding", "from": "review_ready", "completed_to": "review_resolved", "retryable_to": "review_fix_required", "io_contract": "dual_axis_review" },
+    "coding.fix_review": { "owner": "bug-fixer", "workflow": "coding", "from": "review_fix_required", "completed_to": "review_fixed", "io_contract": "finding_fix" },
+    "coding.commit_review_fix": { "owner": "git-operator", "workflow": "coding", "from": "review_fixed", "completed_to": "review_resolved", "io_contract": "review_fix_commit" },
+    "coding.integrate": { "owner": "git-operator", "workflow": "coding", "from": "review_resolved", "completed_to": "integrated", "retryable_to": "resync_required", "budget": "main_resyncs", "io_contract": "review_integration" },
+    "coding.resync_main": { "owner": "git-operator", "workflow": "coding", "from": "resync_required", "completed_to": "resynced", "completed_to_by_task_mode": { "single": "resynced_plan_validated", "split": "resynced" }, "budget": "main_resyncs", "io_contract": "git_lifecycle" },
+    "coding.validate_resynced_plan": { "owner": "full-stack-coder", "workflow": "coding", "from": "resynced", "completed_to": "resynced_plan_validated", "io_contract": "coding_plan_validation" },
+    "coding.prepare_resynced_review": { "owner": "git-operator", "workflow": "coding", "from": "resynced_plan_validated", "completed_to": "resynced_review_ready", "io_contract": "review_prepare" },
+    "coding.review_resynced": { "owner": "code-reviewer", "workflow": "coding", "from": "resynced_review_ready", "completed_to": "resynced_review_resolved", "retryable_to": "resynced_review_fix_required", "io_contract": "dual_axis_review" },
+    "coding.fix_resynced_review": { "owner": "bug-fixer", "workflow": "coding", "from": "resynced_review_fix_required", "completed_to": "resynced_review_fixed", "io_contract": "finding_fix" },
+    "coding.commit_resynced_review_fix": { "owner": "git-operator", "workflow": "coding", "from": "resynced_review_fixed", "completed_to": "resynced_review_resolved", "io_contract": "review_fix_commit" },
+    "coding.integrate_resynced": { "owner": "git-operator", "workflow": "coding", "from": "resynced_review_resolved", "completed_to": "integrated", "retryable_to": "final_resync_required", "budget": "main_resyncs", "io_contract": "review_integration" },
+    "coding.final_resync_main": { "owner": "git-operator", "workflow": "coding", "from": "final_resync_required", "completed_to": "final_resynced", "completed_to_by_task_mode": { "single": "final_resynced_plan_validated", "split": "final_resynced" }, "budget": "main_resyncs", "io_contract": "git_lifecycle" },
+    "coding.validate_final_resynced_plan": { "owner": "full-stack-coder", "workflow": "coding", "from": "final_resynced", "completed_to": "final_resynced_plan_validated", "io_contract": "coding_plan_validation" },
+    "coding.prepare_final_resynced_review": { "owner": "git-operator", "workflow": "coding", "from": "final_resynced_plan_validated", "completed_to": "final_resynced_review_ready", "io_contract": "review_prepare" },
+    "coding.review_final_resynced": { "owner": "code-reviewer", "workflow": "coding", "from": "final_resynced_review_ready", "completed_to": "final_resynced_review_resolved", "retryable_to": "final_resynced_review_fix_required", "io_contract": "dual_axis_review" },
+    "coding.fix_final_resynced_review": { "owner": "bug-fixer", "workflow": "coding", "from": "final_resynced_review_fix_required", "completed_to": "final_resynced_review_fixed", "io_contract": "finding_fix" },
+    "coding.commit_final_resynced_review_fix": { "owner": "git-operator", "workflow": "coding", "from": "final_resynced_review_fixed", "completed_to": "final_resynced_review_resolved", "io_contract": "review_fix_commit" },
+    "coding.integrate_final_resynced": { "owner": "git-operator", "workflow": "coding", "from": "final_resynced_review_resolved", "completed_to": "integrated", "retryable_to": "awaiting_decision", "decision_code": "MAIN_RESYNC_BUDGET_EXHAUSTED", "io_contract": "review_integration" },
     "coding.cleanup": { "owner": "git-operator", "workflow": "coding", "from": "integrated", "completed_to": "complete", "io_contract": "git_lifecycle" },
     "coding.prepare_task": { "owner": "git-operator", "workflow": "coding_task", "from": "started", "completed_to": "prepared", "io_contract": "coding_task_prepare" },
     "coding.implement_task": { "owner": "full-stack-coder", "workflow": "coding_task", "from": "prepared", "completed_to": "implemented", "retryable_to": "prepared", "io_contract": "task_implementation" },

@@ -32,7 +32,7 @@ node agent-build/install.mjs validate
 
 [`execution-runtime/workflow-contract.json`](execution-runtime/workflow-contract.json) 是纯生成期流程接口，声明 **Planning**/**Coding** workflow、phase、action owner、I/O contract、转换、`TaskResult` 字段、结构化交接内容、预算和决定代码。[`execution-runtime/task-result-schemas.json`](execution-runtime/task-result-schemas.json) 独立约定每个交付字段的 JSON 类型与嵌套结构，并通过 `contract_digest` 与流程 contract 绑定。
 
-`TaskResult` 是一个可解析的 JSON 对象，固定包含 `result`、`summary` 和当前结果分支声明的字段；`result` 只能是 `completed`、`retryable_failure`、`needs_decision` 或 `failed`。`planning_context`、`change_evidence`、`review_basis`、`review_packet`、`review_disposition`、`review_axis_result` 与 `review_result` 直接携带完整 JSON 内容。数组字段必须返回数组，空数组使用 `[]`，不能以字符串代替。
+`TaskResult` 是一个可解析的 JSON 对象，固定包含 `result`、`summary` 和当前结果分支声明的字段；`result` 只能是 `completed`、`retryable_failure`、`needs_decision` 或 `failed`。`planning_context`、`change_evidence`、`review_basis`、`review_packet`、`review_disposition`、`review_axis_result`、`review_result` 与 `review_resolution` 直接携带完整 JSON 内容。数组字段必须返回数组，空数组使用 `[]`，不能以字符串代替。
 
 生成提示词会为每类 action 注入返回验收模板，包括允许的结果分支、精确顶层字段、字段类型和复杂对象内部约束。**Planning**/**Coding** 在每次委派末尾附该模板并按字段路径验收；子代理只返回一个 JSON `TaskResult` 对象，格式错误时仅重返对象，不重复实际工作。
 
@@ -42,7 +42,7 @@ node agent-build/install.mjs validate
 
 split Coding 从冻结 main SHA 创建 `ai-work-flow/<plan_id>/integration` 和 `.worktrees/<plan_id>`。每个 task 从最新 plan SHA 创建独立 branch/worktree，只执行 acceptance、write scope 与聚焦验证；提交后以 `--no-ff` 整合到 plan，再将当前 task 文件全部复选框勾选并创建完成提交，最后在 ancestry、worktree 删除和 branch 删除均有证明后 cleanup。plan 累计验证要求整合/完成 SHA 链连续、全部 task cleanup 完整、每项 acceptance 有证据且所有 verification 均通过；`blocked_by` 只有在前置 task 完成整合、勾选和 cleanup 后才满足。
 
-全部预期 task 完成后，流程对原始 main base 到最新 plan SHA 执行累计验收和验证，构造覆盖全部 task slices 的 ReviewPacket，并固定执行 Standards/Spec 双轴评审。main 漂移时最多 resync 两轮，每轮先累计重验再完整复审；最终仅 fast-forward main 到已通过评审的 plan SHA，精确匹配后清理 plan。冲突、失败验证、未通过评审、SHA 漂移或身份不明状态都保留本地现场，不 push。
+全部预期 task 完成后，流程对原始 main base 到最新 plan SHA 执行累计验收和验证，构造覆盖全部 task slices 的 ReviewPacket，并让 Standards/Spec 两轴并行评审一次。书面规范违例与 Spec 违例是 blocking；Fowler smells 只作 advisory。存在 blocking 时一次性修复完整 ID 集，验证并提交后以 `review_resolution` 直接进入整合，不做修复后复审。main 漂移时最多 resync 两轮，每轮先累计重验再评审新的最终 revision，该 revision 同样最多修复一次；最终仅 fast-forward main 到通过评审或具备完整修复证据的 plan SHA。冲突、失败验证、ID/SHA 不一致或身份不明状态都保留本地现场，不 push。
 
 **Planning**/**Coding** 只有 `Task`，不直接使用 Shell、Git、文件编辑或网络。实施、Git、审查与支持子代理返回固定 `TaskResult`，主代理验证完整内容后传给下一 action。自动授权不包含 push、stash、reset、clean、amend、tag、PR 或远端修改。
 

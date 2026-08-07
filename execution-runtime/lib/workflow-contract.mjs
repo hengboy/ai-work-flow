@@ -199,7 +199,7 @@ function evidenceArray(value, fields) {
 }
 
 function validateFinding(finding, spec) {
-  const fields = ["id", "summary", "observable_impact", "slice_id", "path", "hunk", "minimum_fix"];
+  const fields = ["id", "summary", "observable_impact", "slice_id", "path", "hunk", "minimum_fix", "basis", "source"];
   if (spec) fields.push("requirement");
   assertObjectFields(finding, fields, "finding", true);
   for (const field of fields) if (!nonEmpty(finding[field], field)) throw new Error(`finding requires non-empty ${field}`);
@@ -440,6 +440,10 @@ export function validateActionInput(actionId, input, contract) {
     validateWriteScope(input.write_scope, "Action input.write_scope");
   }
   for (const [field, value] of Object.entries(input)) if (contract.structured_content[field]) validateStructuredContent(field, value, contract);
+  if (contract.actions[actionId].io_contract === "finding_fix" &&
+    (input.review_result.verdict !== "blocking" || !sameStringSet(input.finding_ids, input.review_result.finding_ids))) {
+    throw new Error("Finding fix requires the complete blocking ID set from the current review_result");
+  }
   if (["planning.write_spec", "planning.select_task_mode", "planning.write_plan", "planning.sync_plan_tasks"].includes(actionId)) {
     const expected = planningPath(input.plan_id, ["planning.write_plan", "planning.sync_plan_tasks"].includes(actionId) ? "plan.md" : "spec.md");
     if (!expected || input.target !== expected || !SHA256.test(input.source_digest)) {
@@ -476,12 +480,12 @@ export function validateActionInput(actionId, input, contract) {
     throw new Error("planning.verify_tasks requires the writer manifest bound to the confirmed preview and task paths");
   }
   if (["coding.prepare_task", "coding.implement_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task",
-    "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"].includes(actionId) &&
+    "coding.validate_plan", "coding.validate_resynced_plan", "coding.validate_final_resynced_plan"].includes(actionId) &&
     ((Object.hasOwn(input, "plan_id") && !LOWERCASE_KEBAB_ID.test(input.plan_id)) ||
       (Object.hasOwn(input, "task_id") && !LOWERCASE_KEBAB_ID.test(input.task_id)))) {
     throw new Error("Split task actions require lowercase kebab-case plan_id and task_id");
   }
-  if (["coding.prepare_task", "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"].includes(actionId) &&
+  if (["coding.prepare_task", "coding.validate_plan", "coding.validate_resynced_plan", "coding.validate_final_resynced_plan"].includes(actionId) &&
     !SHA256.test(input.plan_digest)) {
     throw new Error("Split plan actions require a SHA-256 plan_digest");
   }
@@ -506,15 +510,39 @@ export function validateActionInput(actionId, input, contract) {
   if (actionId === "coding.cleanup_task" && input.task_branch !== `ai-work-flow/${input.plan_id}/tasks/${input.task_id}`) {
     throw new Error("coding.cleanup_task branch identity is invalid");
   }
-  if (["coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"].includes(actionId)) {
+  if (["coding.validate_plan", "coding.validate_resynced_plan", "coding.validate_final_resynced_plan"].includes(actionId)) {
     validatePlanTaskEvidence(input);
   }
   if (contract.actions[actionId].io_contract === "review_integration") {
     const skipped = input.review_disposition.mode === "skipped_small_change";
     validateReviewDispositionBinding(input.review_disposition, input.review_packet);
-    if (input.review_sha !== input.feature_sha || input.review_sha !== input.review_packet.review_sha) throw new Error("Review integration SHA identity is invalid");
-    if (skipped && Object.hasOwn(input, "review_result")) throw new Error("Skipped review integration must not include review_result");
-    if (!skipped && (!input.review_result || input.review_result.verdict !== "passed")) throw new Error("Dual-axis review integration requires a passed review_result");
+    if (input.frozen_state.clean !== true || input.review_sha !== input.review_packet.review_sha) throw new Error("Review integration SHA identity or clean state is invalid");
+    if (skipped) {
+      if (input.feature_sha !== input.review_sha || Object.hasOwn(input, "review_result") || Object.hasOwn(input, "review_resolution")) {
+        throw new Error("Skipped review integration requires the unchanged reviewed SHA and no review evidence");
+      }
+    } else if (input.review_result?.verdict === "passed") {
+      if (input.feature_sha !== input.review_sha || Object.hasOwn(input, "review_resolution")) {
+        throw new Error("Passed review integration requires the unchanged reviewed SHA and no resolution");
+      }
+    } else if (input.review_result?.verdict === "blocking" && input.review_resolution) {
+      const resolution = input.review_resolution;
+      if (resolution.review_sha !== input.review_sha || resolution.resolved_sha !== input.feature_sha ||
+        resolution.change_evidence.base_sha !== input.review_sha || resolution.change_evidence.head_sha !== input.feature_sha ||
+        !sameStringSet(resolution.fixed_finding_ids, input.review_result.finding_ids) ||
+        resolution.change_evidence.verification.some((entry) => entry.result !== "passed")) {
+        throw new Error("Review resolution is not bound to the blocking review, final SHA, and passed verification");
+      }
+    } else {
+      throw new Error("Dual-axis review integration requires passed review evidence or a complete blocking review resolution");
+    }
+  }
+  if (contract.actions[actionId].io_contract === "review_fix_commit") {
+    if (input.review_result.verdict !== "blocking" || input.change_evidence.base_sha !== input.review_sha ||
+      !sameStringSet(input.fixed_finding_ids, input.review_result.finding_ids) ||
+      input.change_evidence.verification.some((entry) => entry.result !== "passed")) {
+      throw new Error("Review fix commit requires the complete blocking ID set and passed evidence bound to the reviewed SHA");
+    }
   }
   return input;
 }
@@ -570,17 +598,18 @@ export function validateTaskResult(actionId, taskResult, contract, actionInput) 
     "planning.write_spec", "planning.select_task_mode", "planning.write_plan", "planning.preview_tasks", "planning.revise_task_preview",
     "planning.sync_plan_tasks",
     "planning.confirm_task_preview", "planning.write_tasks", "planning.verify_tasks",
-    "coding.implement", "coding.fix_direct", "coding.fix_1", "coding.fix_2",
+    "coding.implement", "coding.fix_direct", "coding.fix_review", "coding.fix_resynced_review", "coding.fix_final_resynced_review",
     "coding.prepare_task", "coding.implement_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task",
-    "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2",
-    "coding.prepare_resync_review_1", "coding.prepare_resync_review_2",
-    "coding.review", "coding.rereview_1", "coding.rereview_2", "coding.resync_review_1", "coding.resync_review_2",
-    "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2",
+    "coding.commit_review_fix", "coding.commit_resynced_review_fix", "coding.commit_final_resynced_review_fix",
+    "coding.prepare_review",
+    "coding.prepare_resynced_review", "coding.prepare_final_resynced_review",
+    "coding.review", "coding.review_resynced", "coding.review_final_resynced",
+    "coding.validate_plan", "coding.validate_resynced_plan", "coding.validate_final_resynced_plan",
   ]);
-  const reviewResultBranches = ["coding.review", "coding.rereview_1", "coding.rereview_2", "coding.resync_review_1", "coding.resync_review_2"];
+  const reviewResultBranches = ["coding.review", "coding.review_resynced", "coding.review_final_resynced"];
   if (inputBoundActions.has(actionId) && (taskResult.result === "completed" ||
     (actionId === "coding.integrate_task" && taskResult.result === "needs_decision") ||
-    (reviewResultBranches.includes(actionId) && ["retryable_failure", "needs_decision"].includes(taskResult.result)))) {
+    (reviewResultBranches.includes(actionId) && taskResult.result === "retryable_failure"))) {
     if (!actionInput) throw new Error(`${actionId} result validation requires action input`);
     validateActionInput(actionId, actionInput, contract);
   }
@@ -649,9 +678,22 @@ export function validateTaskResult(actionId, taskResult, contract, actionInput) 
     !implementationResultMatchesInput(taskResult, actionInput)) {
     throw new Error(`${actionId} result is not bound to implementation input and evidence`);
   }
-  if (["coding.fix_1", "coding.fix_2"].includes(actionId) && taskResult.result === "completed" &&
-    (!implementationResultMatchesInput(taskResult, actionInput) || !sameStringSet(taskResult.fixed_finding_ids, actionInput.finding_ids))) {
+  if (["coding.fix_review", "coding.fix_resynced_review", "coding.fix_final_resynced_review"].includes(actionId) && taskResult.result === "completed" &&
+    (actionInput.review_result.verdict !== "blocking" || !sameStringSet(actionInput.finding_ids, actionInput.review_result.finding_ids) ||
+      !implementationResultMatchesInput(taskResult, actionInput) || !sameStringSet(taskResult.fixed_finding_ids, actionInput.finding_ids) ||
+      taskResult.change_evidence.verification.some((entry) => entry.result !== "passed"))) {
     throw new Error(`${actionId} result is not bound to finding input and implementation evidence`);
+  }
+  if (["coding.commit_review_fix", "coding.commit_resynced_review_fix", "coding.commit_final_resynced_review_fix"].includes(actionId) && taskResult.result === "completed") {
+    const evidencePaths = actionInput.change_evidence.path_changes.flatMap((change) =>
+      [change.path, ...(change.source_path ? [change.source_path] : [])]);
+    const resolution = taskResult.review_resolution;
+    if (taskResult.commit_sha !== actionInput.change_evidence.head_sha || taskResult.commit_sha !== resolution.resolved_sha ||
+      taskResult.clean_state.clean !== true || !sameStringSet(taskResult.committed_paths, evidencePaths) ||
+      resolution.review_sha !== actionInput.review_sha || !sameStringSet(resolution.fixed_finding_ids, actionInput.review_result.finding_ids) ||
+      digestValue(resolution.change_evidence) !== digestValue(actionInput.change_evidence)) {
+      throw new Error(`${actionId} result is not a clean committed resolution of the complete blocking finding set`);
+    }
   }
   if (actionId === "coding.commit_task" && taskResult.result === "completed") {
     const evidencePaths = actionInput.change_evidence.path_changes.flatMap((change) =>
@@ -682,7 +724,7 @@ export function validateTaskResult(actionId, taskResult, contract, actionInput) 
       throw new Error("coding.cleanup_task requires task ancestry and branch/worktree removal proof with exact SHA identity");
     }
   }
-  if (["coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"].includes(actionId) && taskResult.result === "completed") {
+  if (["coding.validate_plan", "coding.validate_resynced_plan", "coding.validate_final_resynced_plan"].includes(actionId) && taskResult.result === "completed") {
     const sliceTaskIds = taskResult.slices.map((slice) => slice.task_id);
     const reviewVerification = taskResult.review_basis.verification.map(({ command, result }) => ({ command, result }));
     if (taskResult.plan_id !== actionInput.plan_id || taskResult.main_base_sha !== actionInput.main_base_sha ||
@@ -699,8 +741,7 @@ export function validateTaskResult(actionId, taskResult, contract, actionInput) 
       throw new Error("Plan validation result is not bound to the complete clean plan review range and task slices");
     }
   }
-  if (["coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2",
-    "coding.prepare_resync_review_1", "coding.prepare_resync_review_2"].includes(actionId) && taskResult.result === "completed") {
+  if (["coding.prepare_review", "coding.prepare_resynced_review", "coding.prepare_final_resynced_review"].includes(actionId) && taskResult.result === "completed") {
     const { changed_file_count, changed_line_count, change_types, ...packetBasis } = taskResult.review_packet.review_context;
     if (taskResult.review_packet.base_sha !== actionInput.base_sha || taskResult.review_packet.review_sha !== actionInput.review_sha ||
       digestValue(taskResult.review_packet.slices) !== digestValue(actionInput.slices) ||
@@ -708,11 +749,13 @@ export function validateTaskResult(actionId, taskResult, contract, actionInput) 
       throw new Error(`${actionId} result is not bound to review range and slices`);
     }
   }
-  if (["coding.review", "coding.rereview_1", "coding.rereview_2", "coding.resync_review_1", "coding.resync_review_2"].includes(actionId) &&
-    ["completed", "retryable_failure", "needs_decision"].includes(taskResult.result)) {
+  if (["coding.review", "coding.review_resynced", "coding.review_final_resynced"].includes(actionId) &&
+    ["completed", "retryable_failure"].includes(taskResult.result)) {
     const sliceIds = actionInput.review_packet.slices.map((slice) => slice.id);
     const axes = taskResult.review_result.axis_results.map((axis) => axis.axis);
-    if (JSON.stringify(taskResult.finding_ids) !== JSON.stringify(taskResult.review_result.finding_ids) ||
+    if ((taskResult.result === "completed") !== (taskResult.review_result.verdict === "passed") ||
+      (taskResult.result === "retryable_failure") !== (taskResult.review_result.verdict === "blocking") ||
+      JSON.stringify(taskResult.finding_ids) !== JSON.stringify(taskResult.review_result.finding_ids) ||
       JSON.stringify(taskResult.coverage) !== JSON.stringify(taskResult.review_result.coverage) ||
       !sameStringSet(taskResult.coverage, sliceIds) || !sameStringSet(axes, actionInput.assigned_axes)) {
       throw new Error(`${actionId} result is not bound to assigned review axes and slices`);
@@ -769,8 +812,8 @@ export function validateStructuredContent(kind, content, contract) {
     content.slices.some((slice) => !isPlainObject(slice)))) throw new Error("review_packet is invalid");
   if (kind === "review_disposition") {
     if (!["dual_axis", "skipped_small_change"].includes(content.mode) ||
-      !["direct_bug", "direct_small_feature", "approved_plan", "finding_fix", "rereview", "resync"].includes(content.origin) ||
-      !["initial", "rereview", "resync"].includes(content.stage) || !Number.isSafeInteger(content.changed_file_count) || content.changed_file_count < 0 ||
+      !["direct_bug", "direct_small_feature", "approved_plan", "resync"].includes(content.origin) ||
+      !["initial", "resync"].includes(content.stage) || !Number.isSafeInteger(content.changed_file_count) || content.changed_file_count < 0 ||
       !Number.isSafeInteger(content.changed_line_count) || content.changed_line_count < 0 || !stringArray(content.change_types) || content.change_types.some((type) => !CHANGE_TYPES.includes(type)) ||
       !Array.isArray(content.criteria) || !Array.isArray(content.sensitive_areas) || typeof content.user_notice !== "string" || !content.user_notice.trim() ||
       content.criteria.some((criterion) => !isPlainObject(criterion) || !["passed", "failed", "indeterminate"].includes(criterion.status) || typeof criterion.evidence !== "string" || !criterion.evidence.trim()) ||
@@ -803,6 +846,13 @@ export function validateStructuredContent(kind, content, contract) {
   if (kind === "review_axis_result") {
     if (!["standards", "spec"].includes(content.axis) || !Array.isArray(content.findings) || !Array.isArray(content.advisory_findings) || !stringArray(content.coverage)) throw new Error("review_axis_result is invalid");
     for (const finding of [...content.findings, ...content.advisory_findings]) validateFinding(finding, content.axis === "spec");
+    if (content.axis === "standards" && (content.findings.some((finding) => finding.basis !== "documented_standard") ||
+      content.advisory_findings.some((finding) => finding.basis !== "fowler_smell"))) {
+      throw new Error("Standards findings must classify documented standards as blocking and Fowler smells as advisory");
+    }
+    if (content.axis === "spec" && (content.advisory_findings.length > 0 || content.findings.some((finding) => finding.basis !== "spec_requirement"))) {
+      throw new Error("Spec findings must be blocking spec requirements and advisory findings must be empty");
+    }
     const findingIds = [...content.findings, ...content.advisory_findings].map((finding) => finding.id);
     if (new Set(findingIds).size !== findingIds.length) throw new Error("review_axis_result finding IDs must be unique");
   }
@@ -814,6 +864,14 @@ export function validateStructuredContent(kind, content, contract) {
     const coverage = [...new Set(content.axis_results.flatMap((axis) => axis.coverage))].sort();
     if (new Set(content.axis_results.map((axis) => axis.axis)).size !== 2 || JSON.stringify([...content.finding_ids].sort()) !== JSON.stringify(findingIds) ||
       JSON.stringify([...content.coverage].sort()) !== JSON.stringify(coverage) || (findingIds.length > 0) !== (content.verdict === "blocking")) throw new Error("review_result axes, verdict, finding IDs, or coverage are invalid");
+  }
+  if (kind === "review_resolution") {
+    if (!/^[0-9a-f]{40,64}$/.test(content.review_sha) || !/^[0-9a-f]{40,64}$/.test(content.resolved_sha) ||
+      content.review_sha === content.resolved_sha || !stringArray(content.fixed_finding_ids) ||
+      content.change_evidence.base_sha !== content.review_sha || content.change_evidence.head_sha !== content.resolved_sha ||
+      content.change_evidence.verification.some((entry) => entry.result !== "passed")) {
+      throw new Error("review_resolution is invalid or has failed verification");
+    }
   }
   return content;
 }

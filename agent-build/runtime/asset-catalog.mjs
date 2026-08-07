@@ -240,9 +240,9 @@ function typedField(field, schemas) {
 
 function resultTemplate(name, output) {
   const fields = [...new Set([...output.required_fields, ...(output.required_error_fields ?? [])])];
-  const required = [`result:"${name}"`, "summary", ...fields].join(",");
+  const required = fields.join(",") || "无";
   const optional = output.optional_fields.length ? `；可选字段=${output.optional_fields.join(",")}` : "";
-  return `\`{${required}}\`${optional}`;
+  return `\`${name}\`=>必需=${required}${optional}`;
 }
 
 function fieldTypes(results, schemas) {
@@ -276,16 +276,14 @@ function contractGroupText(ids, ioName, contract, roleNames, includeStructures =
     ...Object.values(io.result_contracts).flatMap((output) => [...output.required_fields, ...output.optional_fields]),
   ];
   const structures = includeStructures ? structuredSchemaText(structuredFields, contract) : "";
-  return `- Actions：${actions}\n  - 输入：必需=${input.required_fields.join(",") || "无"}；可选=${input.optional_fields.join(",") || "无"}。\n  - \`TaskResult\` 验收：${results}。${structures ? `\n  - 完整结构：${structures}。` : ""}`;
+  return `- Actions：${actions}\n  - 输入必需=${input.required_fields.join(",") || "无"}；可选=${input.optional_fields.join(",") || "无"}。\n  - 分支验收：${results}。${structures ? `\n  - 完整结构：${structures}。` : ""}`;
 }
 
 function supportContractText(roleIds, contract, roleNames) {
   return roleIds.map((roleId) => {
     const results = contract.support_result_contracts[roleId];
     const templates = Object.entries(results).map(([name, output]) => resultTemplate(name, output)).join("；");
-    const fields = Object.values(results).flatMap((output) => [...output.required_fields, ...output.optional_fields]);
-    const structures = structuredSchemaText(fields, contract);
-    return `- 支持委派：**${roleNames.get(roleId) ?? roleId}**\n  - \`TaskResult\` 验收：${templates}。${structures ? `\n  - 完整结构：${structures}。` : ""}`;
+    return `- 支持委派：**${roleNames.get(roleId) ?? roleId}**\n  - 分支验收：${templates}。`;
   }).join("\n");
 }
 
@@ -296,7 +294,7 @@ function actionText(role, contract, schemas, roles) {
     const templates = Object.entries(results).map(([name, output]) => resultTemplate(name, output)).join("；");
     const fields = Object.values(results).flatMap((output) => [...output.required_fields, ...output.optional_fields]);
     const structures = structuredSchemaText(fields, contract);
-    return `- 字段类型：${fieldTypes(results, schemas)}。\n- 支持委派 \`TaskResult\` 验收：${templates}。${structures ? `\n  - 完整结构：${structures}。` : ""}`;
+    return `- \`TaskResult\` 每个分支固定必需 \`result\`、\`summary\`；字段类型：${fieldTypes(results, schemas)}。\n- 支持委派分支验收：${templates}。${structures ? `\n  - 完整结构：${structures}。` : ""}`;
   }
   const ownedWorkflowActionIds = role.kind === "primary"
     ? Object.keys(contract.actions).filter((id) => contract.workflows[contract.actions[id].workflow]?.orchestrator === role.id)
@@ -313,16 +311,20 @@ function actionText(role, contract, schemas, roles) {
   for (const roleId of supportRoleIds) for (const [name, output] of Object.entries(contract.support_result_contracts[roleId])) {
     resultContracts[`support:${roleId}:${name}`] = output;
   }
-  const primaryStructures = role.kind === "primary" ? structuredSchemaText([...groups].flatMap(([ioName]) => {
+  const actionStructures = structuredSchemaText([
+    ...[...groups].flatMap(([ioName]) => {
     const io = contract.io_contracts[ioName];
     return [
       ...io.input_contract.required_fields, ...io.input_contract.optional_fields,
       ...Object.values(io.result_contracts).flatMap((output) => [...output.required_fields, ...output.optional_fields]),
     ];
-  }), contract) : "";
-  const groupText = [...groups].map(([ioName, ids]) => contractGroupText(ids, ioName, contract, roleNames, role.kind !== "primary")).join("\n");
+    }),
+    ...supportRoleIds.flatMap((roleId) => Object.values(contract.support_result_contracts[roleId])
+      .flatMap((output) => [...output.required_fields, ...output.optional_fields])),
+  ], contract);
+  const groupText = [...groups].map(([ioName, ids]) => contractGroupText(ids, ioName, contract, roleNames, false)).join("\n");
   const supportText = supportContractText(supportRoleIds, contract, roleNames);
-  return `- 字段类型：${fieldTypes(resultContracts, schemas)}。\n${groupText}${supportText ? `\n${supportText}` : ""}${primaryStructures ? `\n- 完整结构：${primaryStructures}。` : ""}`;
+  return `- \`TaskResult\` 每个分支固定必需 \`result\`、\`summary\`；字段类型：${fieldTypes(resultContracts, schemas)}。\n${groupText}${supportText ? `\n${supportText}` : ""}${actionStructures ? `\n- 完整结构：${actionStructures}。` : ""}`;
 }
 
 function controlsText(role, controls, policies) {
@@ -339,7 +341,7 @@ function controlsText(role, controls, policies) {
 
 function resultText(role) {
   if (role.kind === "primary") return "每次委派附对应验收模板，并要求 `TaskResult` 使用 2 个空格缩进的多行 JSON。收到可解析 JSON 对象后检查 `result`、字段类型、必需字段、额外字段和完整结构；合格才进入下一 action。不合格时指出字段路径、预期与实际类型并要求原地重返，不重复任务。";
-  return "只返回一个可解析的 JSON `TaskResult` 对象，并使用 2 个空格缩进的多行格式，无前后文字或 code fence。字段置于顶层，不使用 `outputs`/`error` 包装；空数组返回 `[]`，不得以字符串代替数组。仅使用当前结果分支允许的字段，完整结构不得用摘要、路径或省略号代替。";
+  return "仅返回可解析、2 空格缩进的多行 JSON `TaskResult`；无前后文或 code fence。字段置顶层，不用 `outputs`/`error`；空数组为 `[]`，不用字符串。只含分支字段；结构不用摘要、路径或省略号代替。";
 }
 
 export function loadAgentAssets(configRoot = resolve(import.meta.dirname, "..", "config"), templatesRoot = resolve(import.meta.dirname, "..", "templates"), workflowContractPath = contractPath()) {

@@ -24,13 +24,15 @@
 
 按 contract 委派并附返回验收，只收可解析 JSON。验证字段、类型和完整结构后原样交接；格式错误只要求重返对象。
 
-single/direct 实施后照旧提交并调用 `coding.prepare_review`；`review_basis` 冻结来源/阶段、objective/IDs/acceptance/scope、完整审查选择和验证。验证 packet context/mode/disposition 绑定。仅 `review_mode=dual_axis` 委派 **Code Reviewer**；`review_mode=skipped_small_change` 直接进入 `review_passed` 并立即提示：“本次变更符合低风险小改动快速通道，未执行 Standards/Spec 双轴审查；已完成聚焦自动化验证和 Git 状态校验。”整合原样传递 packet/disposition。修复/复审、main 同步各最多两轮；single/direct resync 保持原链，只有 split 在 resync 后先调用对应 `coding.validate_plan_resync_*` 累计重验，再准备覆盖全部 task slices 的双轴复审。
+single/direct 实施后照旧提交并调用 `coding.prepare_review`；`review_basis` 冻结来源/阶段、objective/IDs/acceptance/scope、完整审查选择和验证。验证 packet context/mode/disposition 绑定。仅 `review_mode=dual_axis` 委派 **Code Reviewer**；`review_mode=skipped_small_change` 进入 `review_resolved` 并立即提示：“本次变更符合低风险小改动快速通道，未执行 Standards/Spec 双轴审查；已完成聚焦自动化验证和 Git 状态校验。”整合时原样传递 packet/disposition。
 
-中断按 Git 事实定位，不称恢复。
+每个 revision 只正式评审一次。blocking 时把完整 `finding_ids` 交给对应 `coding.fix_review|fix_resynced_review|fix_final_resynced_review`；不得少修、多修或修 advisory。全 passed 后提交 `review_resolution={review_sha,resolved_sha,fixed_finding_ids,change_evidence}`，不再复审，直接整合。失败或 ID 不一致即停止；三种整合证据互斥。
+
+仅 main 漂移可产生额外评审，最多自动 resync 两次。single/direct resync 保持对应语义链；split 在 resync 后先调用 `coding.validate_resynced_plan` 或 `coding.validate_final_resynced_plan` 累计重验，再准备覆盖全部 task slices 的双轴评审。每个新 revision 仍只允许一次完整 blocking 修复。中断按 Git 事实定位，不称恢复。
 
 ## 完成标准
 
-仅在提交、有效快速通道 disposition 或 passed 双轴审查、必要修复、整合与清理均有完整 `TaskResult` 和 Git 事实时完成。使用快速通道时最终再次原样显示：“本次变更符合低风险小改动快速通道，未执行 Standards/Spec 双轴审查；已完成聚焦自动化验证和 Git 状态校验。”
+仅在提交、有效快速通道 disposition、passed 双轴审查或完整 `review_resolution`、必要修复、整合与清理均有完整 `TaskResult` 和 Git 事实时完成。使用快速通道时最终再次原样显示：“本次变更符合低风险小改动快速通道，未执行 Standards/Spec 双轴审查；已完成聚焦自动化验证和 Git 状态校验。”
 
 ## 决策条件
 

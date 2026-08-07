@@ -93,6 +93,7 @@ const passedReviewResult = {
 const blockingFinding = {
   id: "STD-1", summary: "Blocking issue", observable_impact: "Behavior is incorrect", slice_id: "slice-1",
   path: "src/app.mjs", hunk: "@@ -1 +1 @@", minimum_fix: "Correct the behavior",
+  basis: "documented_standard", source: "MEMORY.md: documented rule",
 };
 const blockingReviewResult = {
   axis_results: [
@@ -117,12 +118,23 @@ test("contract is generation-only and assigns valid action transitions", async (
   for (const io of Object.values(contract.io_contracts)) for (const resultContract of Object.values(io.result_contracts)) {
     assert.deepEqual(resultContract.required_fields.filter((field) => resultContract.required_error_fields?.includes(field)), []);
   }
-  assert.deepEqual(contract.actions["coding.resync_1"].completed_to_by_task_mode, {
-    single: "revalidated_1", split: "resynced_1",
+  assert.deepEqual(contract.actions["coding.resync_main"].completed_to_by_task_mode, {
+    single: "resynced_plan_validated", split: "resynced",
   });
-  assert.deepEqual(contract.actions["coding.resync_2"].completed_to_by_task_mode, {
-    single: "revalidated_2", split: "resynced_2",
+  assert.deepEqual(contract.actions["coding.final_resync_main"].completed_to_by_task_mode, {
+    single: "final_resynced_plan_validated", split: "final_resynced",
   });
+  assert.equal(Object.hasOwn(contract.budgets, "review_fix_rounds"), false);
+  assert.equal(Object.keys(contract.actions).some((action) => /_(?:1|2)$/.test(action) || action.includes("rereview")), false);
+  assert.equal(contract.actions["coding.review"].retryable_to, "review_fix_required");
+  assert.equal(contract.actions["coding.fix_review"].completed_to, "review_fixed");
+  assert.equal(contract.actions["coding.commit_review_fix"].completed_to, "review_resolved");
+  assert.equal(contract.actions["coding.review_resynced"].retryable_to, "resynced_review_fix_required");
+  assert.equal(contract.actions["coding.commit_resynced_review_fix"].completed_to, "resynced_review_resolved");
+  assert.equal(contract.actions["coding.review_final_resynced"].retryable_to, "final_resynced_review_fix_required");
+  assert.equal(contract.actions["coding.commit_final_resynced_review_fix"].completed_to, "final_resynced_review_resolved");
+  assert.equal(contract.decision_codes.includes("REPEATED_REVIEW_FINDING"), false);
+  assert.equal(contract.decision_codes.includes("REVIEW_FIX_BUDGET_EXHAUSTED"), false);
   assert.equal(contract.actions["planning.write_spec"].from, "context_ready");
   assert.equal(contract.actions["planning.write_spec"].completed_to, "spec_ready");
   assert.equal(contract.actions["planning.select_task_mode"].from, "spec_ready");
@@ -462,6 +474,30 @@ test("review result contains two raw review axes", async () => {
   }, contract, reviewInput), /assigned review axes and slices/);
 });
 
+test("review findings enforce standards and spec classification", async () => {
+  const contract = await loadWorkflowContract();
+  const smell = { ...blockingFinding, id: "SMELL-1", basis: "fowler_smell", source: "Feature Envy" };
+  const specFinding = {
+    ...blockingFinding, id: "SPEC-1", basis: "spec_requirement", source: "acceptance: Behavior is fixed",
+    requirement: "Behavior is fixed",
+  };
+  assert.equal(validateStructuredContent("review_axis_result", {
+    axis: "standards", findings: [blockingFinding], advisory_findings: [smell], coverage: ["slice-1"],
+  }, contract).axis, "standards");
+  assert.throws(() => validateStructuredContent("review_axis_result", {
+    axis: "standards", findings: [smell], advisory_findings: [], coverage: ["slice-1"],
+  }, contract), /documented standards as blocking/);
+  assert.throws(() => validateStructuredContent("review_axis_result", {
+    axis: "standards", findings: [], advisory_findings: [blockingFinding], coverage: ["slice-1"],
+  }, contract), /Fowler smells as advisory/);
+  assert.equal(validateStructuredContent("review_axis_result", {
+    axis: "spec", findings: [specFinding], advisory_findings: [], coverage: ["slice-1"],
+  }, contract).axis, "spec");
+  assert.throws(() => validateStructuredContent("review_axis_result", {
+    axis: "spec", findings: [], advisory_findings: [specFinding], coverage: ["slice-1"],
+  }, contract), /advisory findings must be empty/);
+});
+
 test("initial direct bug and small feature may skip dual-axis review", async () => {
   const contract = await loadWorkflowContract();
   for (const origin of ["direct_bug", "direct_small_feature"]) {
@@ -489,8 +525,6 @@ test("small-change review disposition fails closed", async (t) => {
     ["failed verification", { criterionStatuses: { automated_verification_passed: "failed" } }],
     ["full review requested", { criterionStatuses: { full_review_not_requested: "failed" } }],
     ["approved plan", { origin: "approved_plan" }],
-    ["finding fix", { origin: "finding_fix" }],
-    ["rereview", { origin: "rereview", stage: "rereview" }],
     ["main resync", { origin: "resync", stage: "resync" }],
   ];
   for (const [name, options] of cases) await t.test(name, () => {
@@ -514,12 +548,10 @@ test("review preparation prevents mode mismatch and skips outside the initial ac
   assert.throws(() => validateTaskResult("coding.prepare_review", {
     ...result, review_mode: "dual_axis",
   }, contract, reviewPrepareInputFor(reviewPacket)), /must match/);
-  assert.throws(() => validateTaskResult("coding.prepare_rereview_1", result, contract, reviewPrepareInputFor(reviewPacket)), /Only coding\.prepare_review/);
+  assert.throws(() => validateTaskResult("coding.prepare_resynced_review", result, contract, reviewPrepareInputFor(reviewPacket)), /Only coding\.prepare_review/);
   for (const [action, disposition] of [
-    ["coding.prepare_rereview_1", reviewDisposition({ origin: "rereview", stage: "rereview" })],
-    ["coding.prepare_rereview_2", reviewDisposition({ origin: "rereview", stage: "rereview" })],
-    ["coding.prepare_resync_review_1", reviewDisposition({ origin: "resync", stage: "resync" })],
-    ["coding.prepare_resync_review_2", reviewDisposition({ origin: "resync", stage: "resync" })],
+    ["coding.prepare_resynced_review", reviewDisposition({ origin: "resync", stage: "resync" })],
+    ["coding.prepare_final_resynced_review", reviewDisposition({ origin: "resync", stage: "resync" })],
   ]) {
     const packet = reviewPacketFor(disposition);
     assert.equal(validateTaskResult(action, {
@@ -544,19 +576,85 @@ test("review integration enforces mode-specific evidence", async () => {
     review_packet: reviewPacketFor(dual), review_disposition: dual,
   };
   assert.equal(validateActionInput("coding.integrate", skippedBase, contract).review_disposition, skipped);
-  assert.throws(() => validateActionInput("coding.integrate", {
-    ...skippedBase, review_result: passedReviewResult,
-  }, contract), /must not include review_result/);
+  assert.throws(() => validateActionInput("coding.integrate", { ...skippedBase, review_result: passedReviewResult }, contract), /no review evidence/);
   assert.equal(validateActionInput("coding.integrate", {
     ...dualBase, review_result: passedReviewResult,
   }, contract).review_result, passedReviewResult);
-  assert.throws(() => validateActionInput("coding.integrate", dualBase, contract), /requires a passed review_result/);
+  assert.throws(() => validateActionInput("coding.integrate", dualBase, contract), /passed review evidence or a complete blocking review resolution/);
   assert.throws(() => validateActionInput("coding.integrate", {
     ...dualBase, review_result: blockingReviewResult,
-  }, contract), /requires a passed review_result/);
+  }, contract), /passed review evidence or a complete blocking review resolution/);
   assert.throws(() => validateActionInput("coding.integrate", {
     ...skippedBase, feature_sha: sha("c"),
-  }, contract), /SHA identity/);
+  }, contract), /unchanged reviewed SHA/);
+
+  const fixEvidence = {
+    base_sha: sha("b"), head_sha: sha("c"), path_changes: [pathChange],
+    acceptance_evidence: [{ criterion: "Behavior is fixed", evidence: "focused regression passed" }],
+    verification: [{ command: "node --test test/focused.test.mjs", result: "passed" }],
+  };
+  const resolution = {
+    review_sha: sha("b"), resolved_sha: sha("c"), fixed_finding_ids: ["STD-1"], change_evidence: fixEvidence,
+  };
+  const fixedBase = { ...dualBase, feature_sha: sha("c"), review_result: blockingReviewResult, review_resolution: resolution };
+  assert.equal(validateActionInput("coding.integrate", fixedBase, contract).review_resolution, resolution);
+  assert.throws(() => validateActionInput("coding.integrate", {
+    ...fixedBase, review_resolution: { ...resolution, fixed_finding_ids: ["STD-1", "EXTRA"] },
+  }, contract), /not bound/);
+  assert.throws(() => validateActionInput("coding.integrate", {
+    ...fixedBase, review_resolution: { ...resolution, review_sha: sha("a") },
+  }, contract), /not bound|review_resolution/);
+  assert.throws(() => validateActionInput("coding.integrate", {
+    ...fixedBase, review_resolution: { ...resolution, resolved_sha: sha("d") },
+  }, contract), /not bound|review_resolution/);
+  assert.throws(() => validateActionInput("coding.integrate", {
+    ...fixedBase, review_resolution: { ...resolution, change_evidence: { ...fixEvidence, verification: [{ command: "node --test", result: "failed" }] } },
+  }, contract), /failed verification|not bound/);
+  assert.throws(() => validateActionInput("coding.integrate", {
+    ...fixedBase, frozen_state: { clean: false },
+  }, contract), /clean state/);
+});
+
+test("single review fix and resync fixes require exhaustive IDs and clean committed resolutions", async () => {
+  const contract = await loadWorkflowContract();
+  const fixInput = {
+    worktree: "/tmp/worktree", base_sha: sha("b"), finding_ids: ["STD-1"], acceptance: ["Behavior is fixed"],
+    review_result: blockingReviewResult,
+  };
+  assert.equal(validateActionInput("coding.fix_review", fixInput, contract), fixInput);
+  assert.throws(() => validateActionInput("coding.fix_review", { ...fixInput, finding_ids: ["OTHER"] }, contract), /complete blocking ID set/);
+  const changeEvidence = {
+    base_sha: sha("b"), head_sha: sha("c"), path_changes: [pathChange],
+    acceptance_evidence: [{ criterion: "Behavior is fixed", evidence: "regression passed" }],
+    verification: [{ command: "node --test test/focused.test.mjs", result: "passed" }],
+  };
+  const fixResult = {
+    result: "completed", summary: "All blocking findings fixed", head_sha: sha("c"), changed_paths: ["src/app.mjs"],
+    change_evidence: changeEvidence, fixed_finding_ids: ["STD-1"],
+  };
+  for (const action of ["coding.fix_review", "coding.fix_resynced_review", "coding.fix_final_resynced_review"]) {
+    assert.equal(validateTaskResult(action, fixResult, contract, fixInput), fixResult);
+  }
+  assert.throws(() => validateTaskResult("coding.fix_review", { ...fixResult, fixed_finding_ids: ["STD-1", "EXTRA"] }, contract, fixInput), /not bound/);
+  assert.throws(() => validateTaskResult("coding.fix_review", {
+    ...fixResult, change_evidence: { ...changeEvidence, verification: [{ command: "node --test", result: "failed" }] },
+  }, contract, fixInput), /not bound/);
+
+  const commitInput = {
+    change_evidence: changeEvidence, review_sha: sha("b"), review_result: blockingReviewResult, fixed_finding_ids: ["STD-1"],
+  };
+  const resolution = { review_sha: sha("b"), resolved_sha: sha("c"), fixed_finding_ids: ["STD-1"], change_evidence: changeEvidence };
+  const commitResult = {
+    result: "completed", summary: "Review fix committed", commit_sha: sha("c"), committed_paths: ["src/app.mjs"],
+    clean_state: { clean: true }, review_resolution: resolution,
+  };
+  assert.equal(validateTaskResult("coding.commit_review_fix", commitResult, contract, commitInput), commitResult);
+  assert.throws(() => validateTaskResult("coding.commit_review_fix", {
+    ...commitResult, clean_state: { clean: false },
+  }, contract, commitInput), /clean committed resolution/);
+  assert.throws(() => validateTaskResult("coding.commit_review_fix", {
+    ...commitResult, review_resolution: { ...resolution, fixed_finding_ids: ["OTHER"] },
+  }, contract, commitInput), /clean committed resolution/);
 });
 
 test("review evidence binding rejects conflicting or incomplete handoffs", async () => {
@@ -823,7 +921,7 @@ test("plan validation requires the complete integration set and full review slic
     ...result,
     review_basis: { ...result.review_basis, stage: "resync" },
   };
-  assert.equal(validateTaskResult("coding.validate_plan_resync_1", resyncResult, contract, input), resyncResult);
+  assert.equal(validateTaskResult("coding.validate_resynced_plan", resyncResult, contract, input), resyncResult);
 });
 
 test("execution-runtime contains only the contract, typed schemas, and validator", async () => {

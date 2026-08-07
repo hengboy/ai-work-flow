@@ -87,7 +87,7 @@
       "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "no-git-mutation"],
       "delegates": ["file-explorer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Skill", "Task"],
-      "actions": ["coding.implement", "coding.implement_task", "coding.validate_plan", "coding.validate_plan_resync_1", "coding.validate_plan_resync_2"]
+      "actions": ["coding.implement", "coding.implement_task", "coding.validate_plan", "coding.validate_resynced_plan", "coding.validate_final_resynced_plan"]
     },
     {
       "id": "bug-fixer",
@@ -98,7 +98,7 @@
       "controls": ["implementation-worktree-only", "planning-artifacts-immutable", "authorized-bug-or-finding-only", "no-git-mutation"],
       "delegates": ["file-explorer", "researcher", "document-maintainer"],
       "tools": ["Read", "Edit", "Write", "Bash", "Task"],
-      "actions": ["coding.fix_direct", "coding.fix_1", "coding.fix_2"]
+      "actions": ["coding.fix_direct", "coding.fix_review", "coding.fix_resynced_review", "coding.fix_final_resynced_review"]
     },
     {
       "id": "git-operator",
@@ -109,7 +109,7 @@
       "controls": ["safe-local-git-only"],
       "delegates": [],
       "tools": ["Read", "Bash", "Skill"],
-      "actions": ["planning.verify_tasks", "planning.commit", "coding.prepare", "coding.prepare_direct_bug", "coding.prepare_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task", "coding.commit", "coding.commit_fix_1", "coding.commit_fix_2", "coding.prepare_review", "coding.prepare_rereview_1", "coding.prepare_rereview_2", "coding.integrate", "coding.resync_1", "coding.prepare_resync_review_1", "coding.integrate_1", "coding.resync_2", "coding.prepare_resync_review_2", "coding.integrate_2", "coding.cleanup"]
+      "actions": ["planning.verify_tasks", "planning.commit", "coding.prepare", "coding.prepare_direct_bug", "coding.prepare_task", "coding.commit_task", "coding.integrate_task", "coding.cleanup_task", "coding.commit", "coding.commit_review_fix", "coding.commit_resynced_review_fix", "coding.commit_final_resynced_review_fix", "coding.prepare_review", "coding.integrate", "coding.resync_main", "coding.prepare_resynced_review", "coding.integrate_resynced", "coding.final_resync_main", "coding.prepare_final_resynced_review", "coding.integrate_final_resynced", "coding.cleanup"]
     },
     {
       "id": "environment-operator",
@@ -131,7 +131,7 @@
       "controls": ["review-read-only", "fixed-review-range-only", "review-orchestration-only"],
       "delegates": ["review-standards", "review-spec"],
       "tools": ["Read", "Glob", "Grep", "Bash", "Task"],
-      "actions": ["coding.review", "coding.rereview_1", "coding.rereview_2", "coding.resync_review_1", "coding.resync_review_2"]
+      "actions": ["coding.review", "coding.review_resynced", "coding.review_final_resynced"]
     },
     {
       "id": "review-standards",

@@ -113,7 +113,7 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("coding"), /权威任务集合是 `tasks\/NN-\*\.md`.*不得从 plan 的步骤数、候选文件或“建议任务”等叙述推断另一套 task 数量/s);
   assert.match(assets.compiledBodies.get("coding"), /不得要求 contract 未声明的“实施基线元数据”/);
   assert.match(assets.compiledBodies.get("coding"), /task 不审查/);
-  assert.match(assets.compiledBodies.get("coding"), /`coding\.implement_task`[\s\S]*`\{result:"completed",summary,task_id,head_sha,changed_paths,change_evidence,write_scope\}`/);
+  assert.match(assets.compiledBodies.get("coding"), /`TaskResult` 每个分支固定必需 `result`、`summary`[\s\S]*`coding\.implement_task`[\s\S]*`completed`=>必需=task_id,head_sha,changed_paths,change_evidence,write_scope/);
   for (const action of ["prepare_task", "implement_task", "commit_task", "integrate_task", "cleanup_task"]) {
     assert.match(assets.compiledBodies.get("coding"), new RegExp(`coding\\.${action}`));
   }
@@ -125,15 +125,15 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("full-stack-coder"), /连续 integration 链.*verification 只有全部 passed 才可 completed/s);
   assert.match(assets.compiledBodies.get("researcher"), /checks:array/);
   assert.match(assets.compiledBodies.get("coding"), /可解析 JSON 对象/);
-  assert.match(assets.compiledBodies.get("researcher"), /可解析的 JSON `TaskResult`/);
+  assert.match(assets.compiledBodies.get("researcher"), /可解析、2 空格缩进的多行 JSON `TaskResult`/);
   assert.match(assets.compiledBodies.get("coding"), /`TaskResult` 使用 2 个空格缩进的多行 JSON/);
-  assert.match(assets.compiledBodies.get("researcher"), /`TaskResult` 对象，并使用 2 个空格缩进的多行格式/);
+  assert.match(assets.compiledBodies.get("researcher"), /2 空格缩进的多行 JSON `TaskResult`/);
   assert.match(assets.compiledBodies.get("coding"), /review_mode=skipped_small_change/);
   assert.match(assets.compiledBodies.get("coding"), /未执行 Standards\/Spec 双轴审查/);
   assert.match(assets.compiledBodies.get("git-operator"), /最多 2 个被修改的文本文件/);
   assert.match(assets.compiledBodies.get("git-operator"), /增删总和不超过 50/);
   assert.match(assets.compiledBodies.get("git-operator"), /failed\|indeterminate/);
-  assert.match(assets.compiledBodies.get("git-operator"), /skipped_small_change.*禁止携带伪造的 `review_result`/);
+  assert.match(assets.compiledBodies.get("git-operator"), /三种证据严格互斥.*快速通道无 result\/resolution.*passed result 无 resolution.*blocking result.*resolution/s);
   assert.match(assets.compiledBodies.get("git-operator"), /`ai-work-flow\/<plan_id>\/integration`.*`<repository>\/\.worktrees\/<plan_id>`/);
   assert.match(assets.compiledBodies.get("git-operator"), /`ai-work-flow\/<plan_id>\/tasks\/<task_id>`.*`<repository>\/\.worktrees\/<plan_id>--<task_id>`/);
   assert.match(assets.compiledBodies.get("git-operator"), /git merge --no-ff.*git merge --abort/s);
@@ -142,6 +142,21 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("git-operator"), /task SHA 是 resulting plan SHA 祖先/);
   assert.match(assets.compiledBodies.get("git-operator"), /worktree_removed.*branch_removed.*均为 true/s);
   assert.match(assets.compiledBodies.get("code-reviewer"), /只能在 `review_mode=dual_axis` 时被调用/);
+  assert.match(assets.compiledBodies.get("code-reviewer"), /并行调度 \*\*Review Standards\*\* 与 \*\*Review Spec\*\*/);
+  assert.match(assets.compiledBodies.get("code-reviewer"), /不参与后续修复或复审/);
+  assert.match(assets.compiledBodies.get("code-reviewer"), /每轴数量和该轴最严重项.*不产生跨轴排序或“总冠军”/s);
+  assert.match(assets.compiledBodies.get("review-standards"), /不得执行通用正确性、安全或回归扫描/);
+  assert.match(assets.compiledBodies.get("review-standards"), /documented standard 只在 findings，Fowler smell 只在 advisory_findings/);
+  for (const smell of [
+    "Mysterious Name", "Duplicated Code", "Feature Envy", "Data Clumps", "Primitive Obsession", "Repeated Switches",
+    "Shotgun Surgery", "Divergent Change", "Speculative Generality", "Message Chains", "Middle Man", "Refused Bequest",
+  ]) assert.match(assets.compiledBodies.get("review-standards"), new RegExp(smell));
+  assert.match(assets.compiledBodies.get("review-spec"), /缺失或部分需求、未授权行为、实现错误/);
+  assert.match(assets.compiledBodies.get("review-spec"), /`advisory_findings=\[\]`/);
+  assert.match(assets.compiledBodies.get("bug-fixer"), /完整 blocking `finding_ids`.*一次 action/s);
+  assert.match(assets.compiledBodies.get("coding"), /每个 revision 只正式评审一次/);
+  assert.match(assets.compiledBodies.get("coding"), /不再复审，直接整合/);
+  assert.match(assets.compiledBodies.get("git-operator"), /review_resolution=\{review_sha,resolved_sha,fixed_finding_ids,change_evidence\}/);
   const gitOperator = assets.compiledBodies.get("git-operator");
   for (const literal of [
     "direct_request_origin", "initial_review_stage", "full_review_not_requested", "modified_text_files_only", "changed_file_limit",
@@ -150,7 +165,7 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   ]) assert.match(gitOperator, new RegExp(literal));
   assert.match(gitOperator, /本次变更符合低风险小改动快速通道，未执行 Standards\/Spec 双轴审查；已完成聚焦自动化验证和 Git 状态校验。/);
   assert.match(gitOperator, /review_basis/);
-  assert.match(gitOperator, /review_packet.*review_disposition.*feature\/review\/packet SHA 一致/s);
+  assert.match(gitOperator, /review_packet.*review_disposition.*三种证据严格互斥/s);
 });
 
 test("compiled prompt character limits accept the boundary and reject one character over", (t) => {
@@ -185,6 +200,7 @@ test("primary agents have Task only and Task Planner owns the complete split lif
   const planning = assets.roles.find((role) => role.id === "planning");
   assert.deepEqual(planning.tools, ["Task"]);
   const coding = assets.roles.find((role) => role.id === "coding");
+  assert.equal(assets.roles.length, 14);
   assert.deepEqual(coding.tools, ["Task"]);
   for (const role of [planning, coding]) {
     assert.equal(role.controls.includes("workflow-decision-visibility"), true, role.id);
@@ -200,6 +216,13 @@ test("primary agents have Task only and Task Planner owns the complete split lif
   assert.equal(coding.delegates.includes("planning-writer"), false);
   assert.equal(assets.contract.workflows.coding.orchestrator, "coding");
   assert.equal(assets.contract.workflows.coding_task.orchestrator, "coding");
+  assert.deepEqual(assets.roles.find((role) => role.id === "code-reviewer").actions, ["coding.review", "coding.review_resynced", "coding.review_final_resynced"]);
+  assert.deepEqual(assets.roles.find((role) => role.id === "bug-fixer").actions, ["coding.fix_direct", "coding.fix_review", "coding.fix_resynced_review", "coding.fix_final_resynced_review"]);
+  for (const roleId of ["review-standards", "review-spec"]) {
+    const role = assets.roles.find((candidate) => candidate.id === roleId);
+    assert.deepEqual(role.delegates, []);
+    assert.equal(role.controls.includes("review-leaf-no-delegation"), true);
+  }
   const taskPlanner = assets.roles.find((role) => role.id === "task-planner");
   assert.deepEqual(taskPlanner.actions, ["planning.preview_tasks", "planning.revise_task_preview", "planning.write_tasks"]);
   assert.deepEqual(taskPlanner.tools, ["Read", "Edit", "Write", "Bash"]);
