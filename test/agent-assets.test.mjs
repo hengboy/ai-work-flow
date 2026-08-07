@@ -88,6 +88,7 @@ test("compiled prompts use seven sections and no persistent workflow vocabulary"
   assert.match(assets.compiledBodies.get("planning-writer"), /split plan 与最终 task 集合的数量、ID、顺序、标题和概要一致/);
   assert.match(assets.compiledBodies.get("task-planner"), /`input\.task_mode` 与 plan 元数据必须同为 `split`/);
   assert.match(assets.compiledBodies.get("task-planner"), /`planning\.preview_tasks`.*不得创建、修改或删除 task 文件/s);
+  assert.match(assets.compiledBodies.get("task-planner"), /以可独立交付和验收的职责边界确定合理颗粒度.*不以 task 数量为目标.*不按单个文件、代码层或实施步骤机械拆分/);
   assert.match(assets.compiledBodies.get("task-planner"), /`planning\.revise_task_preview`.*revision 严格增加 1/s);
   assert.match(assets.compiledBodies.get("task-planner"), /`planning\.write_tasks`.*用户确认的当前 revision.*逐字写 preview ID\/order\/title\/summary.*写入后.*`task_artifact_manifest`/s);
   assert.match(assets.compiledBodies.get("task-planner"), /write_scope_mode: `exhaustive`/);
@@ -185,6 +186,7 @@ test("primary agents have Task only and Task Planner owns the complete split lif
   for (const role of [planning, coding]) {
     assert.equal(role.controls.includes("workflow-decision-visibility"), true, role.id);
     assert.match(assets.compiledBodies.get(role.id), /每个流程决策点[\s\S]*`状态`[\s\S]*`决策`[\s\S]*`委派`[\s\S]*`下一步`/);
+    assert.match(assets.compiledBodies.get(role.id), /四项分行用 `\*\*名称\*\*：<内容>`；只加粗名称，冒号和内容不得加粗/);
   }
   for (const role of assets.roles.filter((role) => role.kind !== "primary")) {
     assert.equal(role.controls.includes("workflow-decision-visibility"), false, role.id);
