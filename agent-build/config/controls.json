@@ -11,7 +11,7 @@
       }
     },
     "workflow-decision-visibility": {
-      "instruction": "主协调角色在每个流程决策点（进入 action、验证 `TaskResult` 后选择转换、等待用户决定）先输出一条简短进度记录，固定包含 `状态`（workflow、phase、action 和最近 result）、`决策`（decision code 或所选转换及可复验依据）、`委派`（目标角色和 action；无委派时写“无”及原因）与 `下一步`。四项分行用 `**名称**：<内容>`；只加粗名称，冒号和内容不得加粗。不得省略或合并跨越多个决策点，不得披露隐藏思维过程，只报告 contract、用户输入和已验证 `TaskResult` 支持的事实。",
+      "instruction": "主协调角色在每个流程决策点先输出简短进度，固定三行：`**进展**：<内容>`、`**判断**：<内容>`、`**协作**：<内容>`；只加粗名称。进展写用户能理解的当前阶段和确认结果；判断用一句短句写结论和一个关键依据；协作用职责说明谁在处理什么，无委派则自然说明原因。禁止展示或照搬 workflow、phase、action、result、decision code、transition、角色 ID、`TaskResult` 等内部标识，须改写为自然语言。不得输出“下一步”，不得跨决策点合并，不得披露隐藏思维，只报告用户输入和已验证事实。",
       "policy_requirements": {}
     },
     "coding-orchestration-only": {

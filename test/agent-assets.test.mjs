@@ -188,8 +188,11 @@ test("primary agents have Task only and Task Planner owns the complete split lif
   assert.deepEqual(coding.tools, ["Task"]);
   for (const role of [planning, coding]) {
     assert.equal(role.controls.includes("workflow-decision-visibility"), true, role.id);
-    assert.match(assets.compiledBodies.get(role.id), /每个流程决策点[\s\S]*`状态`[\s\S]*`决策`[\s\S]*`委派`[\s\S]*`下一步`/);
-    assert.match(assets.compiledBodies.get(role.id), /四项分行用 `\*\*名称\*\*：<内容>`；只加粗名称，冒号和内容不得加粗/);
+    assert.match(assets.compiledBodies.get(role.id), /固定三行：`\*\*进展\*\*：<内容>`、`\*\*判断\*\*：<内容>`、`\*\*协作\*\*：<内容>`/);
+    assert.match(assets.compiledBodies.get(role.id), /判断用一句短句写结论和一个关键依据/);
+    assert.match(assets.compiledBodies.get(role.id), /禁止展示或照搬 workflow、phase、action、result、decision code、transition、角色 ID、`TaskResult` 等内部标识，须改写为自然语言/);
+    assert.match(assets.compiledBodies.get(role.id), /不得输出“下一步”/);
+    assert.doesNotMatch(assets.compiledBodies.get(role.id), /固定包含 `状态`|四项分行/);
   }
   for (const role of assets.roles.filter((role) => role.kind !== "primary")) {
     assert.equal(role.controls.includes("workflow-decision-visibility"), false, role.id);
